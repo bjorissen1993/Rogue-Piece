@@ -215,16 +215,21 @@ export function InventoryOverlay({
                         </p>
                       </>
                     ) : null}
-                    {def?.effects.some((effect) => effect.type === "HEAL") ? (
+                    {def?.effects.some((effect) => effect.type === "HEAL" || effect.type === "RESTORE_MP") ? (
                       <section className="detail-section">
                         <p className="detail-label">Effect</p>
                         <p className="detail-value text-gold">
                           {(() => {
+                            const lines: string[] = [];
                             const previewHeal = ItemService.previewHeal(run.player, selected.itemId || selected.id);
-                            if (!previewHeal) {
-                              return "Restores HP";
+                            if (previewHeal) {
+                              lines.push(`${previewHeal.label}. Current ${previewHeal.before} → ${previewHeal.after}.`);
                             }
-                            return `${previewHeal.label}. Current ${previewHeal.before} → ${previewHeal.after}.`;
+                            const previewMp = ItemService.previewMpRestore(run.player, selected.itemId || selected.id);
+                            if (previewMp) {
+                              lines.push(`${previewMp.label}. Current ${previewMp.before} → ${previewMp.after}.`);
+                            }
+                            return lines.length ? lines.join(" ") : "Restores resources";
                           })()}
                         </p>
                       </section>

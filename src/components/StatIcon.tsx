@@ -45,6 +45,7 @@ const STAT_ART: Record<StatName, string> = {
   speed: "/icons/speed.png",
   willpower: "/icons/willpower.png",
   charisma: "/icons/charisma.png",
+  intelligence: "/icons/Intelligence.png",
 };
 
 const ACTION_ART: Partial<Record<ActionIconName, string>> = {
@@ -108,6 +109,16 @@ const STAT_MARKS: Record<StatName, ReactNode> = {
       <path d="M5.5 13c.5 2.3 2 3.8 4.2 4.2" />
       <path d="M7 10.6c.6.5 1.5.5 2.1 0" />
       <path d="M13.6 5.6h7.4v5.4h-2.7l-2.3 2.5v-2.5H13.6Z" />
+    </>
+  ),
+  intelligence: (
+    <>
+      <circle cx="12" cy="10" r="5.2" />
+      <path d="M9.2 18.2h5.6" />
+      <path d="M10 20h4" />
+      <path d="M12 5.2V3.6" />
+      <path d="M8.1 6.4 6.8 5.2" />
+      <path d="M15.9 6.4 17.2 5.2" />
     </>
   ),
 };

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import type { BackgroundContext, Encounter, EncounterChoice, Player, RunState, TimeOfDay } from "../models/types";
 import { encounterBackground, encounterMood, encounterOverlay } from "../utils/presentation";
+import { CrewPresenceStrip } from "./crew/CrewPresenceStrip";
 import { EncounterChoiceGrid, type EncounterChoiceLockMap } from "./encounter/EncounterChoiceGrid";
+import { choiceNeedsParticipants } from "./encounter/ChoiceParticipantPicker";
 
 type EncounterViewProps = {
   encounter: Encounter | null;
@@ -15,7 +17,7 @@ type EncounterViewProps = {
   player?: Player | null;
   run?: RunState | null;
   isDev?: boolean;
-  onChoose: (choiceId: string) => void;
+  onChoose: (choiceId: string, participantIds?: string[]) => void;
   onContinue: () => void;
 };
 
@@ -35,9 +37,14 @@ export function EncounterView({
   onContinue,
 }: EncounterViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [participantIds, setParticipantIds] = useState<string[]>([]);
   const overlay = encounter ? encounterOverlay(encounter) : "default";
   const mood = encounterMood(encounter, Boolean(resultText));
   const selected = choices.find((choice) => choice.id === selectedId && !lockReasons?.[choice.id]);
+  const needsParticipants = selected ? choiceNeedsParticipants(selected) : false;
+  const minParticipants = selected?.minParticipants ?? (needsParticipants ? 1 : 0);
+  const canConfirm =
+    Boolean(selected) && (!needsParticipants || participantIds.length >= minParticipants);
   const background = encounterBackground(encounter, {
     timeOfDay,
     weather: backgroundContext?.weather ?? "CLEAR",
@@ -49,6 +56,7 @@ export function EncounterView({
 
   useEffect(() => {
     setSelectedId(null);
+    setParticipantIds([]);
   }, [encounter?.id, resultText]);
 
   const showingResult = Boolean(resultText);
@@ -72,6 +80,7 @@ export function EncounterView({
               )}
             </div>
           </div>
+          {run && !showingResult ? <CrewPresenceStrip compact run={run} /> : null}
         </div>
 
         {resultText ? (
@@ -88,7 +97,12 @@ export function EncounterView({
               isDev={isDev}
               lockReasons={lockReasons}
               onConfirm={onChoose}
-              onSelect={setSelectedId}
+              onParticipantChange={setParticipantIds}
+              onSelect={(choiceId) => {
+                setSelectedId(choiceId);
+                setParticipantIds([]);
+              }}
+              participantIds={participantIds}
               player={player}
               run={run}
               selectedId={selectedId}
@@ -97,8 +111,10 @@ export function EncounterView({
             <div className="encounter-confirm">
               <button
                 className="gold-btn min-w-48"
-                disabled={!selected}
-                onClick={() => selected && onChoose(selected.id)}
+                disabled={!canConfirm}
+                onClick={() =>
+                  selected && onChoose(selected.id, needsParticipants ? participantIds : undefined)
+                }
                 type="button"
               >
                 Continue

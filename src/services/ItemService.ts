@@ -1,4 +1,4 @@
-import { computeHealAmount, getItemDefinition } from "../data/items";
+import { computeHealAmount, computeMpRestoreAmount, getItemDefinition } from "../data/items";
 import type {
   InventoryCategory,
   InventoryItem,
@@ -9,6 +9,7 @@ import type {
 } from "../models/types";
 import { clamp } from "../utils/stats";
 import { CollectionService } from "./CollectionService";
+import { MpService } from "./MpService";
 
 export type ItemUseResult = {
   ok: boolean;
@@ -16,6 +17,7 @@ export type ItemUseResult = {
   consumed: boolean;
   freeAction: boolean;
   hpHealed: number;
+  mpRestored: number;
   guaranteeEscape: boolean;
   itemName: string;
 };
@@ -346,6 +348,67 @@ export const ItemService = {
     return { before, after, total, label };
   },
 
+  previewMpRestore(
+    player: Player,
+    itemId: string,
+  ): { before: number; after: number; total: number; label: string } | null {
+    const def = getItemDefinition(itemId);
+    const restore = def?.effects.find((effect) => effect.type === "RESTORE_MP");
+    if (!restore || restore.type !== "RESTORE_MP") {
+      return null;
+    }
+    MpService.ensurePlayer(player);
+    const maxMp = player.maxMp ?? MpService.maxMpFor(player);
+    const current = player.mp ?? 0;
+    const total = computeMpRestoreAmount(restore.amount, restore.percentMaxMp, maxMp);
+    const after = clamp(current + total, 0, maxMp);
+    const parts: string[] = [];
+    if (restore.amount > 0) {
+      parts.push(`+${restore.amount}`);
+    }
+    if (restore.percentMaxMp) {
+      parts.push(`+${restore.percentMaxMp}% max MP`);
+    }
+    const label = parts.length ? `Restores ${parts.join(" ")} (${total} MP)` : `Restores ${total} MP`;
+    return { before: current, after, total, label };
+  },
+
+  /** Center-stage combat hint for an inventory item. */
+  combatHint(
+    itemId: string,
+    resources: { hp: number; maxHp: number; mp: number; maxMp: number },
+    description?: string,
+  ): string {
+    const def = getItemDefinition(itemId);
+    if (!def) {
+      return "Unknown item.";
+    }
+    const lines: string[] = [def.name];
+    if (description ?? def.description) {
+      lines.push(description ?? def.description);
+    }
+    const effectLines: string[] = [];
+    for (const effect of def.effects) {
+      if (effect.type === "HEAL") {
+        const total = computeHealAmount(effect.amount, effect.percentMaxHp, resources.maxHp);
+        const actual = Math.min(total, Math.max(0, resources.maxHp - resources.hp));
+        effectLines.push(actual > 0 ? `Restores ${total} HP` : `Restores ${total} HP (already full)`);
+      }
+      if (effect.type === "RESTORE_MP") {
+        const total = computeMpRestoreAmount(effect.amount, effect.percentMaxMp, resources.maxMp);
+        const actual = Math.min(total, Math.max(0, resources.maxMp - resources.mp));
+        effectLines.push(actual > 0 ? `Restores ${total} MP` : `Restores ${total} MP (already full)`);
+      }
+      if (effect.type === "GUARANTEE_ESCAPE") {
+        effectLines.push("Guarantees escape from this fight.");
+      }
+    }
+    if (effectLines.length) {
+      lines.push(effectLines.join(" · "));
+    }
+    return lines.join("\n");
+  },
+
   unusableReason(item: InventoryItem, inCombat: boolean): string | null {
     if (item.type === "WEAPON" || item.weaponDefinitionId) {
       return null;
@@ -377,6 +440,7 @@ export const ItemService = {
       consumed: false,
       freeAction: false,
       hpHealed: 0,
+      mpRestored: 0,
       guaranteeEscape: false,
       itemName: def?.name ?? "item",
     });
@@ -397,7 +461,9 @@ export const ItemService = {
       return fail("This cannot be used here.");
     }
 
+    MpService.ensurePlayer(player);
     let hpHealed = 0;
+    let mpRestored = 0;
     let guaranteeEscape = false;
     for (const effect of def.effects) {
       if (effect.type === "HEAL") {
@@ -405,6 +471,13 @@ export const ItemService = {
         const total = computeHealAmount(effect.amount, effect.percentMaxHp, player.maxHp);
         player.hp = clamp(player.hp + total, 0, player.maxHp);
         hpHealed += player.hp - before;
+      }
+      if (effect.type === "RESTORE_MP") {
+        const maxMp = player.maxMp ?? MpService.maxMpFor(player);
+        const before = player.mp ?? 0;
+        const total = computeMpRestoreAmount(effect.amount, effect.percentMaxMp, maxMp);
+        player.mp = clamp(before + total, 0, maxMp);
+        mpRestored += (player.mp ?? 0) - before;
       }
       if (effect.type === "GUARANTEE_ESCAPE") {
         guaranteeEscape = true;
@@ -424,7 +497,12 @@ export const ItemService = {
     if (hpHealed > 0) {
       parts.push(`${def.name} restored ${hpHealed} HP.`);
     } else if (def.effects.some((effect) => effect.type === "HEAL") && hpHealed === 0) {
-      parts.push(`${def.name} did nothing — you are already at full health.`);
+      parts.push(`${def.name} did nothing for HP — you are already at full health.`);
+    }
+    if (mpRestored > 0) {
+      parts.push(`${def.name} restored ${mpRestored} MP.`);
+    } else if (def.effects.some((effect) => effect.type === "RESTORE_MP") && mpRestored === 0) {
+      parts.push(`${def.name} did nothing for MP — your spirit is already full.`);
     }
     if (guaranteeEscape) {
       parts.push(`${def.name} guaranteed your escape.`);
@@ -439,6 +517,7 @@ export const ItemService = {
       consumed,
       freeAction: Boolean(def.freeAction),
       hpHealed,
+      mpRestored,
       guaranteeEscape,
       itemName: def.name,
     };

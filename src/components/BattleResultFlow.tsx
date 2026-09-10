@@ -6,7 +6,8 @@ type BattleResultFlowProps = {
   report: BattleResultReport;
   run: RunState;
   pendingLevelUp: PendingLevelUp | null;
-  onConfirmLevelUp: (stat: StatName) => void;
+  pendingLevelUpCount: number;
+  onConfirmLevelUp: (stat: StatName) => boolean;
   onComplete: () => void;
 };
 
@@ -176,12 +177,14 @@ export function BattleResultFlow({
   report,
   run,
   pendingLevelUp,
+  pendingLevelUpCount,
   onConfirmLevelUp,
   onComplete,
 }: BattleResultFlowProps) {
-  const [step, setStep] = useState<"victory" | "stats">("victory");
+  const [step, setStep] = useState<"victory" | "levelup" | "stats">("victory");
   const [completedCount, setCompletedCount] = useState(0);
-  const [victoryAcknowledged, setVictoryAcknowledged] = useState(false);
+  const [levelUpTotal, setLevelUpTotal] = useState(0);
+  const [confirmingLevelUp, setConfirmingLevelUp] = useState(false);
   const completedIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -198,8 +201,6 @@ export function BattleResultFlow({
   }, []);
 
   const allAnimationsDone = completedCount >= report.xpSnapshots.length;
-  const showLevelUp =
-    victoryAcknowledged && step === "victory" && pendingLevelUp != null && allAnimationsDone;
 
   const levelUpOverlayKey = pendingLevelUp
     ? `${pendingLevelUp.characterId}-${pendingLevelUp.fromLevel}-${pendingLevelUp.toLevel}`
@@ -209,17 +210,36 @@ export function BattleResultFlow({
     if (!allAnimationsDone) {
       return;
     }
-    setVictoryAcknowledged(true);
-    if (!pendingLevelUp) {
-      setStep("stats");
+    if (pendingLevelUpCount > 0) {
+      setLevelUpTotal(pendingLevelUpCount);
+      setConfirmingLevelUp(false);
+      setStep("levelup");
+      return;
     }
+    setStep("stats");
   };
 
   useEffect(() => {
-    if (victoryAcknowledged && allAnimationsDone && !pendingLevelUp && step === "victory") {
-      setStep("stats");
+    if (step !== "levelup") {
+      return;
     }
-  }, [allAnimationsDone, pendingLevelUp, step, victoryAcknowledged]);
+    if (pendingLevelUpCount > 0) {
+      setConfirmingLevelUp(false);
+      return;
+    }
+    setStep("stats");
+  }, [pendingLevelUpCount, step]);
+
+  const handleConfirmLevelUp = (stat: StatName) => {
+    if (confirmingLevelUp || !pendingLevelUp) {
+      return;
+    }
+    setConfirmingLevelUp(true);
+    const ok = onConfirmLevelUp(stat);
+    if (!ok) {
+      setConfirmingLevelUp(false);
+    }
+  };
 
   const fighters = report.contributions.filter(
     (entry) =>
@@ -240,22 +260,31 @@ export function BattleResultFlow({
   }, null);
 
   const enemyLabel = report.enemyNames.length ? report.enemyNames.join(", ") : "the enemy";
+  const levelUpIndex =
+    levelUpTotal > 0 ? Math.min(levelUpTotal, levelUpTotal - pendingLevelUpCount + 1) : 1;
+
+  if (step === "levelup" && pendingLevelUp && levelUpOverlayKey) {
+    return (
+      <div className="battle-result-scrim">
+        <div className="battle-result-levelup-scrim is-solo">
+          <LevelUpOverlay
+            key={levelUpOverlayKey}
+            onConfirm={handleConfirmLevelUp}
+            pending={pendingLevelUp}
+            queueIndex={levelUpIndex}
+            queueTotal={levelUpTotal}
+            run={run}
+            submitting={confirmingLevelUp}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (step === "victory") {
     return (
       <div className="battle-result-scrim">
-        {showLevelUp && pendingLevelUp && levelUpOverlayKey ? (
-          <div className="battle-result-levelup-scrim">
-            <LevelUpOverlay
-              key={levelUpOverlayKey}
-              onConfirm={onConfirmLevelUp}
-              pending={pendingLevelUp}
-              run={run}
-            />
-          </div>
-        ) : null}
-
-        <section className={`battle-result-panel battle-result-panel-victory panel${showLevelUp ? " is-backgrounded" : ""}`}>
+        <section className="battle-result-panel battle-result-panel-victory panel">
           <p className="hud-kicker">Battle Complete</p>
           <h2 className="battle-result-title font-display">Victory</h2>
           <p className="battle-result-subtitle text-parchment-dim">

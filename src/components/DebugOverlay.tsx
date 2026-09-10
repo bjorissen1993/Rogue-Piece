@@ -38,6 +38,16 @@ type DebugOverlayProps = {
   onOpenClinic?: () => void;
   onGenerateSupplySearch?: () => void;
   onGenerateTraining?: () => void;
+  onStartCrewTraining?: () => void;
+  onEndCrewTraining?: () => void;
+  onAdvanceTimeSlot?: () => void;
+  onAdvanceDaySlot?: () => void;
+  onGenerateCrewRequirement?: () => void;
+  onGenerateCharacterChoice?: () => void;
+  onGenerateRuinedMechanism?: () => void;
+  onGiveKnowledgeCollectable?: () => void;
+  onSetIntelligence?: (value: number) => void;
+  onClearRunKnowledge?: () => void;
   onSetTimeSlots?: (time: TimeOfDay) => void;
   onSpawnEasyFight?: () => void;
   onSpawnStandardFight?: () => void;
@@ -112,6 +122,16 @@ export function DebugOverlay({
   onOpenClinic,
   onGenerateSupplySearch,
   onGenerateTraining,
+  onStartCrewTraining,
+  onEndCrewTraining,
+  onAdvanceTimeSlot,
+  onAdvanceDaySlot,
+  onGenerateCrewRequirement,
+  onGenerateCharacterChoice,
+  onGenerateRuinedMechanism,
+  onGiveKnowledgeCollectable,
+  onSetIntelligence,
+  onClearRunKnowledge,
   onSetTimeSlots,
   onSpawnEasyFight,
   onSpawnStandardFight,
@@ -338,6 +358,91 @@ export function DebugOverlay({
         {onGenerateTraining ? (
           <button className="choice-btn" disabled={!run} onClick={onGenerateTraining} type="button">
             Generate Training Day
+          </button>
+        ) : null}
+        {onStartCrewTraining ? (
+          <button className="choice-btn" disabled={!run} onClick={onStartCrewTraining} type="button">
+            Start Character Training
+          </button>
+        ) : null}
+        {onEndCrewTraining ? (
+          <button className="choice-btn" disabled={!run} onClick={onEndCrewTraining} type="button">
+            End Character Training
+          </button>
+        ) : null}
+        {onAdvanceTimeSlot ? (
+          <button className="choice-btn" disabled={!run} onClick={onAdvanceTimeSlot} type="button">
+            Advance 1 Time Slot
+          </button>
+        ) : null}
+        {onAdvanceDaySlot ? (
+          <button className="choice-btn" disabled={!run} onClick={onAdvanceDaySlot} type="button">
+            Advance 1 Day
+          </button>
+        ) : null}
+        {onGenerateCrewRequirement ? (
+          <button
+            className="choice-btn"
+            disabled={!run}
+            onClick={onGenerateCrewRequirement}
+            type="button"
+          >
+            Generate 3-Crew Requirement
+          </button>
+        ) : null}
+        {onGenerateCharacterChoice ? (
+          <button
+            className="choice-btn"
+            disabled={!run}
+            onClick={onGenerateCharacterChoice}
+            type="button"
+          >
+            Generate Character-Specific Choice
+          </button>
+        ) : null}
+        {onGenerateRuinedMechanism ? (
+          <button
+            className="choice-btn"
+            disabled={!run}
+            onClick={onGenerateRuinedMechanism}
+            type="button"
+          >
+            Generate Intelligence / Knowledge Gate
+          </button>
+        ) : null}
+        {onGiveKnowledgeCollectable ? (
+          <button
+            className="choice-btn"
+            disabled={!run}
+            onClick={onGiveKnowledgeCollectable}
+            type="button"
+          >
+            Give Knowledge Collectable
+          </button>
+        ) : null}
+        {onSetIntelligence ? (
+          <>
+            <button
+              className="choice-btn"
+              disabled={!run}
+              onClick={() => onSetIntelligence(3)}
+              type="button"
+            >
+              Set Intelligence 3
+            </button>
+            <button
+              className="choice-btn"
+              disabled={!run}
+              onClick={() => onSetIntelligence(12)}
+              type="button"
+            >
+              Set Intelligence 12
+            </button>
+          </>
+        ) : null}
+        {onClearRunKnowledge ? (
+          <button className="choice-btn" disabled={!run} onClick={onClearRunKnowledge} type="button">
+            Clear Run Knowledge
           </button>
         ) : null}
         {onSetTimeSlots ? (

@@ -160,7 +160,13 @@ export interface FactionOrder {
   issuedDay: number;
 }
 
-export type StatName = "strength" | "defense" | "speed" | "willpower" | "charisma";
+export type StatName =
+  | "strength"
+  | "defense"
+  | "speed"
+  | "willpower"
+  | "charisma"
+  | "intelligence";
 
 export type RaceCategory = "DIRECT" | "DISCOVERABLE" | "EXTREMELY_RARE";
 
@@ -393,7 +399,46 @@ export type CrewStatus =
   | "Captured"
   | "Training"
   | "Temporary"
-  | "Unavailable";
+  | "Unavailable"
+  | "OnMission"
+  | "PersonalActivity";
+
+export type AssignmentType =
+  | "TRAINING"
+  | "WEAPON_TRAINING"
+  | "STYLE_TRAINING"
+  | "RECOVERING"
+  | "ON_MISSION"
+  | "RESTING"
+  | "PERSONAL_ACTIVITY"
+  | "CAPTURED"
+  | "MISSING"
+  | "HELPING";
+
+export interface CharacterAssignment {
+  characterId: "player" | string;
+  type: AssignmentType;
+  label: string;
+  startDay: number;
+  startSlot: number;
+  endDay: number;
+  endSlot: number;
+  locationId?: string;
+  islandId?: string;
+  /** Stat / weapon / style / etc. */
+  focus?: string;
+  berriesCost?: number;
+  interruptible?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AssignmentCompletionReport {
+  characterId: "player" | string;
+  label: string;
+  type: AssignmentType;
+  summary: string;
+  rewards?: string[];
+}
 
 export type EncounterCategory =
   | "COMBAT"
@@ -441,6 +486,14 @@ export type CrewRole =
   | "DOCTOR"
   | "SHIPWRIGHT";
 
+export type ParticipantRequirement =
+  | { type: "MIN_CREW"; count: number }
+  | { type: "ROLE"; role: CrewRole }
+  | { type: "STAT"; stat: StatName; minimum: number }
+  | { type: "RACE"; raceId: string }
+  | { type: "FIGHTING_STYLE"; styleId: string }
+  | { type: "AVAILABLE_CHARACTER"; characterId: string };
+
 export type WeaponType = "SWORD" | "SPEAR" | "CLUB" | "GUN" | "KICKS" | "FISTS";
 
 export type WeaponRarity = "COMMON" | "UNCOMMON" | "RARE" | "LEGENDARY";
@@ -477,6 +530,7 @@ export interface PlayerStats {
   speed: number;
   willpower: number;
   charisma: number;
+  intelligence: number;
 }
 
 /** Owned weapon copy living in inventory (never destroyed on unequip). */
@@ -788,9 +842,29 @@ export interface StatusEffect {
   id: string;
   name: string;
   remainingTurns: number;
+  kind?: "BUFF" | "DEBUFF";
+  /** Flat hit-chance bonus in percentage points. */
+  accuracyBonus?: number;
+  /** Flat dodge bonus in percentage points. */
+  dodgeBonus?: number;
+  /** Additive damage dealt modifier (0.25 = +25%). */
+  damageDealtMod?: number;
+  /** Additive damage taken modifier (0.2 = +20% taken). */
+  damageTakenMod?: number;
 }
 
-export type AbilityTag = "MELEE" | "RANGED" | "AOE" | "SINGLE" | "BUFF" | "DEBUFF" | "DEFENSIVE" | "ALLY";
+export type AbilityTag =
+  | "MELEE"
+  | "RANGED"
+  | "AOE"
+  | "SINGLE"
+  | "BUFF"
+  | "DEBUFF"
+  | "DEFENSIVE"
+  | "ALLY"
+  | "MULTI_HIT"
+  | "RANDOM"
+  | "HEAL";
 
 export type CombatAnimationType =
   | "MELEE_SLASH"
@@ -804,22 +878,149 @@ export type CombatAnimationType =
   | "DEFEND"
   | "DODGE"
   | "IMPACT"
-  | "OBSERVE";
+  | "OBSERVE"
+  | "DEFEAT";
 
 export type CombatFormation = "FRONT" | "BACK";
+
+/** Who a targeting rule draws from. */
+export type TargetGroup = "ENEMY" | "ALLY" | "SELF" | "OTHER_ALLY";
+
+/** How targets are chosen among the filtered pool. */
+export type TargetSelectionMode = "MANUAL" | "RANDOM" | "ALL" | "AUTO" | "SELF";
+
+export type TargetFormationFilter = "ANY" | "FRONT" | "BACK";
+
+export type TargetCondition =
+  | { type: "LIVING" }
+  | { type: "INJURED" }
+  | { type: "KO" }
+  | { type: "LOWEST_HP" }
+  | { type: "HIGHEST_HP" }
+  | { type: "HIGHEST_MAX_HP" }
+  | { type: "MOST_INJURED" }
+  | { type: "HIGHEST_STAT"; stat: StatName }
+  | { type: "LOWEST_STAT"; stat: StatName };
+
+/**
+ * Data-driven targeting for attacks, heals, buffs, debuffs, and utility.
+ * Prefer this over relying on AbilityTag alone.
+ */
+export interface TargetingSpec {
+  group: TargetGroup;
+  selection: TargetSelectionMode;
+  /** Exactly N targets (manual/random unique). Distinct from maxCount "up to". */
+  exactCount?: number;
+  minCount?: number;
+  maxCount?: number;
+  allowRepeatedTargets?: boolean;
+  /** Independent hit rolls (multi-hit). Distinct from target count. */
+  hitCount?: number;
+  /** Each hit re-rolls its target (typically with allowRepeatedTargets). */
+  retargetEachHit?: boolean;
+  formation?: TargetFormationFilter;
+  /** When group is ALLY, whether the actor may be included. Default true. */
+  includeSelf?: boolean;
+  conditions?: TargetCondition[];
+  /** Extra chain jumps after the primary target. */
+  chainJumps?: number;
+  /** Damage multipliers per chain hop including the first (default 1, 0.75, 0.5…). */
+  chainDamageMult?: number[];
+  /** Splash damage fraction applied to adjacent slot enemies of the primary. */
+  adjacentSplash?: number;
+  /** When not enough valid targets exist for exactCount. Default REDUCE for random/all, DISABLE for manual exact. */
+  whenInsufficient?: "DISABLE" | "REDUCE";
+}
+
+export type TechniqueEffectKind = "DAMAGE" | "HEAL" | "BUFF" | "DEBUFF" | "UTILITY";
+
+/**
+ * Grouped skill badges — compact category icons.
+ * Exact counts/behavior live in tooltips, not separate badge types.
+ */
+export type SkillBadgeId =
+  | "SINGLE_TARGET"
+  | "MULTI_TARGET"
+  | "ALL_TARGETS"
+  | "RANDOM_TARGET"
+  | "CHAIN"
+  | "SPLASH"
+  | "SELF"
+  | "ROW_TARGET"
+  | "MULTI_HIT"
+  | "HEAL"
+  | "CLEANSE"
+  | "MP_RESTORE"
+  | "GUARD"
+  | "COUNTER"
+  | "FOCUS"
+  | "CONTROL_BREAK"
+  | "AFFLICTION"
+  | "VULNERABILITY";
+
+/** Explicit or derived badge attachment for a skill. */
+export interface SkillBadgeRef {
+  id: SkillBadgeId;
+  /** Optional numeric overlay (x2, x6) — not a separate badge concept. */
+  count?: number;
+  /** Overrides the default category tooltip with skill-specific detail. */
+  tip?: string;
+}
+
+/** One effect on a technique — each may use different targeting. */
+export interface TechniqueEffect {
+  id: string;
+  kind: TechniqueEffectKind;
+  targeting: TargetingSpec;
+  /** Multiplier on technique power + scaling (1 = 100%). */
+  damageMult?: number;
+  healAmount?: number;
+  /** Fraction of target max HP healed. */
+  healMaxHpFraction?: number;
+  applyEffect?: AbilityEffectSpec;
+  /** Chance to apply applyEffect / statusEffect per resolved hit (0–1). */
+  statusChance?: number;
+  statusEffect?: AbilityEffectSpec;
+}
+
+export interface AbilityEffectSpec {
+  id: string;
+  name: string;
+  kind: "BUFF" | "DEBUFF";
+  turns: number;
+  target: "SELF" | "TARGET" | "ALL_ENEMIES" | "ALL_ALLIES";
+  accuracyBonus?: number;
+  dodgeBonus?: number;
+  damageDealtMod?: number;
+  damageTakenMod?: number;
+}
 
 export interface Ability {
   id: string;
   name: string;
   description: string;
+  /** Legacy damage contribution; prefer powerLevel when present. */
   power: number;
+  /** Skill tier used for hit chance vs character level. */
+  powerLevel?: number;
   scalingStat: StatName;
+  /** Small accuracy bias in percentage points (on top of level formula). */
   accuracyMod: number;
   mpCost?: number;
   tags?: AbilityTag[];
   animationType?: CombatAnimationType;
   cooldown?: number;
   effects?: string[];
+  applyEffect?: AbilityEffectSpec;
+  /** Primary targeting (legacy single-effect techniques). */
+  targeting?: TargetingSpec;
+  /** Multi-effect techniques; if empty, derived from targeting/tags/applyEffect. */
+  techniqueEffects?: TechniqueEffect[];
+  /**
+   * Optional explicit skill badges. When omitted, badges are derived from
+   * targeting / effects / tags. Prefer explicit tips for unusual skills.
+   */
+  badges?: SkillBadgeRef[];
 }
 
 export interface CombatLogEntry {
@@ -856,6 +1057,8 @@ export interface CombatantState {
   dodgeBonus: number;
   statusEffects: StatusEffect[];
   abilities: Ability[];
+  /** Character level for technique accuracy scaling. */
+  level?: number;
   initiativeScore?: number;
   initiativeVariance?: number;
   formation?: CombatFormation;
@@ -965,6 +1168,8 @@ export interface CrewMember {
   grievances?: string[];
   inActiveParty?: boolean;
   inSupportSlot?: boolean;
+  /** Blocking activity — source of truth for availability. */
+  currentAssignment?: CharacterAssignment | null;
 }
 
 export interface Weapon {
@@ -984,10 +1189,21 @@ export interface Technique {
   description: string;
   source: TechniqueSource;
   power: number;
+  /** Skill tier — compared to character level for accuracy. */
+  powerLevel?: number;
   scalingStat: StatName;
   accuracyMod: number;
   weaponType?: WeaponType;
   styleId?: string;
+  tags?: AbilityTag[];
+  applyEffect?: AbilityEffectSpec;
+  targeting?: TargetingSpec;
+  techniqueEffects?: TechniqueEffect[];
+  mpCost?: number;
+  /** Flavor / keyword strings used for badge derivation (cleanse, bleed, etc.). */
+  effects?: string[];
+  /** Optional explicit badges; otherwise derived at display time. */
+  badges?: SkillBadgeRef[];
 }
 
 export interface FightingStyle {
@@ -1065,11 +1281,13 @@ export type EncounterCondition =
   | { type: "MIN_MASTERY"; weaponType: WeaponType; value: number }
   | { type: "HAS_STYLE"; styleId: string; negate?: boolean }
   | { type: "CREW_MIN"; value: number }
+  | { type: "CREW_AVAILABLE_MIN"; value: number }
   | { type: "CREW_ROLE"; role: CrewRole; minCount?: number }
   | { type: "CREW_RACE"; raceId: string; minCount?: number }
   | { type: "STAT_MIN"; stat: StatName; value: number; target?: "player" | "any_crew" }
   | { type: "TECHNIQUE"; techniqueId: string; target?: "player" }
-  | { type: "HAS_ITEM"; itemId: string; quantity?: number };
+  | { type: "HAS_ITEM"; itemId: string; quantity?: number }
+  | { type: "RUN_KNOWLEDGE"; subjectId: string; minStage?: KnowledgeStage; negate?: boolean };
 
 export interface SkillCheckRequest {
   stat: StatName;
@@ -1139,6 +1357,16 @@ export interface EncounterOutcome {
   addMilestones?: string[];
   moveToLocation?: string;
   trainStat?: StatName;
+  /** Begin a blocking character assignment (long training, mission, etc.). */
+  startAssignment?: {
+    type: AssignmentType;
+    label: string;
+    durationSlots: number;
+    focus?: string;
+    berriesCost?: number;
+    characterId?: string;
+    interruptible?: boolean;
+  };
   startStoryThread?: string;
   advanceStoryThread?: string;
   resolveStoryThread?: string;
@@ -1167,6 +1395,8 @@ export interface EncounterOutcome {
   setWorldProgressionFlag?: string;
   showIslandIntroduction?: string;
   grantExperience?: number;
+  /** Grant a knowledge collectable into current-run knowledge (+ meta collection if profile present). */
+  grantKnowledgeCollectable?: string;
   addInformation?: string;
   addNoise?: boolean;
   /** Join or switch primary career affiliation. */
@@ -1243,6 +1473,12 @@ export interface EncounterChoice {
   visual?: ChoiceVisual;
   presentation?: ChoicePresentation;
   conditions?: EncounterCondition[];
+  /** Player must pick who performs this action. */
+  requiresParticipant?: boolean;
+  participantRequirements?: ParticipantRequirement[];
+  /** For group activities (default 1 when requiresParticipant). */
+  maxParticipants?: number;
+  minParticipants?: number;
   outcome: EncounterOutcome;
 }
 
@@ -1353,6 +1589,39 @@ export type CollectionEntry = CollectionKnowledge;
 export interface ProfileCollection {
   devilFruits: CollectionKnowledge[];
   items: CollectionKnowledge[];
+  /** World-knowledge collectables (books, maps, dossiers, etc.). */
+  knowledge?: CollectionKnowledge[];
+}
+
+export type KnowledgeCategory =
+  | "WORLD"
+  | "ISLANDS"
+  | "RACES"
+  | "FACTIONS"
+  | "CHARACTERS"
+  | "DEVIL_FRUITS"
+  | "WEAPONS"
+  | "HISTORY"
+  | "COMBAT"
+  | "NAVIGATION"
+  | "MYSTERIES";
+
+export type KnowledgeStage =
+  | "UNKNOWN"
+  | "RUMORED"
+  | "LIMITED"
+  | "FAMILIAR"
+  | "WELL_KNOWN"
+  | "EXPERT";
+
+/** Current-run actionable knowledge (separate from meta collection). */
+export interface RunKnowledgeEntry {
+  subjectId: string;
+  category: KnowledgeCategory;
+  stage: KnowledgeStage;
+  label: string;
+  sourceCollectableIds?: string[];
+  note?: string;
 }
 
 export interface ProfileStatistics {
@@ -1406,6 +1675,7 @@ export interface AchievementDefinition {
 
 export type ItemEffect =
   | { type: "HEAL"; amount: number; percentMaxHp?: number }
+  | { type: "RESTORE_MP"; amount: number; percentMaxMp?: number }
   | { type: "GUARANTEE_ESCAPE" }
   | { type: "NONE" };
 
@@ -1435,6 +1705,16 @@ export interface RunState {
   timeOfDay: TimeOfDay;
   pendingTimeCost: number;
   trainingToday: Partial<Record<StatName, number>>;
+  /** Per-character training counts today (player id = "player"). */
+  characterTrainingToday?: Record<string, Partial<Record<StatName, number>>>;
+  /** Selected actor for the next participant-gated choice. */
+  pendingParticipantId?: string | null;
+  /** Multi-select participants for group activities. */
+  pendingParticipantIds?: string[];
+  /** Completed assignment reports waiting to be shown. */
+  pendingAssignmentResults?: AssignmentCompletionReport[];
+  /** Active character schedules (source of truth for availability). */
+  characterAssignments?: CharacterAssignment[];
   currentLocationId: string;
   currentEncounterId: string | null;
   encounterCount: number;
@@ -1473,6 +1753,8 @@ export interface RunState {
   standingOrders?: StandingOrder[];
   policyIncidents?: PolicyIncident[];
   raceKnowledge?: RaceKnowledge[];
+  /** Actionable knowledge discovered this run (maps, journals, etc.). */
+  runKnowledge?: RunKnowledgeEntry[];
 }
 
 export interface ProfileSave {
@@ -1513,6 +1795,8 @@ export interface CombatAction {
   abilityId?: string;
   itemId?: string;
   targetId?: string;
+  /** Manual multi-target selection (ordered). */
+  targetIds?: string[];
 }
 
 /** @deprecated Old v1 save shape used only for migration. */

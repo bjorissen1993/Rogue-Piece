@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { AssignmentResultOverlay } from "../components/AssignmentResultOverlay";
 import { BattleResultFlow } from "../components/BattleResultFlow";
 import { CombatView } from "../components/CombatView";
 import { CrewOverlay } from "../components/CrewOverlay";
@@ -8,6 +9,7 @@ import { FactionTubes } from "../components/FactionTubes";
 import { InventoryOverlay } from "../components/InventoryOverlay";
 import { PlayerHud } from "../components/PlayerHud";
 import { RunBar } from "../components/RunBar";
+import { TimeDetailOverlay } from "../components/TimeDetailOverlay";
 import { WorldNewsStrip } from "../components/WorldNewsStrip";
 import { LevelUpOverlay } from "../components/LevelUpOverlay";
 import { LootDispositionModal, peekLootDisposition } from "../components/LootDispositionModal";
@@ -27,7 +29,9 @@ export function GamePage() {
     closeOverlay,
     choose,
     continueResult,
+    dismissAssignmentResults,
     dismissBattleResult,
+    finishCombatPresentation,
     combatAction,
     resolveEnemyTurn,
     useCombatItem,
@@ -68,6 +72,16 @@ export function GamePage() {
     debugOpenClinic,
     debugGenerateSupplySearch,
     debugGenerateTraining,
+    debugStartCrewTraining,
+    debugEndCrewTraining,
+    debugAdvanceTimeSlot,
+    debugAdvanceDay,
+    debugGenerateCrewRequirement,
+    debugGenerateCharacterChoice,
+    debugGenerateRuinedMechanism,
+    debugGiveKnowledgeCollectable,
+    debugSetIntelligence,
+    debugClearRunKnowledge,
     debugSetTimeSlots,
     debugSpawnEasyFight,
     debugSpawnStandardFight,
@@ -148,11 +162,27 @@ export function GamePage() {
   const resultText = run.awaitingAdvance ? run.lastResultText : null;
   const island = IslandService.getCurrentIsland(run);
   const pendingLevelUp = ProgressionService.peekPendingLevelUp(run);
+  const pendingLevelUpCount = run.pendingLevelUps?.length ?? 0;
   const pendingTechnique = run.pendingTechniqueChoice;
+  const standaloneLevelUpTotal = useRef(0);
+  if (pendingLevelUpCount > standaloneLevelUpTotal.current) {
+    standaloneLevelUpTotal.current = pendingLevelUpCount;
+  }
+  if (pendingLevelUpCount === 0) {
+    standaloneLevelUpTotal.current = 0;
+  }
+  const standaloneQueueTotal = standaloneLevelUpTotal.current;
+  const standaloneQueueIndex =
+    standaloneQueueTotal > 1 ? standaloneQueueTotal - pendingLevelUpCount + 1 : undefined;
 
   return (
     <div className="game-shell">
-      <RunBar isDev={isDev} onMenu={() => openOverlay("gameMenu")} run={run} />
+      <RunBar
+        isDev={isDev}
+        onMenu={() => openOverlay("gameMenu")}
+        onOpenTime={() => openOverlay("time")}
+        run={run}
+      />
       <PlayerHud
         onCrew={() => openOverlay("crew")}
         onInventory={(itemId) => {
@@ -162,11 +192,12 @@ export function GamePage() {
         run={run}
       />
       <main className="game-main">
-        {run.combat && !run.combat.finished ? (
+        {run.combat ? (
           <CombatView
             combat={run.combat}
             items={run.player.inventory}
-            onAction={(type, abilityId, targetId) => combatAction({ type, abilityId, targetId })}
+            onAction={(type, abilityId, targetId, targetIds) => combatAction({ type, abilityId, targetId, targetIds })}
+            onFinishPresentation={finishCombatPresentation}
             onResolveEnemyTurn={resolveEnemyTurn}
             onUseItem={useCombatItem}
           />
@@ -203,6 +234,7 @@ export function GamePage() {
           onComplete={dismissBattleResult}
           onConfirmLevelUp={confirmLevelUp}
           pendingLevelUp={pendingLevelUp}
+          pendingLevelUpCount={pendingLevelUpCount}
           report={run.pendingBattleResult}
           run={run}
         />
@@ -246,6 +278,15 @@ export function GamePage() {
         </div>
       ) : null}
 
+      {overlay === "time" ? <TimeDetailOverlay onClose={closeOverlay} run={run} /> : null}
+
+      {(run.pendingAssignmentResults?.length ?? 0) > 0 &&
+      !run.combat &&
+      !run.pendingBattleResult &&
+      !pendingLevelUp ? (
+        <AssignmentResultOverlay onDismiss={dismissAssignmentResults} run={run} />
+      ) : null}
+
       {overlay === "inventory" ? (
         <InventoryOverlay
           inCombat={Boolean(run.combat && !run.combat.finished)}
@@ -283,6 +324,8 @@ export function GamePage() {
             key={`${pendingLevelUp.characterId}-${pendingLevelUp.fromLevel}-${pendingLevelUp.toLevel}`}
             onConfirm={confirmLevelUp}
             pending={pendingLevelUp}
+            queueIndex={standaloneQueueTotal > 1 ? standaloneQueueIndex : undefined}
+            queueTotal={standaloneQueueTotal > 1 ? standaloneQueueTotal : undefined}
             run={run}
           />
         </div>
@@ -342,6 +385,16 @@ export function GamePage() {
           onOpenClinic={debugOpenClinic}
           onGenerateSupplySearch={debugGenerateSupplySearch}
           onGenerateTraining={debugGenerateTraining}
+          onStartCrewTraining={debugStartCrewTraining}
+          onEndCrewTraining={debugEndCrewTraining}
+          onAdvanceTimeSlot={debugAdvanceTimeSlot}
+          onAdvanceDaySlot={debugAdvanceDay}
+          onGenerateCrewRequirement={debugGenerateCrewRequirement}
+          onGenerateCharacterChoice={debugGenerateCharacterChoice}
+          onGenerateRuinedMechanism={debugGenerateRuinedMechanism}
+          onGiveKnowledgeCollectable={debugGiveKnowledgeCollectable}
+          onSetIntelligence={debugSetIntelligence}
+          onClearRunKnowledge={debugClearRunKnowledge}
           onSetTimeSlots={debugSetTimeSlots}
           onSpawnEasyFight={debugSpawnEasyFight}
           onSpawnStandardFight={debugSpawnStandardFight}

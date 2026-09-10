@@ -17,15 +17,24 @@ import { clamp } from "../utils/stats";
 import {
   formatCombatDetail,
   observeBonuses,
+  resolveAbilityPower,
+  resolveAbilityPowerLevel,
   rollCombatResult,
   statsFromStrength,
+  techniqueHealAmount,
+  computeHitChance,
 } from "./CombatCalculationService";
 import { CrewCombatService } from "./CrewCombatService";
 import { PartyCombatService } from "./PartyCombatService";
 import { WorldCombatProgressionService } from "./WorldCombatProgressionService";
+import {
+  TargetResolutionService,
+  abilityTechniqueEffects,
+} from "./TargetResolutionService";
 import type { RandomService } from "./RandomService";
 import { escapeChances, isUnescapableRequest, threatLevelFor } from "./ThreatService";
 import type { ItemUseResult } from "./ItemService";
+import type { AbilityEffectSpec } from "../models/types";
 
 function cloneStats(stats: CombatantState["stats"]): CombatantState["stats"] {
   return { ...stats };
@@ -134,6 +143,7 @@ function resolveAttack(
   options: {
     powerBonus?: number;
     accuracyMod?: number;
+    techniquePowerLevel?: number;
     isHeavy?: boolean;
     attackerLabel?: string;
     defenderLabel?: string;
@@ -145,6 +155,7 @@ function resolveAttack(
     defender,
     powerBonus: options.powerBonus ?? 0,
     accuracyMod: options.accuracyMod ?? 0,
+    techniquePowerLevel: options.techniquePowerLevel,
     isHeavy: options.isHeavy ?? false,
     rng,
   });
@@ -187,6 +198,62 @@ function resolveAttack(
   return result;
 }
 
+function applyStatusSpec(
+  state: CombatState,
+  _actor: CombatantState,
+  recipients: CombatantState[],
+  spec: AbilityEffectSpec,
+  abilityName: string,
+  label: string,
+): void {
+  const effect = {
+    id: spec.id,
+    name: spec.name,
+    remainingTurns: spec.turns,
+    kind: spec.kind,
+    accuracyBonus: spec.accuracyBonus,
+    dodgeBonus: spec.dodgeBonus,
+    damageDealtMod: spec.damageDealtMod,
+    damageTakenMod: spec.damageTakenMod,
+  };
+  for (const recipient of recipients) {
+    recipient.statusEffects = recipient.statusEffects.filter((entry) => entry.id !== effect.id);
+    recipient.statusEffects.push({ ...effect });
+    log(
+      state,
+      `${label}'s ${abilityName} applies ${effect.name} to ${recipient.name} (${effect.remainingTurns} turns).`,
+    );
+  }
+}
+
+function observeRevealText(actor: CombatantState, observed: CombatantState): { body: string; detail: string } {
+  const intel = actor.stats.intelligence ?? 1;
+  const will = actor.stats.willpower ?? 1;
+  const bonuses = observeBonuses(will);
+  let body = `${observed.name}: HP ${observed.hp}/${observed.maxHp}.`;
+  if (intel <= 3) {
+    const defBand =
+      observed.stats.defense >= 10 ? "High" : observed.stats.defense >= 6 ? "Moderate" : "Low";
+    body += ` Defense: ${defBand}.`;
+  } else if (intel <= 7) {
+    body += ` Str ${observed.stats.strength}, Def ${observed.stats.defense}, Spd ${observed.stats.speed}.`;
+  } else {
+    body += ` Str ${observed.stats.strength}, Def ${observed.stats.defense}, Spd ${observed.stats.speed}, Will ${observed.stats.willpower}, Int ${observed.stats.intelligence ?? "?"}.`;
+    if (observed.weakPointDiscovered) {
+      body += " Weakness: exposed guard — heavy strikes punish.";
+    } else if (intel >= 10) {
+      body += " Suspected low stagger resistance.";
+    }
+  }
+  if (observed.nextActionHint) {
+    body += ` ${observed.nextActionHint}`;
+  }
+  return {
+    body: body.trim(),
+    detail: `Intelligence ${intel} · Willpower ${will} · +${bonuses.accuracy} accuracy, +${bonuses.dodge} dodge`,
+  };
+}
+
 function endPlayerTurn(state: CombatState, run: RunState | null | undefined, rng: RandomService): void {
   finishIfNeeded(state);
   if (state.finished) {
@@ -206,6 +273,7 @@ function createCombatant(options: {
   mp?: number;
   maxMp?: number;
   formation?: CombatantState["formation"];
+  level?: number;
 }): CombatantState {
   return {
     id: options.id,
@@ -227,6 +295,7 @@ function createCombatant(options: {
     statusEffects: [],
     abilities: options.abilities,
     formation: options.formation,
+    level: options.level ?? 1,
   };
 }
 
@@ -250,6 +319,7 @@ export const CombatEngine = {
       hp: enemyHp,
       stats: enemyStats,
       abilities: [],
+      level: Math.max(1, Math.round(request.enemyStrength / 2)),
     });
     pickEnemyIntent(enemy, rng);
     enemy.nextActionHint = hintFor(enemy.intendedAction);
@@ -266,6 +336,7 @@ export const CombatEngine = {
         stats: statsFromStrength(strength),
         abilities: [],
         formation: spec.formation ?? (index === 0 ? "FRONT" : "BACK"),
+        level: Math.max(1, Math.round(strength / 2)),
       });
       pickEnemyIntent(extra, rng);
       extra.nextActionHint = hintFor(extra.intendedAction);
@@ -295,6 +366,7 @@ export const CombatEngine = {
         abilities: getAbilitiesForPlayer(player),
         mp: player.mp ?? playerMaxMp,
         maxMp: playerMaxMp,
+        level: player.progression?.level ?? 1,
       }),
       enemies: [enemy, ...extraCombatants],
       activeSide: "PLAYER",
@@ -398,6 +470,13 @@ export const CombatEngine = {
           }
           break;
         }
+
+        const usability = TargetResolutionService.canUseAbility(next, actor, ability);
+        if (!usability.ok) {
+          log(next, `${label} cannot use ${ability.name}: ${usability.reason ?? "invalid targets"}.`);
+          break;
+        }
+
         actor.mp = Math.max(0, (actor.mp ?? 0) - mpCost);
         if (next.party) {
           const contrib = next.party.contributions.find((entry) => entry.combatantId === actor.id);
@@ -405,25 +484,115 @@ export const CombatEngine = {
             contrib.mpSpent = (contrib.mpSpent ?? 0) + mpCost;
           }
         }
-        const scale = actor.stats[ability.scalingStat];
-        const isAoe = ability.tags?.includes("AOE");
-        const targets = isAoe
-          ? livingEnemies(next)
-          : enemy
-            ? [enemy]
-            : [];
-        if (!targets.length) {
-          log(next, `${label} has no target for ${ability.name}.`);
-          break;
-        }
-        for (const target of targets) {
-          resolveAttack(next, actor, target, rng, {
-            powerBonus: ability.power + scale,
-            accuracyMod: ability.accuracyMod,
-            attackerLabel: label,
-            defenderLabel: target.name,
-            techniqueName: `${ability.name} lands (${mpCost} MP)`,
+
+        const powerLevel = resolveAbilityPowerLevel(ability);
+        const power = resolveAbilityPower(ability);
+        const scale = actor.stats[ability.scalingStat] ?? 0;
+        const selectedIds =
+          action.targetIds?.length
+            ? action.targetIds
+            : action.targetId
+              ? [action.targetId]
+              : [];
+        const hitTargets: CombatantState[] = [];
+        let anyResolved = false;
+
+        for (const effect of abilityTechniqueEffects(ability)) {
+          const resolution = TargetResolutionService.resolve({
+            state: next,
+            actor,
+            targeting: effect.targeting,
+            selectedIds,
+            rng,
+            damageMult: effect.damageMult ?? 1,
           });
+          if (!resolution.ok) {
+            log(next, `${label}'s ${ability.name} fails: ${resolution.reason ?? "no targets"}.`);
+            continue;
+          }
+          anyResolved = true;
+
+          if (effect.kind === "DAMAGE") {
+            for (const hit of resolution.hits) {
+              const target = PartyCombatService.getCombatant(next, hit.targetId);
+              if (!target || target.hp <= 0) {
+                continue;
+              }
+              const result = resolveAttack(next, actor, target, rng, {
+                // Power level is accuracy-only; damage bonus is scalingStat (+ legacy flat power).
+                powerBonus: Math.round((power + scale) * hit.damageMult),
+                accuracyMod: ability.accuracyMod,
+                techniquePowerLevel: powerLevel,
+                attackerLabel: label,
+                defenderLabel: target.name,
+                techniqueName: `${ability.name} lands (${mpCost} MP)`,
+              });
+              if (result.hit) {
+                hitTargets.push(target);
+                const status = effect.statusEffect ?? effect.applyEffect;
+                if (status && (effect.statusChance == null || rng.chance(effect.statusChance))) {
+                  applyStatusSpec(next, actor, [target], status, ability.name, label);
+                }
+              }
+            }
+          } else if (effect.kind === "HEAL") {
+            log(next, `${label} uses ${ability.name} (${mpCost} MP).`);
+            for (const targetId of resolution.targetIds) {
+              const target = PartyCombatService.getCombatant(next, targetId);
+              if (!target) {
+                continue;
+              }
+              const base =
+                effect.healAmount ??
+                Math.round(target.maxHp * (effect.healMaxHpFraction ?? 0.2));
+              const amount = techniqueHealAmount(base, actor.stats, ability.scalingStat);
+              const before = target.hp;
+              target.hp = clamp(target.hp + amount, 0, target.maxHp);
+              const healed = target.hp - before;
+              if (healed > 0) {
+                next.lastHits.push({
+                  id: createId("hit"),
+                  combatantId: target.id,
+                  side: target.side,
+                  amount: healed,
+                  kind: "HEAL",
+                });
+                log(next, `${target.name} recovers ${healed} HP.`);
+              }
+              hitTargets.push(target);
+            }
+          } else if (effect.kind === "BUFF" || effect.kind === "DEBUFF" || effect.kind === "UTILITY") {
+            log(next, `${label} uses ${ability.name} (${mpCost} MP).`);
+            const recipients = resolution.targetIds
+              .map((id) => PartyCombatService.getCombatant(next, id))
+              .filter((entry): entry is CombatantState => Boolean(entry));
+            const status = effect.applyEffect ?? effect.statusEffect ?? ability.applyEffect;
+            const applied: CombatantState[] = [];
+            for (const recipient of recipients) {
+              const needsHitCheck =
+                effect.kind === "DEBUFF" &&
+                recipient.side !== actor.side &&
+                recipient.id !== actor.id;
+              if (needsHitCheck) {
+                const hit = computeHitChance(actor, recipient, ability.accuracyMod ?? 0, powerLevel);
+                if (!rng.chance(hit.combined)) {
+                  recordHit(next, recipient, 0, "MISS");
+                  log(next, `${label}'s ${ability.name} misses ${recipient.name}.`);
+                  continue;
+                }
+              }
+              if (status) {
+                applyStatusSpec(next, actor, [recipient], status, ability.name, label);
+              }
+              applied.push(recipient);
+            }
+            hitTargets.push(...applied);
+          }
+        }
+
+        if (!anyResolved) {
+          // Refund MP if nothing happened
+          actor.mp = Math.min(actor.maxMp ?? actor.mp ?? 0, (actor.mp ?? 0) + mpCost);
         }
         break;
       }
@@ -442,15 +611,14 @@ export const CombatEngine = {
         const bonuses = observeBonuses(actor.stats.willpower);
         actor.accuracyBonus += bonuses.accuracy;
         actor.dodgeBonus += bonuses.dodge;
-        if (!observed.weakPointDiscovered && rng.chance(bonuses.weakPointChance)) {
+        const intel = actor.stats.intelligence ?? 1;
+        const weakChance = clamp(bonuses.weakPointChance + intel * 0.015, 0.25, 0.85);
+        if (!observed.weakPointDiscovered && rng.chance(weakChance)) {
           observed.weakPointDiscovered = true;
           log(next, `${label} spots a weak point on ${observed.name}.`);
         }
-        log(
-          next,
-          `${observed.name}: HP ${observed.hp}/${observed.maxHp}. Str ${observed.stats.strength}, Def ${observed.stats.defense}, Spd ${observed.stats.speed}. ${observed.nextActionHint ?? ""}`.trim(),
-          `Willpower ${actor.stats.willpower} · +${bonuses.accuracy} accuracy, +${bonuses.dodge} dodge`,
-        );
+        const reveal = observeRevealText(actor, observed);
+        log(next, reveal.body, reveal.detail);
         break;
       }
       case "ITEM": {
@@ -519,6 +687,10 @@ export const CombatEngine = {
       actor.hp = clamp(actor.hp + result.hpHealed, 0, actor.maxHp);
       recordHit(next, actor, result.hpHealed, "HEAL");
     }
+    if (result.mpRestored > 0) {
+      const maxMp = actor.maxMp ?? 0;
+      actor.mp = clamp((actor.mp ?? 0) + result.mpRestored, 0, maxMp);
+    }
     log(next, result.message);
     if (result.guaranteeEscape) {
       next.guaranteedEscape = true;
@@ -546,6 +718,7 @@ export const CombatEngine = {
         consumed: true,
         freeAction: false,
         hpHealed: healAmount,
+        mpRestored: 0,
         guaranteeEscape: false,
         itemName,
       },

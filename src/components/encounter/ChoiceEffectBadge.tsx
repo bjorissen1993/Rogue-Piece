@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import type { Encounter, EncounterChoice, Player, TimeOfDay } from "../../models/types";
+import type { Encounter, EncounterChoice, Player, RunState, TimeOfDay } from "../../models/types";
 import { costItemTooltip } from "../../utils/effectTooltips";
 import { STAT_ACCENT, type ChoiceCostItem } from "../../utils/presentation";
 import { BOUNTY_ART, HudArt, HudIcon } from "../HudIcons";
@@ -35,6 +35,7 @@ type ChoiceEffectBadgeProps = {
   encounter?: Encounter | null;
   timeOfDay?: TimeOfDay;
   player?: Player | null;
+  run?: RunState | null;
   isDev?: boolean;
 };
 
@@ -44,10 +45,11 @@ export function ChoiceEffectBadge({
   encounter,
   timeOfDay,
   player,
+  run,
   isDev = false,
 }: ChoiceEffectBadgeProps) {
   if (item.kind === "risk") {
-    const tip = costItemTooltip(item, choice, encounter, timeOfDay, player, isDev);
+    const tip = costItemTooltip(item, choice, encounter, timeOfDay, player, isDev, run);
     return (
       <EffectTooltip tip={tip}>
         <ChoiceRiskIndicator item={item} />
@@ -55,17 +57,20 @@ export function ChoiceEffectBadge({
     );
   }
 
-  const tip = costItemTooltip(item, choice, encounter, timeOfDay, player, isDev);
+  const tip = costItemTooltip(item, choice, encounter, timeOfDay, player, isDev, run);
   const accent = item.stat ? STAT_ACCENT[item.stat] : undefined;
+  const timeProminent = item.kind === "time";
 
   return (
     <EffectTooltip tip={tip}>
       <span
-        className={`choice-cost-item choice-effect-badge tone-${item.tone} is-${item.kind}`}
+        className={`choice-cost-item choice-effect-badge tone-${item.tone} is-${item.kind}${
+          timeProminent ? " is-time-prominent" : ""
+        }`}
         style={accent ? ({ "--choice-accent": accent } as CSSProperties) : undefined}
       >
         <CostGlyph item={item} />
-        <span className="choice-cost-label">{item.label}</span>
+        <span className="choice-cost-label">{timeProminent ? "⧖" : item.label}</span>
         <span className="choice-cost-value">{item.value}</span>
       </span>
     </EffectTooltip>

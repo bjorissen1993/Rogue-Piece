@@ -6,7 +6,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Street Kid",
     description: "You grew up running alleys and rooftops. Fast, hungry, and used to disappearing.",
     raceIds: ["HUMAN"],
-    stats: { strength: 2, defense: 2, speed: 4, willpower: 3, charisma: 2 },
+    stats: { strength: 2, defense: 2, speed: 4, willpower: 3, charisma: 2, intelligence: 4 },
     berries: 500,
   },
   {
@@ -14,7 +14,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Dojo Student",
     description: "Years of drills left you sturdy and sharp. Money is tight, but your fists are not.",
     raceIds: ["HUMAN"],
-    stats: { strength: 4, defense: 3, speed: 2, willpower: 3, charisma: 2 },
+    stats: { strength: 4, defense: 3, speed: 2, willpower: 3, charisma: 2, intelligence: 4 },
     berries: 250,
   },
   {
@@ -22,7 +22,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Sailor",
     description: "A working deckhand with steady hands, a little coin, and no fear of the horizon.",
     raceIds: ["HUMAN"],
-    stats: { strength: 3, defense: 3, speed: 3, willpower: 3, charisma: 3 },
+    stats: { strength: 3, defense: 3, speed: 3, willpower: 3, charisma: 3, intelligence: 4 },
     berries: 750,
   },
   {
@@ -30,7 +30,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Fish-Man Warrior",
     description: "Trained in Fish-Man Karate. The surface world has never been kind, and you remember.",
     raceIds: ["FISH_MAN"],
-    stats: { strength: 5, defense: 3, speed: 3, willpower: 3, charisma: 1 },
+    stats: { strength: 5, defense: 3, speed: 3, willpower: 3, charisma: 1, intelligence: 3 },
     berries: 400,
   },
   {
@@ -38,7 +38,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Deep Fisher",
     description: "You hauled nets in black water. Patience, lungs, and a hook that does not miss.",
     raceIds: ["FISH_MAN"],
-    stats: { strength: 4, defense: 2, speed: 4, willpower: 3, charisma: 2 },
+    stats: { strength: 4, defense: 2, speed: 4, willpower: 3, charisma: 2, intelligence: 4 },
     berries: 550,
   },
   {
@@ -46,7 +46,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Reef Singer",
     description: "Songs of the deep follow you. Surface folk call it charm. You call it breathing.",
     raceIds: ["MERFOLK"],
-    stats: { strength: 2, defense: 2, speed: 4, willpower: 3, charisma: 4 },
+    stats: { strength: 2, defense: 2, speed: 4, willpower: 3, charisma: 4, intelligence: 4 },
     berries: 600,
   },
   {
@@ -54,7 +54,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Current Guide",
     description: "You read tides the way others read maps.",
     raceIds: ["MERFOLK"],
-    stats: { strength: 3, defense: 2, speed: 5, willpower: 3, charisma: 3 },
+    stats: { strength: 3, defense: 2, speed: 5, willpower: 3, charisma: 3, intelligence: 4 },
     berries: 500,
   },
   {
@@ -62,7 +62,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Guardian",
     description: "You kept a grove and a people. Electro answers when you close a fist.",
     raceIds: ["MINK"],
-    stats: { strength: 4, defense: 3, speed: 4, willpower: 3, charisma: 2 },
+    stats: { strength: 4, defense: 3, speed: 4, willpower: 3, charisma: 2, intelligence: 4 },
     berries: 450,
   },
   {
@@ -70,7 +70,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Sea-Cat Trader",
     description: "Pelts, rumors, and a smile full of sharp teeth.",
     raceIds: ["MINK"],
-    stats: { strength: 3, defense: 2, speed: 4, willpower: 2, charisma: 4 },
+    stats: { strength: 3, defense: 2, speed: 4, willpower: 2, charisma: 4, intelligence: 4 },
     berries: 700,
   },
   {
@@ -78,7 +78,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Warrior of Elbaph",
     description: "Axe, saga, and a shadow that covers a street.",
     raceIds: ["GIANT"],
-    stats: { strength: 6, defense: 4, speed: 1, willpower: 4, charisma: 2 },
+    stats: { strength: 6, defense: 4, speed: 1, willpower: 4, charisma: 2, intelligence: 4 },
     berries: 300,
   },
   {
@@ -86,7 +86,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Wandering Giant",
     description: "The Blues are small. You keep ducking for doorways anyway.",
     raceIds: ["GIANT"],
-    stats: { strength: 5, defense: 4, speed: 2, willpower: 3, charisma: 3 },
+    stats: { strength: 5, defense: 4, speed: 2, willpower: 3, charisma: 3, intelligence: 4 },
     berries: 400,
   },
   {
@@ -94,7 +94,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Skypiean",
     description: "Born under a sun that sits too close. Prayer, cloud, and a mild disdain for dirt.",
     raceIds: ["SKY_PERSON"],
-    stats: { strength: 2, defense: 2, speed: 3, willpower: 4, charisma: 4 },
+    stats: { strength: 2, defense: 2, speed: 3, willpower: 4, charisma: 4, intelligence: 5 },
     berries: 500,
   },
   {
@@ -102,7 +102,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Shandian",
     description: "A warrior of the forest in the sky. The land was taken. The fight was not.",
     raceIds: ["SKY_PERSON"],
-    stats: { strength: 4, defense: 3, speed: 4, willpower: 4, charisma: 2 },
+    stats: { strength: 4, defense: 3, speed: 4, willpower: 4, charisma: 2, intelligence: 4 },
     berries: 350,
   },
   {
@@ -110,7 +110,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Birkan",
     description: "From a ruined sky island of soldiers and thunder. Discipline is all that is left.",
     raceIds: ["SKY_PERSON"],
-    stats: { strength: 4, defense: 3, speed: 3, willpower: 5, charisma: 2 },
+    stats: { strength: 4, defense: 3, speed: 3, willpower: 5, charisma: 2, intelligence: 5 },
     berries: 400,
   },
   {
@@ -118,7 +118,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Longarm Boxer",
     description: "Extra joints, extra reach, extra grudges.",
     raceIds: ["LONGARM"],
-    stats: { strength: 4, defense: 3, speed: 3, willpower: 3, charisma: 2 },
+    stats: { strength: 4, defense: 3, speed: 3, willpower: 3, charisma: 2, intelligence: 4 },
     berries: 400,
   },
   {
@@ -126,7 +126,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Longleg Kicker",
     description: "You settle arguments with a shin from another postal code.",
     raceIds: ["LONGLEG"],
-    stats: { strength: 4, defense: 2, speed: 4, willpower: 3, charisma: 2 },
+    stats: { strength: 4, defense: 2, speed: 4, willpower: 3, charisma: 2, intelligence: 4 },
     berries: 400,
   },
   {
@@ -134,7 +134,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Snakeneck Scholar",
     description: "You read over people's shoulders. They rarely like it.",
     raceIds: ["SNAKENECK"],
-    stats: { strength: 2, defense: 2, speed: 3, willpower: 4, charisma: 4 },
+    stats: { strength: 2, defense: 2, speed: 3, willpower: 4, charisma: 4, intelligence: 5 },
     berries: 550,
   },
   {
@@ -142,7 +142,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Seeker",
     description: "The third eye is not awake. You still look for the words that might open it.",
     raceIds: ["THREE_EYE"],
-    stats: { strength: 2, defense: 2, speed: 3, willpower: 5, charisma: 3 },
+    stats: { strength: 2, defense: 2, speed: 3, willpower: 5, charisma: 3, intelligence: 5 },
     berries: 450,
   },
   {
@@ -150,7 +150,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Tontatta Scout",
     description: "Small enough to vanish. Strong enough to steal a sword.",
     raceIds: ["TONTATTA"],
-    stats: { strength: 3, defense: 1, speed: 5, willpower: 3, charisma: 3 },
+    stats: { strength: 3, defense: 1, speed: 5, willpower: 3, charisma: 3, intelligence: 4 },
     berries: 300,
   },
   {
@@ -158,7 +158,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Forgotten Blood",
     description: "Even other giants stare. You have learned to duck history as well as doorframes.",
     raceIds: ["ANCIENT_GIANT"],
-    stats: { strength: 7, defense: 5, speed: 1, willpower: 4, charisma: 1 },
+    stats: { strength: 7, defense: 5, speed: 1, willpower: 4, charisma: 1, intelligence: 4 },
     berries: 200,
   },
   {
@@ -166,7 +166,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Exiled Blood",
     description: "The Government wrote your people out of the ledgers. You are still here.",
     raceIds: ["BUCCANEER"],
-    stats: { strength: 6, defense: 4, speed: 2, willpower: 4, charisma: 2 },
+    stats: { strength: 6, defense: 4, speed: 2, willpower: 4, charisma: 2, intelligence: 4 },
     berries: 250,
   },
   {
@@ -174,7 +174,7 @@ export const ORIGINS: OriginDefinition[] = [
     name: "Last Ember",
     description: "A plume of fire and a reason to never be seen. Survival is the only tradition left.",
     raceIds: ["LUNARIAN"],
-    stats: { strength: 4, defense: 5, speed: 3, willpower: 5, charisma: 1 },
+    stats: { strength: 4, defense: 5, speed: 3, willpower: 5, charisma: 1, intelligence: 4 },
     berries: 200,
   },
 ];

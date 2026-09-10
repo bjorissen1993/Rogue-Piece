@@ -10,9 +10,10 @@ type RunBarProps = {
   run: RunState;
   isDev: boolean;
   onMenu: () => void;
+  onOpenTime?: () => void;
 };
 
-export function RunBar({ run, isDev, onMenu }: RunBarProps) {
+export function RunBar({ run, isDev, onMenu, onOpenTime }: RunBarProps) {
   const location = getLocation(run.currentLocationId);
   const region = location ? getRegionName(location.regionId) : "Unknown seas";
   const place = location?.name ?? "Unknown waters";
@@ -33,10 +34,15 @@ export function RunBar({ run, isDev, onMenu }: RunBarProps) {
           </button>
           <div className="run-cluster run-cluster-time">
             <HudIcon className="run-glyph" name="hourglass" size={22} />
-            <div>
+            <button
+              className="run-time-btn"
+              onClick={onOpenTime}
+              type="button"
+              title="Day and crew schedule"
+            >
               <p className="run-day">Day {run.day}</p>
               <p className="run-clock">{clockFromTimeOfDay(run.timeOfDay)}</p>
-            </div>
+            </button>
             {isDev ? <DevBadge /> : null}
           </div>
         </div>

@@ -17,7 +17,7 @@ import type {
   WorldCharacter,
 } from "../models/types";
 import { STAT_LABELS } from "../utils/text";
-import { clampStat } from "../utils/stats";
+import { clampStat, ensurePlayerStats } from "../utils/stats";
 import { CharacterService } from "./CharacterService";
 import { MpService } from "./MpService";
 import { WeaponService } from "./WeaponService";
@@ -72,16 +72,16 @@ function ensureCrewProgression(run: RunState, characterId: string): CharacterPro
 
 function crewStats(character: WorldCharacter): PlayerStats {
   if (character.crewStats) {
-    return character.crewStats;
+    return ensurePlayerStats(character.crewStats);
   }
   const base = character.strength;
-  return {
+  return ensurePlayerStats({
     strength: base,
     defense: Math.max(1, base - 1),
     speed: Math.max(1, base - 2),
     willpower: Math.max(2, Math.floor(base / 2)),
     charisma: 2,
-  };
+  });
 }
 
 export const ProgressionService = {
@@ -101,6 +101,17 @@ export const ProgressionService = {
       return run.player.name;
     }
     return CharacterService.getCharacter(run, characterId)?.name ?? "Crewmate";
+  },
+
+  getStats(run: RunState, characterId: "player" | string): PlayerStats {
+    if (characterId === "player") {
+      return ensurePlayerStats(run.player.stats);
+    }
+    const character = CharacterService.getCharacter(run, characterId);
+    if (!character) {
+      return ensurePlayerStats(undefined);
+    }
+    return ensurePlayerStats(crewStats(character));
   },
 
   grantExperience(
@@ -194,12 +205,12 @@ export const ProgressionService = {
   },
 
   applyStatPoint(run: RunState, characterId: "player" | string, stat: StatName): string {
-    const progression = this.getProgression(run, characterId);
-    if (progression.availableStatPoints <= 0) {
-      return "No stat points available.";
-    }
-    progression.availableStatPoints -= 1;
     if (characterId === "player") {
+      const progression = ensurePlayerProgression(run.player);
+      if (progression.availableStatPoints <= 0) {
+        return "No stat points available.";
+      }
+      progression.availableStatPoints -= 1;
       run.player.stats[stat] = clampStat(run.player.stats[stat] + 1);
       if (stat === "defense" || stat === "willpower") {
         run.player.maxHp = Math.max(run.player.maxHp, 100 + run.player.stats.defense * 2);
@@ -209,10 +220,18 @@ export const ProgressionService = {
       }
       return `${STAT_LABELS[stat]} increased to ${run.player.stats[stat]}.`;
     }
+    const progression = ensureCrewProgression(run, characterId);
+    if (!progression) {
+      return "Crewmate not found.";
+    }
+    if (progression.availableStatPoints <= 0) {
+      return "No stat points available.";
+    }
     const character = CharacterService.getCharacter(run, characterId);
     if (!character) {
       return "Crewmate not found.";
     }
+    progression.availableStatPoints -= 1;
     const stats = crewStats(character);
     stats[stat] = clampStat(stats[stat] + 1);
     character.crewStats = stats;
@@ -283,6 +302,7 @@ export const ProgressionService = {
   migratePlayer(player: Player): Player {
     return {
       ...player,
+      stats: ensurePlayerStats(player.stats),
       progression: player.progression ?? defaultProgression(),
       unlockedTechniques: player.unlockedTechniques ?? [],
       title: player.title ?? "Independent Sailor",
@@ -299,6 +319,7 @@ export const ProgressionService = {
   migrateCharacter(character: WorldCharacter): WorldCharacter {
     return {
       ...character,
+      crewStats: character.crewStats ? ensurePlayerStats(character.crewStats) : character.crewStats,
       unlockedTechniques: character.unlockedTechniques ?? [],
     };
   },

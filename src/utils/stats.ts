@@ -8,15 +8,30 @@ export function clampStat(value: number): number {
   return clamp(value, 1, 20);
 }
 
+export function ensurePlayerStats(stats: Partial<PlayerStats> | PlayerStats | undefined): PlayerStats {
+  const base = stats ?? {};
+  return {
+    strength: clampStat(base.strength ?? 1),
+    defense: clampStat(base.defense ?? 1),
+    speed: clampStat(base.speed ?? 1),
+    willpower: clampStat(base.willpower ?? 1),
+    charisma: clampStat(base.charisma ?? 1),
+    intelligence: clampStat(
+      base.intelligence ??
+        Math.max(2, Math.round(((base.willpower ?? 2) + (base.charisma ?? 2)) / 2)),
+    ),
+  };
+}
+
 export function applyStatChanges(
   stats: PlayerStats,
   changes: Partial<PlayerStats> | undefined,
 ): PlayerStats {
   if (!changes) {
-    return stats;
+    return ensurePlayerStats(stats);
   }
 
-  const next = { ...stats };
+  const next = ensurePlayerStats(stats);
   (Object.keys(changes) as StatName[]).forEach((stat) => {
     const delta = changes[stat];
     if (delta !== undefined) {

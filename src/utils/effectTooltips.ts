@@ -1,4 +1,4 @@
-import { computeHealAmount, getItemDefinition } from "../data/items";
+import { computeHealAmount, computeMpRestoreAmount, getItemDefinition } from "../data/items";
 import { getWeapon } from "../data/weapons";
 import type {
   Encounter,
@@ -16,6 +16,7 @@ import {
   choiceLoseStats,
   choiceRiskLevel,
   choiceTimeCostId,
+  remainingSlotsToday,
   resolveTimeCost,
   type ChoiceCostItem,
 } from "./presentation";
@@ -28,6 +29,7 @@ export function timeEffectTip(
   choice: EncounterChoice,
   encounter: Encounter | null | undefined,
   timeOfDay?: TimeOfDay,
+  run?: RunState | null,
 ): string {
   const costId = choiceTimeCostId(choice, encounter);
   if (costId == null || costId === "BRIEF" || costId === 0) {
@@ -37,10 +39,17 @@ export function timeEffectTip(
     return "Spends the rest of today. You advance to the next dawn.";
   }
   const slots = resolveTimeCost(costId, 0, timeOfDay);
-  if (slots === 1) {
-    return "Advances the day by one time slot.";
+  const remaining = run ? remainingSlotsToday(run.timeOfDay) : null;
+  const after =
+    remaining == null ? null : Math.max(0, remaining - slots);
+  const base =
+    slots === 1
+      ? "This activity uses 1 of your remaining time slots today."
+      : `This activity uses ${slots} of your remaining time slots today.`;
+  if (after == null) {
+    return base;
   }
-  return `Advances the day by ${slots} time slots.`;
+  return `${base} After: ${after} time slot${after === 1 ? "" : "s"} remain.`;
 }
 
 export function hpEffectTip(change: number, player?: Player | null): string {
@@ -148,10 +157,11 @@ export function costItemTooltip(
   timeOfDay?: TimeOfDay,
   player?: Player | null,
   isDev = false,
+  run?: RunState | null,
 ): string {
   switch (item.kind) {
     case "time":
-      return timeEffectTip(choice, encounter, timeOfDay);
+      return timeEffectTip(choice, encounter, timeOfDay, run);
     case "hp":
       return hpEffectTip(choice.outcome.hpChange ?? 0, player);
     case "berries":
@@ -196,6 +206,28 @@ export function itemGrantTip(itemId: string, player?: Player | null): string {
       } else {
         effectParts.push(
           bits.length ? `Restores ${bits.join(" ")} when used.` : "Restores HP when used.",
+        );
+      }
+    } else if (effect.type === "RESTORE_MP") {
+      const bits: string[] = [];
+      if (effect.amount > 0) {
+        bits.push(`+${effect.amount}`);
+      }
+      if (effect.percentMaxMp) {
+        bits.push(`+${effect.percentMaxMp}% max MP`);
+      }
+      if (player) {
+        const maxMp = player.maxMp ?? 0;
+        const current = player.mp ?? 0;
+        const total = computeMpRestoreAmount(effect.amount, effect.percentMaxMp, maxMp);
+        const after = Math.min(maxMp, current + total);
+        const label = bits.length
+          ? `Restores ${bits.join(" ")} (${total} MP)`
+          : `Restores ${total} MP`;
+        effectParts.push(`${label}. Current ${current} → ${after}.`);
+      } else {
+        effectParts.push(
+          bits.length ? `Restores ${bits.join(" ")} when used.` : "Restores MP when used.",
         );
       }
     } else if (effect.type === "GUARANTEE_ESCAPE") {

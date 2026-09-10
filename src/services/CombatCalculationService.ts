@@ -1,4 +1,5 @@
-import type { CombatSide, CombatantState, PlayerStats, StatName } from "../models/types";
+import type { Ability, CombatSide, CombatantState, PlayerStats, StatName, StatusEffect } from "../models/types";
+import { powerLevelFromLegacyPower, techniqueBaseHitChance } from "../game/techniquePower";
 import { clamp } from "../utils/stats";
 import type { RandomService } from "./RandomService";
 
@@ -34,6 +35,8 @@ export interface CombatCalcInput {
   defender: CombatantState;
   powerBonus?: number;
   accuracyMod?: number;
+  /** When set, accuracy is driven by power level vs attacker.level. */
+  techniquePowerLevel?: number;
   isHeavy?: boolean;
 }
 
@@ -57,6 +60,13 @@ const DEF_MULTIPLIER = 1.4;
 const CRIT_BASE = 0.06;
 const CRIT_MULT = 1.45;
 
+function statusSum(
+  effects: StatusEffect[],
+  key: "accuracyBonus" | "dodgeBonus" | "damageDealtMod" | "damageTakenMod",
+): number {
+  return effects.reduce((sum, effect) => sum + (effect[key] ?? 0), 0);
+}
+
 function softenEarlyEnemyDamage(
   damage: number,
   enemyStrength: number,
@@ -73,38 +83,106 @@ function softenEarlyEnemyDamage(
   return Math.min(damage, softCap);
 }
 
+export function resolveAbilityPowerLevel(ability: Ability): number {
+  return ability.powerLevel ?? powerLevelFromLegacyPower(ability.power);
+}
+
+/**
+ * Flat technique power added into damage.
+ * When `powerLevel` is set, power level is accuracy-only — damage comes from scalingStat.
+ */
+export function resolveAbilityPower(ability: Ability): number {
+  if (ability.powerLevel != null) {
+    return 0;
+  }
+  return ability.power;
+}
+
+export function techniqueScalingPowerBonus(
+  stats: PlayerStats,
+  scalingStat: StatName,
+  damageMult = 1,
+): number {
+  return Math.round(scalingStatValue(stats, scalingStat) * damageMult);
+}
+
+const HEAL_PER_SCALING = 2;
+
+/** Heal amount for technique offers / resolution (base + scaling). */
+export function techniqueHealAmount(
+  baseHeal: number | undefined,
+  stats: PlayerStats,
+  scalingStat: StatName,
+): number {
+  return Math.max(1, (baseHeal ?? 8) + scalingStatValue(stats, scalingStat) * HEAL_PER_SCALING);
+}
+
+/** Rough damage range vs a typical foe (for technique pick UI). */
+export function estimateTechniqueDamageRange(
+  stats: PlayerStats,
+  scalingStat: StatName,
+  damageMult = 1,
+  referenceDefense = 3,
+): { minDamage: number; maxDamage: number } {
+  const powerBonus = techniqueScalingPowerBonus(stats, scalingStat, damageMult);
+  const baseCore = BASE_DAMAGE + stats.strength * STR_MULTIPLIER + powerBonus;
+  const reduction = referenceDefense * DEF_MULTIPLIER;
+  const minDamage = Math.max(1, Math.round(baseCore - 2 - reduction));
+  const maxDamage = Math.max(minDamage, Math.round(baseCore + 4 - reduction));
+  return { minDamage, maxDamage };
+}
+
 export function computeHitChance(
   attacker: CombatantState,
   defender: CombatantState,
   accuracyMod = 0,
+  techniquePowerLevel?: number,
 ): HitChanceBreakdown {
   const speedBonus = attacker.stats.speed * 0.015;
-  const accuracyBonus = attacker.accuracyBonus / 100;
-  const techniqueMod = accuracyMod / 100;
-  const accuracy = clamp(
-    BASE_ACCURACY + speedBonus + accuracyBonus + techniqueMod,
-    0.45,
-    0.98,
-  );
+  const statusAcc = statusSum(attacker.statusEffects, "accuracyBonus") / 100;
+  const accuracyBonus = attacker.accuracyBonus / 100 + statusAcc;
+  const statusDodge = statusSum(defender.statusEffects, "dodgeBonus");
+  let baseAccuracy = BASE_ACCURACY;
+  let techniqueMod = accuracyMod / 100;
+  const parts: string[] = [];
+
+  if (techniquePowerLevel != null) {
+    const characterLevel = attacker.level ?? 1;
+    baseAccuracy = techniqueBaseHitChance(techniquePowerLevel, characterLevel, accuracyMod);
+    techniqueMod = 0;
+    parts.push(
+      `Power Lv ${techniquePowerLevel} vs Lv ${characterLevel} → ${(baseAccuracy * 100).toFixed(0)}%`,
+    );
+  } else {
+    parts.push(`Base accuracy ${(BASE_ACCURACY * 100).toFixed(0)}%`);
+    if (accuracyMod) {
+      parts.push(`Technique bias ${accuracyMod >= 0 ? "+" : ""}${accuracyMod}%`);
+    }
+  }
+
+  const accuracy = clamp(baseAccuracy + speedBonus + accuracyBonus + techniqueMod, 0.15, 0.98);
   const dodgeChance = clamp(
-    0.04 + defender.stats.speed * 0.012 + defender.dodgeBonus / 100 - attacker.stats.speed * 0.006,
+    0.04 +
+      defender.stats.speed * 0.012 +
+      defender.dodgeBonus / 100 +
+      statusDodge / 100 -
+      attacker.stats.speed * 0.006,
     0.02,
-    0.35,
+    0.4,
   );
   const combined = accuracy * (1 - dodgeChance);
-  const parts = [
-    `Base accuracy ${(BASE_ACCURACY * 100).toFixed(0)}%`,
-    `Speed +${(speedBonus * 100).toFixed(1)}%`,
-    attacker.accuracyBonus ? `Observe/bonus +${attacker.accuracyBonus}%` : null,
-    accuracyMod ? `Technique mod ${accuracyMod >= 0 ? "+" : ""}${accuracyMod}%` : null,
-    `Enemy dodge ~${(dodgeChance * 100).toFixed(0)}%`,
-    `Net hit ~${(combined * 100).toFixed(0)}%`,
-  ].filter(Boolean) as string[];
+  parts.push(`Speed +${(speedBonus * 100).toFixed(1)}%`);
+  if (attacker.accuracyBonus || statusAcc) {
+    parts.push(`Bonuses +${((accuracyBonus) * 100).toFixed(0)}%`);
+  }
+  parts.push(`Enemy dodge ~${(dodgeChance * 100).toFixed(0)}%`);
+  parts.push(`Net hit ~${(combined * 100).toFixed(0)}%`);
+
   return {
-    baseAccuracy: BASE_ACCURACY,
+    baseAccuracy,
     speedBonus,
-    accuracyBonus: attacker.accuracyBonus,
-    techniqueMod: accuracyMod,
+    accuracyBonus: attacker.accuracyBonus + statusSum(attacker.statusEffects, "accuracyBonus"),
+    techniqueMod: techniquePowerLevel != null ? 0 : accuracyMod,
     dodgeChance,
     combined,
     parts,
@@ -178,38 +256,39 @@ export function computeDamageRange(input: CombatCalcInput): DamageBreakdown {
 }
 
 export function rollCombatResult(input: CombatCalcPreview): CombatCalcResult {
-  const { attacker, defender, powerBonus = 0, accuracyMod = 0, isHeavy = false, rng } = input;
-  const hitBreakdown = computeHitChance(attacker, defender, accuracyMod);
+  const {
+    attacker,
+    defender,
+    powerBonus = 0,
+    accuracyMod = 0,
+    techniquePowerLevel,
+    isHeavy = false,
+    rng,
+  } = input;
+  const hitBreakdown = computeHitChance(attacker, defender, accuracyMod, techniquePowerLevel);
 
-  if (rng) {
-    const accuracy = clamp(
-      hitBreakdown.baseAccuracy +
-        hitBreakdown.speedBonus +
-        hitBreakdown.accuracyBonus / 100 +
-        hitBreakdown.techniqueMod / 100,
-      0.45,
-      0.98,
-    );
-    if (rng.next() > accuracy || rng.chance(hitBreakdown.dodgeChance)) {
-      return {
-        hit: false,
-        dodged: true,
-        crit: false,
-        damage: 0,
-        hitBreakdown,
-        damageBreakdown: computeDamageRange(input),
-      };
-    }
+  if (rng && !rng.chance(hitBreakdown.combined)) {
+    return {
+      hit: false,
+      dodged: true,
+      crit: false,
+      damage: 0,
+      hitBreakdown,
+      damageBreakdown: computeDamageRange(input),
+    };
   }
 
   const rollMin = -2;
   const rollMax = 4;
   const variance = rng ? rng.nextInt(rollMin, rollMax) : 0;
-  const baseCore = BASE_DAMAGE + attacker.stats.strength * STR_MULTIPLIER + powerBonus + variance;
+  const dealtMod = 1 + statusSum(attacker.statusEffects, "damageDealtMod");
+  const takenMod = 1 + statusSum(defender.statusEffects, "damageTakenMod");
+  const baseCore =
+    (BASE_DAMAGE + attacker.stats.strength * STR_MULTIPLIER + powerBonus + variance) * dealtMod;
   const crit = rng ? rng.chance(CRIT_BASE + attacker.stats.speed * 0.008) : false;
-  const raw = crit ? Math.round(baseCore * CRIT_MULT) : baseCore;
+  const raw = crit ? Math.round(baseCore * CRIT_MULT) : Math.round(baseCore);
   const reduction = defender.stats.defense * DEF_MULTIPLIER;
-  let damage = Math.max(1, Math.round(raw - reduction));
+  let damage = Math.max(1, Math.round((raw - reduction) * takenMod));
   if (defender.defending) {
     damage = Math.max(1, Math.round(damage * 0.5));
   }
@@ -262,6 +341,7 @@ export function statsFromStrength(strength: number): PlayerStats {
     speed: Math.max(1, strength - 2),
     willpower: Math.max(2, Math.floor(strength / 2)),
     charisma: 2,
+    intelligence: Math.max(2, Math.floor(strength / 2)),
   };
 }
 

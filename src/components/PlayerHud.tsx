@@ -21,7 +21,7 @@ type PlayerHudProps = {
   onCrew: () => void;
 };
 
-const STATS: StatName[] = ["strength", "defense", "speed", "willpower", "charisma"];
+const STATS: StatName[] = ["strength", "defense", "speed", "willpower", "charisma", "intelligence"];
 
 export function PlayerHud({ run, onInventory, onCrew }: PlayerHudProps) {
   const { player } = run;

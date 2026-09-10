@@ -21,6 +21,7 @@ import { rollCombatResult, statsFromStrength } from "./CombatCalculationService"
 import type { RandomService } from "./RandomService";
 import { CrewService } from "./CrewService";
 import { ProgressionService } from "./ProgressionService";
+import { CharacterScheduleService } from "./CharacterScheduleService";
 
 export const SUPPORT_ABILITIES: CrewSupportAbility[] = [
   {
@@ -47,7 +48,7 @@ export const SUPPORT_ABILITIES: CrewSupportAbility[] = [
 ];
 
 function defaultPartyConfig(run: RunState): ActivePartyConfig {
-  const ready = run.crew.filter((m) => m.status !== "Injured" && m.status !== "Captured");
+  const ready = run.crew.filter((m) => CharacterScheduleService.isAvailable(run, m.characterId));
   return {
     activeFighterIds: ready.slice(0, MAX_ACTIVE_FIGHTERS).map((m) => m.characterId),
     supportSlotIds: ready.slice(MAX_ACTIVE_FIGHTERS, MAX_ACTIVE_FIGHTERS + MAX_SUPPORT_SLOTS).map((m) => m.characterId),
@@ -98,8 +99,16 @@ export const CrewCombatService = {
     if (!run.activeParty) {
       run.activeParty = defaultPartyConfig(run);
     }
-    run.activeParty.activeFighterIds = run.activeParty.activeFighterIds.slice(0, MAX_ACTIVE_FIGHTERS);
-    run.activeParty.supportSlotIds = run.activeParty.supportSlotIds.slice(0, MAX_SUPPORT_SLOTS);
+    run.activeParty.activeFighterIds = run.activeParty.activeFighterIds
+      .filter((id) => CharacterScheduleService.isAvailable(run, id))
+      .slice(0, MAX_ACTIVE_FIGHTERS);
+    run.activeParty.supportSlotIds = run.activeParty.supportSlotIds
+      .filter(
+        (id) =>
+          CharacterScheduleService.isAvailable(run, id) &&
+          !run.activeParty!.activeFighterIds.includes(id),
+      )
+      .slice(0, MAX_SUPPORT_SLOTS);
     for (const member of run.crew) {
       member.inActiveParty = run.activeParty.activeFighterIds.includes(member.characterId);
       member.inSupportSlot = run.activeParty.supportSlotIds.includes(member.characterId);
@@ -124,10 +133,24 @@ export const CrewCombatService = {
 
   initCombatParty(run: RunState, combat: CombatState): CombatPartyState {
     const config = this.ensurePartyConfig(run);
-    const readyCrew = run.crew.filter((member) => member.status !== "Injured" && member.status !== "Captured");
-    config.activeFighterIds = readyCrew.slice(0, MAX_ACTIVE_FIGHTERS).map((member) => member.characterId);
+    const readyCrew = run.crew.filter((member) =>
+      CharacterScheduleService.isAvailable(run, member.characterId),
+    );
+    // Keep configured fighters who are still available; fill gaps from ready crew.
+    config.activeFighterIds = config.activeFighterIds
+      .filter((id) => readyCrew.some((member) => member.characterId === id))
+      .slice(0, MAX_ACTIVE_FIGHTERS);
+    for (const member of readyCrew) {
+      if (config.activeFighterIds.length >= MAX_ACTIVE_FIGHTERS) {
+        break;
+      }
+      if (!config.activeFighterIds.includes(member.characterId)) {
+        config.activeFighterIds.push(member.characterId);
+      }
+    }
     config.supportSlotIds = config.supportSlotIds.filter((id) =>
-      readyCrew.some((member) => member.characterId === id),
+      readyCrew.some((member) => member.characterId === id) &&
+      !config.activeFighterIds.includes(id),
     );
     if (config.supportSlotIds.length < MAX_SUPPORT_SLOTS) {
       const reserve = readyCrew
@@ -191,6 +214,7 @@ export const CrewCombatService = {
         dodgeBonus: 0,
         statusEffects: [],
         abilities,
+        level: member.progression?.level ?? 1,
       });
       contributionFor(party, characterId, character.name, "PLAYER", "ACTIVE");
     }

@@ -1,7 +1,12 @@
 import type { Ability, CombatantState, CombatState, StatusEffect } from "../models/types";
 import { STAT_LABELS } from "../utils/text";
 import { clamp } from "../utils/stats";
-import { computeDamageRange, computeHitChance } from "./CombatCalculationService";
+import {
+  computeDamageRange,
+  computeHitChance,
+  resolveAbilityPower,
+  resolveAbilityPowerLevel,
+} from "./CombatCalculationService";
 import { MpService } from "./MpService";
 import { PartyCombatService } from "./PartyCombatService";
 
@@ -12,6 +17,7 @@ export type CombatPreview = {
   damageMax: number;
   expectedDamage: number;
   powerBonus: number;
+  powerLevel?: number;
   scalingStat?: string;
   scalingValue?: number;
   accuracyMod: number;
@@ -40,9 +46,10 @@ export const CombatPreviewService = {
     if (!enemy || enemy.side !== "ENEMY") {
       return null;
     }
-    const powerBonus = ability ? ability.power + attacker.stats[ability.scalingStat] : 0;
+    const powerLevel = ability ? resolveAbilityPowerLevel(ability) : undefined;
+    const powerBonus = ability ? attacker.stats[ability.scalingStat] + resolveAbilityPower(ability) : 0;
     const accuracyMod = ability?.accuracyMod ?? 0;
-    const hit = computeHitChance(attacker, enemy, accuracyMod);
+    const hit = computeHitChance(attacker, enemy, accuracyMod, powerLevel);
     const dmg = computeDamageRange({
       attacker,
       defender: enemy,
@@ -51,6 +58,9 @@ export const CombatPreviewService = {
     });
     const critChance = clamp(0.06 + attacker.stats.speed * 0.008, 0.02, 0.35);
     const expected = (dmg.minDamage + dmg.maxDamage) / 2;
+    const effectLabel = ability?.applyEffect
+      ? `${ability.applyEffect.kind === "BUFF" ? "Buff" : "Debuff"}: ${ability.applyEffect.name} (${ability.applyEffect.turns}t)`
+      : null;
 
     return {
       hitChance: Math.round(hit.combined * 100),
@@ -59,12 +69,16 @@ export const CombatPreviewService = {
       damageMax: dmg.maxDamage,
       expectedDamage: Math.round(expected * 10) / 10,
       powerBonus,
+      powerLevel,
       scalingStat: ability ? STAT_LABELS[ability.scalingStat] : undefined,
       scalingValue: ability ? attacker.stats[ability.scalingStat] : undefined,
       accuracyMod,
       costLabel: ability ? `${MpService.abilityMpCost(ability)} MP` : "1 action",
       tags: ability?.tags ?? ["MELEE", "SINGLE"],
-      effects: ability?.effects ?? [],
+      effects: [
+        ...(ability?.effects ?? []),
+        ...(effectLabel ? [effectLabel] : []),
+      ],
       cooldown: ability?.cooldown,
       hitBreakdown: hit.parts,
       damageBreakdown: dmg.parts,
@@ -114,6 +128,22 @@ export const CombatPreviewService = {
   },
 
   statusTip(effect: StatusEffect): string {
-    return `${effect.name} — ${effect.remainingTurns} turn${effect.remainingTurns === 1 ? "" : "s"} remaining.`;
+    const bits = [`${effect.name} — ${effect.remainingTurns} turn${effect.remainingTurns === 1 ? "" : "s"} remaining`];
+    if (effect.kind) {
+      bits.push(effect.kind === "BUFF" ? "Buff" : "Debuff");
+    }
+    if (effect.accuracyBonus) {
+      bits.push(`Acc ${effect.accuracyBonus > 0 ? "+" : ""}${effect.accuracyBonus}%`);
+    }
+    if (effect.dodgeBonus) {
+      bits.push(`Dodge ${effect.dodgeBonus > 0 ? "+" : ""}${effect.dodgeBonus}%`);
+    }
+    if (effect.damageDealtMod) {
+      bits.push(`Damage dealt ${effect.damageDealtMod > 0 ? "+" : ""}${Math.round(effect.damageDealtMod * 100)}%`);
+    }
+    if (effect.damageTakenMod) {
+      bits.push(`Damage taken ${effect.damageTakenMod > 0 ? "+" : ""}${Math.round(effect.damageTakenMod * 100)}%`);
+    }
+    return bits.join(" · ");
   },
 };

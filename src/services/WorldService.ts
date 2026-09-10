@@ -7,6 +7,7 @@ import { createId } from "../utils/ids";
 import { clamp } from "../utils/stats";
 import type { RandomService } from "./RandomService";
 import { TrainingService } from "./TrainingService";
+import { CharacterScheduleService } from "./CharacterScheduleService";
 import { FactionService } from "./FactionService";
 import { IslandService } from "./IslandService";
 
@@ -215,6 +216,13 @@ export const WorldService = {
         this.turnDay(state, rng);
       } else {
         index += 1;
+      }
+      state.timeOfDay = TIME_OF_DAY_ORDER[index] ?? "MORNING";
+      const finished = CharacterScheduleService.tickAfterTimeAdvance(state);
+      for (const report of finished) {
+        if (report.summary) {
+          state.lastFeedback = report.summary;
+        }
       }
     }
     state.timeOfDay = TIME_OF_DAY_ORDER[index] ?? "MORNING";

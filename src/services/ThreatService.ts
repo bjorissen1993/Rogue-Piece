@@ -29,6 +29,9 @@ function combatItemBonus(player: Player): number {
     if (def.effects.some((effect) => effect.type === "HEAL")) {
       bonus += 4;
     }
+    if (def.effects.some((effect) => effect.type === "RESTORE_MP")) {
+      bonus += 3;
+    }
     if (def.effects.some((effect) => effect.type === "GUARANTEE_ESCAPE")) {
       bonus += 6;
     }
@@ -40,7 +43,12 @@ export function estimatePlayerPower(player: Player): number {
   const stats = player.stats;
   const hpFactor = (player.hp / Math.max(1, player.maxHp)) * 18 + player.maxHp * 0.12;
   const statFactor =
-    stats.strength * 3.2 + stats.defense * 2.2 + stats.speed * 1.8 + stats.willpower * 1.2 + stats.charisma * 0.4;
+    stats.strength * 3.2 +
+    stats.defense * 2.2 +
+    stats.speed * 1.8 +
+    stats.willpower * 1.2 +
+    stats.charisma * 0.4 +
+    (stats.intelligence ?? 0) * 0.8;
   const abilityBonus = getAbilitiesForPlayer(player).length * 3;
   const fruitBonus = player.devilFruitId ? 10 : 0;
   return hpFactor + statFactor + abilityBonus + fruitBonus + combatItemBonus(player);

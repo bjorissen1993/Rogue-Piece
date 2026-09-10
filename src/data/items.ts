@@ -1,7 +1,7 @@
 import type { ItemDefinition } from "../models/types";
 
 export const ITEMS: ItemDefinition[] = [
-  // --- Food: cheap, common, moderate heal ---
+  // --- Food: more HP than MP ---
   {
     id: "rice_ball",
     name: "Rice Ball",
@@ -9,7 +9,10 @@ export const ITEMS: ItemDefinition[] = [
     description: "Wrapped seaweed and cold rice. Fills a hole in the stomach.",
     consumable: true,
     useContext: "BOTH",
-    effects: [{ type: "HEAL", amount: 8, percentMaxHp: 3 }],
+    effects: [
+      { type: "HEAL", amount: 8, percentMaxHp: 3 },
+      { type: "RESTORE_MP", amount: 2 },
+    ],
     category: "CONSUMABLES",
   },
   {
@@ -19,7 +22,10 @@ export const ITEMS: ItemDefinition[] = [
     description: "Salted, tough, and better than starving. Emergency ration.",
     consumable: true,
     useContext: "BOTH",
-    effects: [{ type: "HEAL", amount: 10, percentMaxHp: 5 }],
+    effects: [
+      { type: "HEAL", amount: 10, percentMaxHp: 5 },
+      { type: "RESTORE_MP", amount: 3 },
+    ],
     category: "CONSUMABLES",
   },
   {
@@ -29,7 +35,10 @@ export const ITEMS: ItemDefinition[] = [
     description: "Charred at the edges, still warm. Harbor fare.",
     consumable: true,
     useContext: "BOTH",
-    effects: [{ type: "HEAL", amount: 14, percentMaxHp: 5 }],
+    effects: [
+      { type: "HEAL", amount: 14, percentMaxHp: 5 },
+      { type: "RESTORE_MP", amount: 4 },
+    ],
     category: "CONSUMABLES",
   },
   {
@@ -39,7 +48,10 @@ export const ITEMS: ItemDefinition[] = [
     description: "Stew, bread, and something that might be meat. Inn comfort.",
     consumable: true,
     useContext: "OUT_OF_COMBAT",
-    effects: [{ type: "HEAL", amount: 22, percentMaxHp: 8 }],
+    effects: [
+      { type: "HEAL", amount: 22, percentMaxHp: 8 },
+      { type: "RESTORE_MP", amount: 6 },
+    ],
     category: "CONSUMABLES",
   },
   {
@@ -49,10 +61,79 @@ export const ITEMS: ItemDefinition[] = [
     description: "Hardtack, dried fruit, and hope. Built for the road.",
     consumable: true,
     useContext: "BOTH",
-    effects: [{ type: "HEAL", amount: 12, percentMaxHp: 4 }],
+    effects: [
+      { type: "HEAL", amount: 12, percentMaxHp: 4 },
+      { type: "RESTORE_MP", amount: 3 },
+    ],
     category: "CONSUMABLES",
   },
-  // --- Medicine: stronger, clinic/pharmacy ---
+  // --- Drinks: more MP than HP ---
+  {
+    id: "fresh_water",
+    name: "Fresh Water",
+    type: "CONSUMABLE",
+    description: "A clean canteen. Clears the head more than the bruises.",
+    consumable: true,
+    useContext: "BOTH",
+    effects: [
+      { type: "RESTORE_MP", amount: 10, percentMaxMp: 4 },
+      { type: "HEAL", amount: 3 },
+    ],
+    category: "CONSUMABLES",
+  },
+  {
+    id: "grog",
+    name: "Grog",
+    type: "CONSUMABLE",
+    description: "Watered rum with a kick. Warmth first, courage second.",
+    consumable: true,
+    useContext: "BOTH",
+    effects: [
+      { type: "RESTORE_MP", amount: 14, percentMaxMp: 5 },
+      { type: "HEAL", amount: 4 },
+    ],
+    category: "CONSUMABLES",
+  },
+  {
+    id: "citrus_juice",
+    name: "Citrus Juice",
+    type: "CONSUMABLE",
+    description: "Sharp, bright, and good against foggy minds.",
+    consumable: true,
+    useContext: "BOTH",
+    effects: [
+      { type: "RESTORE_MP", amount: 18, percentMaxMp: 6 },
+      { type: "HEAL", amount: 5 },
+    ],
+    category: "CONSUMABLES",
+  },
+  {
+    id: "energy_tonic",
+    name: "Energy Tonic",
+    type: "CONSUMABLE",
+    description: "Bitter herbs in a green bottle. Sparks return to tired limbs.",
+    consumable: true,
+    useContext: "BOTH",
+    effects: [
+      { type: "RESTORE_MP", amount: 24, percentMaxMp: 8 },
+      { type: "HEAL", amount: 6 },
+    ],
+    category: "CONSUMABLES",
+  },
+  {
+    id: "strong_brew",
+    name: "Strong Brew",
+    type: "CONSUMABLE",
+    description: "Dockside coffee thick enough to stand a spoon in.",
+    consumable: true,
+    useContext: "BOTH",
+    effects: [
+      { type: "RESTORE_MP", amount: 30, percentMaxMp: 10 },
+      { type: "HEAL", amount: 8 },
+    ],
+    category: "CONSUMABLES",
+  },
+  // --- Medicine: restores both HP and MP ---
   {
     id: "bandage",
     name: "Bandage",
@@ -60,7 +141,10 @@ export const ITEMS: ItemDefinition[] = [
     description: "Clean cloth and a splash of spirits. Stops the worst bleeding.",
     consumable: true,
     useContext: "BOTH",
-    effects: [{ type: "HEAL", amount: 15, percentMaxHp: 5 }],
+    effects: [
+      { type: "HEAL", amount: 15, percentMaxHp: 5 },
+      { type: "RESTORE_MP", amount: 6, percentMaxMp: 3 },
+    ],
     category: "CONSUMABLES",
   },
   {
@@ -70,7 +154,10 @@ export const ITEMS: ItemDefinition[] = [
     description: "Bitter tincture in a stained bottle. Closes holes that meat cannot.",
     consumable: true,
     useContext: "BOTH",
-    effects: [{ type: "HEAL", amount: 25, percentMaxHp: 8 }],
+    effects: [
+      { type: "HEAL", amount: 25, percentMaxHp: 8 },
+      { type: "RESTORE_MP", amount: 10, percentMaxMp: 4 },
+    ],
     category: "CONSUMABLES",
   },
   {
@@ -80,7 +167,10 @@ export const ITEMS: ItemDefinition[] = [
     description: "Salves, needle, and a pamphlet of shaky handwriting.",
     consumable: true,
     useContext: "BOTH",
-    effects: [{ type: "HEAL", amount: 40, percentMaxHp: 12 }],
+    effects: [
+      { type: "HEAL", amount: 40, percentMaxHp: 12 },
+      { type: "RESTORE_MP", amount: 16, percentMaxMp: 6 },
+    ],
     category: "CONSUMABLES",
   },
   {
@@ -90,7 +180,10 @@ export const ITEMS: ItemDefinition[] = [
     description: "Clinic-grade. Burns going down. Worth it.",
     consumable: true,
     useContext: "BOTH",
-    effects: [{ type: "HEAL", amount: 55, percentMaxHp: 15 }],
+    effects: [
+      { type: "HEAL", amount: 55, percentMaxHp: 15 },
+      { type: "RESTORE_MP", amount: 22, percentMaxMp: 8 },
+    ],
     category: "CONSUMABLES",
   },
   {
@@ -172,6 +265,11 @@ export const ITEM_SHOP_PRICES: Record<string, number> = {
   cooked_fish: 55,
   travel_rations: 50,
   hearty_meal: 90,
+  fresh_water: 20,
+  grog: 35,
+  citrus_juice: 50,
+  energy_tonic: 85,
+  strong_brew: 120,
   bandage: 70,
   medicine: 110,
   medical_kit: 180,
@@ -200,5 +298,14 @@ export function computeHealAmount(
   maxHp: number,
 ): number {
   const pct = percentMaxHp ? Math.round(maxHp * (percentMaxHp / 100)) : 0;
+  return amount + pct;
+}
+
+export function computeMpRestoreAmount(
+  amount: number,
+  percentMaxMp: number | undefined,
+  maxMp: number,
+): number {
+  const pct = percentMaxMp ? Math.round(maxMp * (percentMaxMp / 100)) : 0;
   return amount + pct;
 }

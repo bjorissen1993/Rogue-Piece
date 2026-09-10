@@ -43,6 +43,7 @@ export const STAT_LABELS: Record<StatName, string> = {
   speed: "Speed",
   willpower: "Willpower",
   charisma: "Charisma",
+  intelligence: "Intelligence",
 };
 
 export function highestStat(stats: RunState["player"]["stats"]): { name: string; value: number } {

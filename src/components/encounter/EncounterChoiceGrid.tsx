@@ -11,10 +11,12 @@ type EncounterChoiceGridProps = {
   player?: Player | null;
   run?: RunState | null;
   selectedId: string | null;
+  participantIds: string[];
   lockReasons?: EncounterChoiceLockMap;
   isDev?: boolean;
   onSelect: (choiceId: string) => void;
-  onConfirm: (choiceId: string) => void;
+  onParticipantChange: (ids: string[]) => void;
+  onConfirm: (choiceId: string, participantIds?: string[]) => void;
 };
 
 export function EncounterChoiceGrid({
@@ -24,9 +26,11 @@ export function EncounterChoiceGrid({
   player,
   run,
   selectedId,
+  participantIds,
   lockReasons,
   isDev = false,
   onSelect,
+  onParticipantChange,
   onConfirm,
 }: EncounterChoiceGridProps) {
   return (
@@ -43,7 +47,9 @@ export function EncounterChoiceGrid({
             locked={Boolean(lockReason)}
             lockReason={lockReason}
             onConfirm={onConfirm}
+            onParticipantChange={onParticipantChange}
             onSelect={onSelect}
+            participantIds={selectedId === choice.id ? participantIds : []}
             player={player}
             run={run}
             selected={selectedId === choice.id}

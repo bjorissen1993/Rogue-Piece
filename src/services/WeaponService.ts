@@ -1,6 +1,7 @@
 import { MASTERY_RANK_ORDER, MASTERY_THRESHOLDS } from "../game/constants";
 import { getTechnique, getWeapon, WEAPONS } from "../data/weapons";
 import { getFightingStyle, getStyleTechnique } from "../data/fightingStyles";
+import { techniqueToAbility } from "../game/techniqueAbility";
 import type {
   Ability,
   InventoryItem,
@@ -318,35 +319,14 @@ export const WeaponService = {
       for (const techId of equipped.techniqueIds) {
         const tech = getTechnique(techId);
         if (tech) {
-          abilities.push({
-            id: tech.id,
-            name: tech.name,
-            description: tech.description,
-            power: tech.power,
-            scalingStat: tech.scalingStat,
-            accuracyMod: tech.accuracyMod,
-            tags:
-              tech.id === "spear_sweep" || tech.id === "sword_crescent"
-                ? ["MELEE", "AOE"]
-                : tech.weaponType === "GUN"
-                  ? ["RANGED", "SINGLE"]
-                  : ["MELEE", "SINGLE"],
-          });
+          abilities.push(techniqueToAbility(tech));
         }
       }
     }
     for (const techId of player.unlockedTechniques ?? []) {
       const tech = getTechnique(techId);
       if (tech && !abilities.some((entry) => entry.id === tech.id)) {
-        abilities.push({
-          id: tech.id,
-          name: tech.name,
-          description: tech.description,
-          power: tech.power,
-          scalingStat: tech.scalingStat,
-          accuracyMod: tech.accuracyMod,
-          tags: tech.weaponType === "GUN" ? ["RANGED", "SINGLE"] : ["MELEE", "SINGLE"],
-        });
+        abilities.push(techniqueToAbility(tech));
       }
     }
     const styleId = player.activeCombatStyle;
@@ -355,16 +335,8 @@ export const WeaponService = {
       if (style) {
         for (const techId of style.techniqueIds.slice(0, 3)) {
           const tech = getStyleTechnique(techId);
-          if (tech) {
-            abilities.push({
-              id: tech.id,
-              name: tech.name,
-              description: tech.description,
-              power: tech.power,
-              scalingStat: tech.scalingStat,
-              accuracyMod: tech.accuracyMod,
-              tags: ["MELEE", "SINGLE"],
-            });
+          if (tech && !abilities.some((entry) => entry.id === tech.id)) {
+            abilities.push(techniqueToAbility(tech));
           }
         }
       }
@@ -380,20 +352,7 @@ export const WeaponService = {
       for (const techId of weapon.techniqueIds) {
         const tech = getTechnique(techId);
         if (tech) {
-          abilities.push({
-            id: tech.id,
-            name: tech.name,
-            description: tech.description,
-            power: tech.power,
-            scalingStat: tech.scalingStat,
-            accuracyMod: tech.accuracyMod,
-            tags:
-              tech.id === "spear_sweep" || tech.id === "sword_crescent"
-                ? ["MELEE", "AOE"]
-                : tech.weaponType === "GUN"
-                  ? ["RANGED", "SINGLE"]
-                  : ["MELEE", "SINGLE"],
-          });
+          abilities.push(techniqueToAbility(tech));
         }
       }
     }
@@ -406,15 +365,7 @@ export const WeaponService = {
     for (const techId of character.unlockedTechniques ?? []) {
       const tech = getTechnique(techId);
       if (tech && !abilities.some((entry) => entry.id === tech.id)) {
-        abilities.push({
-          id: tech.id,
-          name: tech.name,
-          description: tech.description,
-          power: tech.power,
-          scalingStat: tech.scalingStat,
-          accuracyMod: tech.accuracyMod,
-          tags: tech.weaponType === "GUN" ? ["RANGED", "SINGLE"] : ["MELEE", "SINGLE"],
-        });
+        abilities.push(techniqueToAbility(tech));
       }
     }
 
@@ -423,16 +374,8 @@ export const WeaponService = {
       if (style) {
         for (const techId of style.techniqueIds.slice(0, 3)) {
           const tech = getStyleTechnique(techId);
-          if (tech) {
-            abilities.push({
-              id: tech.id,
-              name: tech.name,
-              description: tech.description,
-              power: tech.power,
-              scalingStat: tech.scalingStat,
-              accuracyMod: tech.accuracyMod,
-              tags: ["MELEE", "SINGLE"],
-            });
+          if (tech && !abilities.some((entry) => entry.id === tech.id)) {
+            abilities.push(techniqueToAbility(tech));
           }
         }
       }

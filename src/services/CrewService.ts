@@ -122,7 +122,7 @@ export const CrewService = {
       weaponIds: ["iron_knuckles"],
       relationshipWithPlayer: 5,
       joinInterest: 100,
-      crewStats: { strength: 7, defense: 5, speed: 6, willpower: 4, charisma: 3 },
+      crewStats: { strength: 7, defense: 5, speed: 6, willpower: 4, charisma: 3, intelligence: 4 },
     });
     CharacterService.acceptRecruitment(run, mika.id, "FIGHTER", "PERMANENT");
     const ren = CharacterService.getOrCreateCharacter(run, {
@@ -139,7 +139,7 @@ export const CrewService = {
       weaponIds: ["iron_spear"],
       relationshipWithPlayer: 4,
       joinInterest: 100,
-      crewStats: { strength: 5, defense: 4, speed: 8, willpower: 5, charisma: 3 },
+      crewStats: { strength: 5, defense: 4, speed: 8, willpower: 5, charisma: 3, intelligence: 6 },
     });
     CharacterService.acceptRecruitment(run, ren.id, "NAVIGATOR", "PERMANENT");
     for (const member of run.crew.filter((entry) => [mika.id, ren.id].includes(entry.characterId))) {

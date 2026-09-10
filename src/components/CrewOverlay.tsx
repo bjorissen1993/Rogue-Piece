@@ -14,6 +14,7 @@ import { RaceService } from "../services/RaceService";
 import { LootDispositionService } from "../services/LootDispositionService";
 import { WeaponService } from "../services/WeaponService";
 import { STAT_LABELS } from "../utils/text";
+import { ensurePlayerStats } from "../utils/stats";
 import { CharacterCard } from "./CharacterCard";
 import { HpBar } from "./HpBar";
 import { ResourceBar } from "./ResourceBar";
@@ -34,7 +35,7 @@ type DragPayload =
 type CrewTab = "CORE" | "APPRENTICES" | "FLEET" | "COMMAND";
 type SidePanelMode = "character" | "weapons";
 
-const STAT_ORDER: StatName[] = ["strength", "defense", "speed", "willpower", "charisma"];
+const STAT_ORDER: StatName[] = ["strength", "defense", "speed", "willpower", "charisma", "intelligence"];
 const EXTENDED_TABS: CrewTab[] = ["APPRENTICES", "FLEET", "COMMAND"];
 const BATTLE_FORMATION_ROWS = 2;
 const BATTLE_FORMATION_SLOTS = BATTLE_FORMATION_ROWS * 2;
@@ -49,15 +50,15 @@ function portraitInitials(name: string): string {
 
 function crewStatsFor(character: ReturnType<typeof CharacterService.getCharacter>, strength: number) {
   if (character?.crewStats) {
-    return character.crewStats;
+    return ensurePlayerStats(character.crewStats);
   }
-  return {
+  return ensurePlayerStats({
     strength,
     defense: Math.max(1, strength - 1),
     speed: Math.max(1, strength - 2),
     willpower: Math.max(2, Math.floor(strength / 2)),
     charisma: 2,
-  };
+  });
 }
 
 export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFruit }: CrewOverlayProps) {

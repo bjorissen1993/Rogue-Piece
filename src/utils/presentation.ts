@@ -22,6 +22,7 @@ const STAT_HINT: Record<StatName, string> = {
   speed: "This option depends on haste and timing.",
   willpower: "This option depends on grit and nerve.",
   charisma: "This option depends on words and presence.",
+  intelligence: "This option depends on analysis and problem-solving.",
 };
 
 const RISK_LABEL: Record<ChoiceRisk, string> = {
@@ -67,7 +68,14 @@ function inferStatFromOutcome(choice: EncounterChoice): StatName | undefined {
   return undefined;
 }
 
-const STAT_ORDER: StatName[] = ["strength", "defense", "speed", "willpower", "charisma"];
+const STAT_ORDER: StatName[] = [
+  "strength",
+  "defense",
+  "speed",
+  "willpower",
+  "charisma",
+  "intelligence",
+];
 
 export function choiceStat(choice: EncounterChoice): StatName | undefined {
   if (choice.checkStat) {
@@ -230,6 +238,7 @@ export const STAT_ACCENT: Record<StatName, string> = {
   speed: "#e0c45a",
   willpower: "#9b6ad4",
   charisma: "#d4b36a",
+  intelligence: "#5eb8a8",
 };
 
 function iconSlug(raw: string): string {
@@ -842,7 +851,7 @@ export function choiceCostItems(
         items.push({
           kind: "time",
           label: "TIME",
-          value: slots === 1 ? "1 SLOT" : `${slots} SLOTS`,
+          value: slots === 1 ? "1 TIME SLOT" : `${slots} TIME SLOTS`,
           tone: "neutral",
         });
       }

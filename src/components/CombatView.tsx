@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type WheelEvent } from "react";
 import {
   beatsFromLogAndHits,
+  defeatBeats,
   presentationDurationMs,
   type CombatPresentationBeat,
 } from "../game/combatPresentation";
@@ -9,10 +10,19 @@ import { CombatPreviewService } from "../services/CombatPreviewService";
 import { ItemService } from "../services/ItemService";
 import { MpService } from "../services/MpService";
 import { PartyCombatService } from "../services/PartyCombatService";
+import {
+  TargetResolutionService,
+  abilityNeedsManualTarget,
+  primaryManualTargeting,
+  targetingSummary,
+} from "../services/TargetResolutionService";
 import { EffectTooltip } from "./EffectTooltip";
 import { HpBar } from "./HpBar";
 import { ResourceBar } from "./ResourceBar";
 import { ActionIcon } from "./StatIcon";
+import { SkillBadgeRow } from "./SkillBadgeRow";
+import { resolveSkillBadges, skillBadgeTip, SKILL_BADGE_CATALOG } from "../game/skillBadges";
+import type { SkillBadgeRef } from "../models/types";
 
 const ACTION_ICON_SIZE = 190;
 const WHEEL_ICON_SIZE = 200;
@@ -32,14 +42,20 @@ type CombatViewProps = {
     type: "ATTACK" | "TECHNIQUE" | "DEFEND" | "OBSERVE" | "ESCAPE" | "SURRENDER",
     abilityId?: string,
     targetId?: string,
+    targetIds?: string[],
   ) => void;
   onUseItem: (itemId: string) => void;
   onResolveEnemyTurn: () => void;
+  onFinishPresentation: () => void;
 };
 
 type Floater = CombatHit & { key: string };
 
-type Targeting = null | { type: "ATTACK" | "TECHNIQUE" | "OBSERVE"; abilityId?: string };
+type Targeting = null | {
+  type: "ATTACK" | "TECHNIQUE" | "OBSERVE";
+  abilityId?: string;
+  selectedIds: string[];
+};
 
 type ActionMenu = "attack" | "technique" | "defend" | "observe" | "item" | "escape";
 
@@ -50,6 +66,7 @@ type WheelOption = {
   hint: string;
   disabled?: boolean;
   icon?: ReactNode;
+  badges?: SkillBadgeRef[];
   onConfirm: () => void;
 };
 
@@ -211,6 +228,14 @@ function ChoiceWheel({
                 </span>
                 <span className="combat-wheel-label">{option.title}</span>
                 {isFocus ? <span className="combat-wheel-cost">{option.costLabel}</span> : null}
+                {isFocus && option.badges?.length ? (
+                  <SkillBadgeRow
+                    badges={option.badges}
+                    className="combat-wheel-badges"
+                    layout="column"
+                    size={60}
+                  />
+                ) : null}
               </button>
             );
           })}
@@ -234,6 +259,7 @@ function ChoiceWheel({
 function CombatantCard({
   combatant,
   floaters,
+  beatFlash,
   isActive,
   isCaptain,
   position,
@@ -247,6 +273,7 @@ function CombatantCard({
 }: {
   combatant: CombatantState;
   floaters: Floater[];
+  beatFlash?: "HIT" | "MISS" | "HEAL" | "BLOCK" | "DEFEAT" | null;
   isActive: boolean;
   isCaptain?: boolean;
   position?: number;
@@ -258,9 +285,16 @@ function CombatantCard({
   onSelect?: () => void;
   onHover?: (hovering: boolean) => void;
 }) {
-  const hit = floaters.some((entry) => entry.combatantId === combatant.id && entry.kind === "HIT");
-  const heal = floaters.some((entry) => entry.combatantId === combatant.id && entry.kind === "HEAL");
-  const miss = floaters.some((entry) => entry.combatantId === combatant.id && entry.kind === "MISS");
+  const hit =
+    beatFlash === "HIT" ||
+    beatFlash === "BLOCK" ||
+    floaters.some((entry) => entry.combatantId === combatant.id && entry.kind === "HIT");
+  const heal =
+    beatFlash === "HEAL" || floaters.some((entry) => entry.combatantId === combatant.id && entry.kind === "HEAL");
+  const miss =
+    beatFlash === "MISS" || floaters.some((entry) => entry.combatantId === combatant.id && entry.kind === "MISS");
+  const defeatFlash = beatFlash === "DEFEAT";
+  const blockFlash = beatFlash === "BLOCK";
   const isDown = combatant.hp <= 0;
   const isEnemy = combatant.side === "ENEMY";
   const roleClass = isEnemy ? "is-enemy" : isCaptain ? "is-captain" : "is-crewmate";
@@ -324,7 +358,7 @@ function CombatantCard({
       }}
     >
       <button
-        className={`battler-card panel combat-party-card is-compact combat-unit ${isActive ? "is-active-turn" : ""} ${roleClass} ${isDown ? "is-down" : ""} ${hit ? "is-hit" : ""} ${heal ? "is-heal" : ""} ${miss ? "is-dodge" : ""} ${facing === "down" ? "faces-down" : "faces-up"} ${selectable ? "is-selectable" : ""} ${selected ? "is-targeted" : ""} ${previewed ? "is-preview-target" : ""}`}
+        className={`battler-card panel combat-party-card is-compact combat-unit ${isActive ? "is-active-turn" : ""} ${roleClass} ${isDown ? "is-down" : ""} ${hit ? "is-hit" : ""} ${heal ? "is-heal" : ""} ${miss ? "is-dodge" : ""} ${blockFlash ? "is-block" : ""} ${defeatFlash ? "is-defeat" : ""} ${facing === "down" ? "faces-down" : "faces-up"} ${selectable ? "is-selectable" : ""} ${selected ? "is-targeted" : ""} ${previewed ? "is-preview-target" : ""}`}
         onClick={selectable ? onSelect : undefined}
         type="button"
       >
@@ -371,7 +405,14 @@ function CombatantCard({
   );
 }
 
-export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyTurn }: CombatViewProps) {
+export function CombatView({
+  combat,
+  items,
+  onAction,
+  onUseItem,
+  onResolveEnemyTurn,
+  onFinishPresentation,
+}: CombatViewProps) {
   const [actionMenu, setActionMenu] = useState<ActionMenu | null>(null);
   const [choicePhase, setChoicePhase] = useState<"open" | "closing" | null>(null);
   const [focusedOption, setFocusedOption] = useState<WheelOption | null>(null);
@@ -387,6 +428,8 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
   const startedRef = useRef(false);
   const lastRound = useRef(combat.round);
   const closeMenuTimer = useRef<number | null>(null);
+  const finishPresentedRef = useRef(false);
+  const finaleQueuedRef = useRef(false);
 
   const allies = PartyCombatService.allAllies(combat).slice(0, 4);
   const enemies = combat.enemies.slice(0, 4);
@@ -400,6 +443,38 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
   const currentBeat = presenting ? beats[beatIndex] : null;
   const hits = combat.lastHits ?? [];
   const hitKey = hitSignature(hits);
+  const logTailId = combat.log.at(-1)?.id ?? "";
+  const logLength = combat.log.length;
+  const flashTargets = useMemo(() => new Set(currentBeat?.targetIds ?? []), [currentBeat]);
+  const beatFlashFor = (combatantId: string): "HIT" | "MISS" | "HEAL" | "BLOCK" | "DEFEAT" | null => {
+    if (!currentBeat || !flashTargets.has(combatantId)) {
+      return null;
+    }
+    if (currentBeat.animation === "DEFEAT") {
+      return "DEFEAT";
+    }
+    if (currentBeat.animation === "DEFEND") {
+      return "BLOCK";
+    }
+    if (currentBeat.amountKind === "MISS" || currentBeat.animation === "DODGE") {
+      return "MISS";
+    }
+    if (currentBeat.amountKind === "HEAL" || currentBeat.animation === "HEAL") {
+      return "HEAL";
+    }
+    if (
+      currentBeat.amountKind === "HIT" ||
+      currentBeat.animation === "IMPACT" ||
+      currentBeat.animation === "MELEE_SLASH" ||
+      currentBeat.animation === "MELEE_HEAVY" ||
+      currentBeat.animation === "THRUST" ||
+      currentBeat.animation === "PROJECTILE" ||
+      currentBeat.animation === "AOE"
+    ) {
+      return "HIT";
+    }
+    return null;
+  };
   const positions = useMemo(
     () => new Map(PartyCombatService.upcomingTurnPositions(combat).map((entry) => [entry.id, entry.position])),
     [combat],
@@ -412,7 +487,28 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
     return activeCombatant.abilities.find((ability) => ability.id === targeting.abilityId) ?? null;
   }, [targeting, activeCombatant.abilities]);
 
-  const aoeAbility = Boolean(pendingAbility?.tags?.includes("AOE"));
+  const aoeAbility = Boolean(
+    pendingAbility &&
+      TargetResolutionService.abilityTechniqueEffects(pendingAbility).some(
+        (effect) => effect.targeting.selection === "ALL",
+      ),
+  );
+  const manualTargeting = pendingAbility ? primaryManualTargeting(pendingAbility) : null;
+  const manualValidTargets = useMemo(() => {
+    if (!targeting || !manualTargeting) {
+      return [] as CombatantState[];
+    }
+    return TargetResolutionService.validManualTargets(combat, activeCombatant, manualTargeting);
+  }, [targeting, manualTargeting, combat, activeCombatant]);
+  const manualExact = manualTargeting?.exactCount;
+  const manualMax = manualTargeting?.maxCount ?? manualExact ?? 1;
+  const manualMin = manualTargeting?.minCount ?? (manualExact ?? 1);
+  const selectedCount = targeting?.selectedIds.length ?? 0;
+  const canConfirmManual =
+    Boolean(targeting && manualTargeting) &&
+    selectedCount >= manualMin &&
+    selectedCount <= manualMax &&
+    (manualExact == null || selectedCount === manualExact || (manualTargeting?.whenInsufficient === "REDUCE" && selectedCount >= manualMin));
   const previewTargetId = hoverTargetId ?? livingEnemies[0]?.id ?? null;
   const preview = useMemo(() => {
     if (!targeting) {
@@ -454,9 +550,40 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
     }, CHOICE_PANEL_MS);
   };
 
-  const beginTargetedAction = (next: NonNullable<Targeting>) => {
+  const beginTargetedAction = (next: { type: "ATTACK" | "TECHNIQUE" | "OBSERVE"; abilityId?: string }) => {
+    if (next.type === "TECHNIQUE" && next.abilityId) {
+      const ability = activeCombatant.abilities.find((entry) => entry.id === next.abilityId);
+      if (ability) {
+        const usable = TargetResolutionService.canUseAbility(combat, activeCombatant, ability);
+        if (!usable.ok) {
+          setActionHint(usable.reason ?? "Cannot use that technique.");
+          return;
+        }
+        if (!abilityNeedsManualTarget(ability)) {
+          onAction(next.type, next.abilityId);
+          closeMenu();
+          setTargeting(null);
+          return;
+        }
+        const manual = primaryManualTargeting(ability);
+        const valid = manual
+          ? TargetResolutionService.validManualTargets(combat, activeCombatant, manual)
+          : livingEnemies;
+        if (valid.length === 1 && (manual?.exactCount ?? 1) === 1 && !manual?.maxCount) {
+          onAction(next.type, next.abilityId, valid[0]!.id, [valid[0]!.id]);
+          closeMenu();
+          setTargeting(null);
+          return;
+        }
+        closeMenu();
+        setTargeting({ ...next, selectedIds: [] });
+        setActionHint(manual ? targetingSummary(manual) : "Select targets.");
+        return;
+      }
+    }
+
     if (livingEnemies.length === 1) {
-      onAction(next.type, next.abilityId, livingEnemies[0].id);
+      onAction(next.type, next.abilityId, livingEnemies[0].id, [livingEnemies[0].id]);
       closeMenu();
       setTargeting(null);
       return;
@@ -465,18 +592,75 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
       return;
     }
     closeMenu();
-    setTargeting(next);
+    setTargeting({ ...next, selectedIds: [] });
     setActionHint(next.type === "OBSERVE" ? "Select an enemy to observe." : "Select a target.");
   };
 
-  useEffect(() => {
-    if (!hits.length) {
+  const fireTargetedAction = (targetIds: string[]) => {
+    if (!targeting) {
       return;
     }
-    setFloaters(hits.map((hit) => ({ ...hit, key: hit.id })));
-    const timer = window.setTimeout(() => setFloaters([]), 900);
-    return () => window.clearTimeout(timer);
-  }, [hitKey]);
+    onAction(targeting.type, targeting.abilityId, targetIds[0], targetIds);
+    setTargeting(null);
+    setActionHint(null);
+  };
+
+  const toggleManualTarget = (combatantId: string) => {
+    if (!targeting) {
+      return;
+    }
+    if (targeting.type !== "TECHNIQUE" || !manualTargeting) {
+      fireTargetedAction([combatantId]);
+      return;
+    }
+    const already = targeting.selectedIds.includes(combatantId);
+    let nextIds = already
+      ? targeting.selectedIds.filter((id) => id !== combatantId)
+      : [...targeting.selectedIds, combatantId];
+    if (!already && manualExact != null && nextIds.length > manualExact) {
+      return;
+    }
+    if (!already && manualMax != null && nextIds.length > manualMax) {
+      return;
+    }
+    // Single exact target: fire immediately
+    if (manualExact === 1 && nextIds.length === 1) {
+      fireTargetedAction(nextIds);
+      return;
+    }
+    setTargeting({ ...targeting, selectedIds: nextIds });
+    setActionHint(
+      `${targetingSummary(manualTargeting)} · Selected ${nextIds.length}/${manualExact ?? manualMax}`,
+    );
+  };
+
+  useEffect(() => {
+    if (!currentBeat) {
+      return;
+    }
+    if (currentBeat.amountKind && currentBeat.targetIds?.length) {
+      const stamp = `${beatIndex}-${currentBeat.headline}`;
+      setFloaters(
+        currentBeat.targetIds.map((combatantId, index) => {
+          const side =
+            combat.enemies.some((entry) => entry.id === combatantId)
+              ? "ENEMY"
+              : "PLAYER";
+          return {
+            id: `${stamp}-${combatantId}`,
+            combatantId,
+            side,
+            amount: currentBeat.amount ?? 0,
+            kind: currentBeat.amountKind!,
+            key: `${stamp}-${index}`,
+          };
+        }),
+      );
+      const clearTimer = window.setTimeout(() => setFloaters([]), 900);
+      return () => window.clearTimeout(clearTimer);
+    }
+    return undefined;
+  }, [currentBeat, beatIndex, combat.enemies]);
 
   useEffect(() => {
     setTargeting(null);
@@ -527,6 +711,13 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
       lastRound.current = combat.round;
       return;
     }
+
+    // After the fight finale has played (or victory UI is up), never re-queue hit/defeat beats
+    // when the parent re-persists the same finished combat (e.g. sequential level-ups).
+    if (finaleQueuedRef.current || finishPresentedRef.current) {
+      return;
+    }
+
     const nextBeats: CombatPresentationBeat[] = [];
     if (combat.round !== lastRound.current) {
       lastRound.current = combat.round;
@@ -537,11 +728,41 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
     const fresh = idx >= 0 ? combat.log.slice(idx + 1) : combat.log.slice(-6);
     seenLogId.current = combat.log.at(-1)?.id ?? lastId;
     nextBeats.push(...beatsFromLogAndHits(fresh, hits));
+    if (combat.finished) {
+      finaleQueuedRef.current = true;
+      const roster = [...PartyCombatService.allAllies(combat), ...combat.enemies];
+      nextBeats.push(...defeatBeats(roster, hits));
+      if (combat.result === "WIN") {
+        nextBeats.push({
+          headline: "VICTORY",
+          subline: "The clash is yours.",
+          kind: "defeat",
+        });
+      } else if (combat.result === "LOSE") {
+        nextBeats.push({
+          headline: "DEFEAT",
+          subline: "The clash is lost.",
+          kind: "defeat",
+        });
+      } else if (combat.result === "ESCAPE") {
+        nextBeats.push({
+          headline: "ESCAPED",
+          subline: "You break away from the fight.",
+          kind: "basic",
+        });
+      } else if (combat.result === "SURRENDER") {
+        nextBeats.push({
+          headline: "SURRENDERED",
+          subline: "You throw down your arms.",
+          kind: "basic",
+        });
+      }
+    }
     if (nextBeats.length) {
       setBeats(nextBeats);
       setBeatIndex(0);
     }
-  }, [combat.log, combat.round, hitKey]);
+  }, [logTailId, logLength, combat.round, hitKey, combat.finished, combat.result]);
 
   useEffect(() => {
     if (!currentBeat) {
@@ -552,6 +773,20 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
     }, presentationDurationMs(currentBeat.kind));
     return () => window.clearTimeout(timer);
   }, [currentBeat, beatIndex]);
+
+  useEffect(() => {
+    if (!combat.finished || presenting || finishPresentedRef.current) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      finishPresentedRef.current = true;
+      setBeats([]);
+      setBeatIndex(0);
+      setFloaters([]);
+      onFinishPresentation();
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [combat.finished, presenting, onFinishPresentation]);
 
   const advancePresentation = () => {
     if (!presenting) {
@@ -564,9 +799,7 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
     if (!targeting) {
       return;
     }
-    onAction(targeting.type, targeting.abilityId, enemyId);
-    setTargeting(null);
-    setActionHint(null);
+    toggleManualTarget(enemyId);
   };
 
   const toggleMenu = (next: ActionMenu) => {
@@ -588,36 +821,57 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
     const mpCost = MpService.abilityMpCost(ability);
     const canAfford = (activeCombatant.mp ?? 0) >= mpCost;
     const previewTech = CombatPreviewService.previewAttack(combat, ability, activeCombatant.id, livingEnemies[0]?.id);
+    const badges = resolveSkillBadges(ability);
+    const badgeTips = badges.map(
+      (badge) => `${SKILL_BADGE_CATALOG[badge.id].label}: ${skillBadgeTip(badge)}`,
+    );
     return {
       id: ability.id,
       title: ability.name,
-      costLabel: `${mpCost} MP${ability.tags?.includes("AOE") ? " · AoE" : ""}`,
+      costLabel: `${mpCost} MP`,
+      badges,
       hint: [
         ability.name,
         ability.description,
+        ...badgeTips,
+        targetingSummary(
+          ability.targeting ?? TargetResolutionService.legacyTargetingFromAbility(ability),
+        ),
         previewTech ? `Hit ${previewTech.hitChance}% · ${previewTech.damageMin}–${previewTech.damageMax} dmg` : null,
         `Cost ${mpCost} MP`,
         canAfford ? null : "Not enough MP",
       ]
         .filter(Boolean)
         .join("\n"),
-      disabled: !canAfford,
+      disabled: !canAfford || !TargetResolutionService.canUseAbility(combat, activeCombatant, ability).ok,
       icon: <ActionIcon name="technique" size={WHEEL_ICON_SIZE} />,
       onConfirm: () => beginTargetedAction({ type: "TECHNIQUE", abilityId: ability.id }),
     };
   });
 
-  const itemOptions: WheelOption[] = combatItems.map((item) => ({
-    id: item.id,
-    title: item.name,
-    costLabel: `×${item.quantity ?? 1}`,
-    hint: `${item.name}\nUse this item in combat.`,
-    icon: <ActionIcon name="item" size={WHEEL_ICON_SIZE} />,
-    onConfirm: () => {
-      closeMenu();
-      onUseItem(item.itemId || item.id);
-    },
-  }));
+  const itemOptions: WheelOption[] = combatItems.map((item) => {
+    const defId = item.itemId || item.id;
+    return {
+      id: item.id,
+      title: item.name,
+      costLabel: `×${item.quantity ?? 1}`,
+      hint: ItemService.combatHint(
+        defId,
+        {
+          hp: activeCombatant.hp,
+          maxHp: activeCombatant.maxHp,
+          mp: activeCombatant.mp ?? 0,
+          maxMp: activeCombatant.maxMp ?? 0,
+        },
+        item.description,
+      ),
+      icon: <ActionIcon name="item" size={WHEEL_ICON_SIZE} />,
+      onConfirm: () => {
+        closeMenu();
+        onUseItem(defId);
+      },
+    };
+  });
 
   const defendHint = [defendInfo.title, defendInfo.body, defendInfo.tip].join("\n");
   const observeHint = [observeInfo.title, observeInfo.body, observeInfo.tip].join("\n");
@@ -748,7 +1002,10 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
     }
     if (targeting) {
       if (aoeAbility) {
-        return "Select a target — all enemies will be hit.";
+        return "All valid enemies will be hit.";
+      }
+      if (manualTargeting) {
+        return `${targetingSummary(manualTargeting)} · ${selectedCount}/${manualExact ?? manualMax}`;
       }
       return "SELECT TARGET";
     }
@@ -767,22 +1024,38 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
     <section className="combat-stage combat-battlefield">
       <div className="combat-field-row combat-enemies">
         <div className="combat-unit-row">
-          {enemies.map((enemy) => (
-            <CombatantCard
-              combatant={enemy}
-              facing="down"
-              floaters={floaters}
-              isActive={enemy.id === activeCombatant.id}
-              key={enemy.id}
-              onHover={(hovering) => setHoverTargetId(hovering ? enemy.id : null)}
-              onSelect={() => chooseEnemy(enemy.id)}
-              position={positions.get(enemy.id)}
-              previewed={Boolean(targeting && aoeAbility && enemy.hp > 0)}
-              selectable={Boolean(targeting && enemy.hp > 0 && !presenting && !enemyThinking)}
-              selected={hoverTargetId === enemy.id && Boolean(targeting)}
-              widthPct={enemyWidth(enemy.id)}
-            />
-          ))}
+          {enemies.map((enemy) => {
+            const valid = !manualTargeting || manualValidTargets.some((entry) => entry.id === enemy.id);
+            const isSelected = Boolean(targeting?.selectedIds.includes(enemy.id));
+            const selectable =
+              Boolean(targeting) &&
+              enemy.hp > 0 &&
+              !presenting &&
+              !enemyThinking &&
+              (targeting?.type !== "TECHNIQUE" || !manualTargeting || valid);
+            return (
+              <CombatantCard
+                beatFlash={beatFlashFor(enemy.id)}
+                combatant={enemy}
+                facing="down"
+                floaters={floaters}
+                isActive={enemy.id === activeCombatant.id}
+                key={enemy.id}
+                onHover={(hovering) => setHoverTargetId(hovering ? enemy.id : null)}
+                onSelect={() => chooseEnemy(enemy.id)}
+                position={positions.get(enemy.id)}
+                previewed={Boolean(
+                  targeting &&
+                    ((aoeAbility && enemy.hp > 0) ||
+                      (manualTargeting && valid) ||
+                      targeting.selectedIds.includes(enemy.id)),
+                )}
+                selectable={selectable}
+                selected={isSelected || (hoverTargetId === enemy.id && Boolean(targeting))}
+                widthPct={enemyWidth(enemy.id)}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -790,7 +1063,13 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
         {presenting ? (
           <button className="combat-stage-present" onClick={advancePresentation} type="button">
             <div className={`combat-stage-fx ${currentBeat?.animation ? `is-${currentBeat.animation.toLowerCase()}` : ""}`}>
-              <p className="combat-stage-kicker">{currentBeat?.kind === "round" ? "New round" : "Combat"}</p>
+              <p className="combat-stage-kicker">
+                {currentBeat?.kind === "round"
+                  ? "New round"
+                  : currentBeat?.kind === "defeat"
+                    ? "Fallen"
+                    : "Combat"}
+              </p>
               <h2 className="combat-stage-headline font-display">{currentBeat?.headline}</h2>
               {currentBeat?.subline ? <p className="combat-stage-sub">{currentBeat.subline}</p> : null}
               <p className="combat-stage-skip">Click to skip</p>
@@ -857,18 +1136,38 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
 
       <div className={`combat-field-row combat-allies ${menuOpen ? "is-choosing" : ""}`}>
         <div className="combat-unit-row">
-          {allies.map((ally) => (
-            <CombatantCard
-              combatant={ally}
-              facing="up"
-              floaters={floaters}
-              isActive={ally.id === activeCombatant.id && !waiting}
-              isCaptain={ally.id === captainId}
-              key={ally.id}
-              position={positions.get(ally.id)}
-              widthPct={allyWidth(ally.id)}
-            />
-          ))}
+          {allies.map((ally) => {
+            const allyManual =
+              manualTargeting &&
+              (manualTargeting.group === "ALLY" ||
+                manualTargeting.group === "OTHER_ALLY" ||
+                manualTargeting.group === "SELF");
+            const valid = allyManual
+              ? manualValidTargets.some((entry) => entry.id === ally.id)
+              : false;
+            const isSelected = Boolean(targeting?.selectedIds.includes(ally.id));
+            return (
+              <CombatantCard
+                beatFlash={beatFlashFor(ally.id)}
+                combatant={ally}
+                facing="up"
+                floaters={floaters}
+                isActive={ally.id === activeCombatant.id && !waiting}
+                isCaptain={ally.id === captainId}
+                key={ally.id}
+                onSelect={
+                  targeting && allyManual && valid
+                    ? () => toggleManualTarget(ally.id)
+                    : undefined
+                }
+                position={positions.get(ally.id)}
+                previewed={Boolean(targeting && allyManual && valid)}
+                selectable={Boolean(targeting && allyManual && valid && !presenting && !enemyThinking)}
+                selected={isSelected}
+                widthPct={allyWidth(ally.id)}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -901,9 +1200,7 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
         ) : null}
       </div>
 
-      {combat.finished ? (
-        <p className="text-gold combat-finished-note">The clash is over.</p>
-      ) : (
+      {combat.finished ? null : (
         <div className="combat-actions-dock">
           <div className="combat-actions combat-actions-main">
             <button
@@ -983,16 +1280,28 @@ export function CombatView({ combat, items, onAction, onUseItem, onResolveEnemyT
       )}
 
       {targeting ? (
-        <button
-          className="ghost-btn combat-cancel-target"
-          onClick={() => {
-            setTargeting(null);
-            setActionHint(null);
-          }}
-          type="button"
-        >
-          Cancel targeting
-        </button>
+        <div className="combat-target-confirm-row">
+          {manualTargeting && (manualExact == null || manualExact > 1 || (manualMax ?? 1) > 1) ? (
+            <button
+              className="gold-btn"
+              disabled={!canConfirmManual}
+              onClick={() => fireTargetedAction(targeting.selectedIds)}
+              type="button"
+            >
+              Confirm Targets ({selectedCount}/{manualExact ?? manualMax})
+            </button>
+          ) : null}
+          <button
+            className="ghost-btn combat-cancel-target"
+            onClick={() => {
+              setTargeting(null);
+              setActionHint(null);
+            }}
+            type="button"
+          >
+            Cancel targeting
+          </button>
+        </div>
       ) : null}
     </section>
   );

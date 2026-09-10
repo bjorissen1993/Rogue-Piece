@@ -14,7 +14,7 @@ import type {
   RunState,
 } from "../models/types";
 import { interpolate } from "../utils/text";
-import { addUnique, applyStatChanges, clamp, removeValues } from "../utils/stats";
+import { addUnique, applyStatChanges, clamp, ensurePlayerStats, removeValues } from "../utils/stats";
 import { AchievementService } from "./AchievementService";
 import { CharacterService } from "./CharacterService";
 import { CollectionService } from "./CollectionService";
@@ -35,6 +35,8 @@ import { IslandService } from "./IslandService";
 import { ProgressionService } from "./ProgressionService";
 import { AffiliationService } from "./AffiliationService";
 import { FactionMissionService } from "./FactionMissionService";
+import { CharacterScheduleService } from "./CharacterScheduleService";
+import { KnowledgeService } from "./KnowledgeService";
 import { getRankById } from "../data/ranks";
 import { XP_REWARDS } from "../game/constants";
 import { resolveTimeCost } from "../utils/presentation";
@@ -160,6 +162,8 @@ export function conditionMet(condition: EncounterCondition, run: RunState): bool
     }
     case "CREW_MIN":
       return run.crew.length >= condition.value;
+    case "CREW_AVAILABLE_MIN":
+      return CharacterScheduleService.availableCount(run) >= condition.value;
     case "CREW_ROLE": {
       const count = run.crew.filter((member) => member.role === condition.role).length;
       return count >= (condition.minCount ?? 1);
@@ -172,13 +176,15 @@ export function conditionMet(condition: EncounterCondition, run: RunState): bool
         return run.crew.some((member) => {
           const character = CharacterService.getCharacter(run, member.characterId);
           if (!character) return false;
-          const stats = character.crewStats ?? {
-            strength: character.strength,
-            defense: Math.max(1, character.strength - 1),
-            speed: Math.max(1, character.strength - 2),
-            willpower: Math.max(2, Math.floor(character.strength / 2)),
-            charisma: 2,
-          };
+          const stats = ensurePlayerStats(
+            character.crewStats ?? {
+              strength: character.strength,
+              defense: Math.max(1, character.strength - 1),
+              speed: Math.max(1, character.strength - 2),
+              willpower: Math.max(2, Math.floor(character.strength / 2)),
+              charisma: 2,
+            },
+          );
           return stats[condition.stat] >= condition.value;
         });
       }
@@ -196,6 +202,14 @@ export function conditionMet(condition: EncounterCondition, run: RunState): bool
         .filter((item) => (item.itemId || item.id) === condition.itemId)
         .reduce((sum, item) => sum + (item.quantity ?? 1), 0);
       return total >= qty;
+    }
+    case "RUN_KNOWLEDGE": {
+      const ok = KnowledgeService.hasAtLeast(
+        run,
+        condition.subjectId,
+        condition.minStage ?? "LIMITED",
+      );
+      return ok !== Boolean(condition.negate);
     }
     default:
       return true;
@@ -238,7 +252,8 @@ function isSoftLockCondition(condition: EncounterCondition): boolean {
     condition.type === "MIN_BERRIES" ||
     condition.type === "MIN_HP" ||
     condition.type === "MIN_BOUNTY" ||
-    condition.type === "HAS_EATEN_FRUIT"
+    condition.type === "HAS_EATEN_FRUIT" ||
+    condition.type === "CREW_AVAILABLE_MIN"
   );
 }
 
@@ -259,7 +274,25 @@ function softLockReason(choice: EncounterChoice, run: RunState): string | undefi
     if (condition.type === "HAS_EATEN_FRUIT") {
       return condition.negate ? "Already bound to a fruit" : "Need a Devil Fruit";
     }
+    if (condition.type === "CREW_AVAILABLE_MIN") {
+      const have = CharacterScheduleService.availableCount(run);
+      return `${have} / ${condition.value} available`;
+    }
   }
+
+  const req = CharacterScheduleService.evaluateRequirements(run, choice.participantRequirements);
+  if (!req.ok) {
+    return req.reasons[0];
+  }
+
+  const minParticipants = choice.minParticipants ?? (choice.requiresParticipant ? 1 : 0);
+  if (minParticipants > 0) {
+    const have = CharacterScheduleService.availableCount(run);
+    if (have < minParticipants) {
+      return `${have} / ${minParticipants} available`;
+    }
+  }
+
   return undefined;
 }
 
@@ -628,8 +661,11 @@ function applyOutcome(
   }
 
   if (outcome.skillCheck) {
-    const value = run.player.stats[outcome.skillCheck.stat];
+    const actorId = run.pendingParticipantId ?? "player";
+    const value = ProgressionService.getStats(run, actorId)[outcome.skillCheck.stat];
     const success = CombatEngine.skillCheck(value, outcome.skillCheck.difficulty, rng);
+    const actorName = ProgressionService.getDisplayName(run, actorId);
+    lines.push(`${actorName} attempts the check (${outcome.skillCheck.stat} ${value}).`);
     const branch = success ? outcome.skillCheck.success : outcome.skillCheck.failure;
     applyOutcome(profile, branch, rng, lines);
   }
@@ -651,12 +687,35 @@ function applyOutcome(
     }
   }
   if (outcome.trainStat) {
-    const trained = TrainingService.apply(run, outcome.trainStat, rng);
-    lines.push(trained.text);
-    const xpMsg = ProgressionService.grantExperience(run, "player", XP_REWARDS.TRAINING, "training").message;
+    const trainee = run.pendingParticipantId ?? "player";
+    const trained = TrainingService.apply(run, outcome.trainStat, rng, trainee);
+    if (trained.text) {
+      lines.push(trained.text);
+    }
+    const xpMsg = ProgressionService.grantExperience(
+      run,
+      trainee === run.player.id ? "player" : trainee,
+      XP_REWARDS.TRAINING,
+      "training",
+    ).message;
     if (xpMsg) {
       lines.push(xpMsg);
     }
+  }
+
+  if (outcome.startAssignment) {
+    const characterId =
+      outcome.startAssignment.characterId ?? run.pendingParticipantId ?? "player";
+    const started = CharacterScheduleService.startAssignment(run, {
+      characterId,
+      type: outcome.startAssignment.type,
+      label: outcome.startAssignment.label,
+      durationSlots: outcome.startAssignment.durationSlots,
+      focus: outcome.startAssignment.focus,
+      berriesCost: outcome.startAssignment.berriesCost,
+      interruptible: outcome.startAssignment.interruptible,
+    });
+    lines.push(started.message);
   }
 
   if (outcome.grantExperience) {
@@ -664,6 +723,11 @@ function applyOutcome(
     if (xpMsg) {
       lines.push(xpMsg);
     }
+  }
+
+  if (outcome.grantKnowledgeCollectable) {
+    const note = KnowledgeService.grantFromCollectable(run, profile, outcome.grantKnowledgeCollectable);
+    lines.push(note);
   }
 
   if (outcome.addInformation) {
@@ -834,11 +898,12 @@ function concludeCombat(profile: ProfileSave, rng: RandomService): ResolveResult
     if (pending?.win) {
       applyOutcome(profile, pending.win, rng, narrativeLines);
     }
-    run.combat = null;
     if (run.pendingBattleResult) {
+      // Keep finished combat mounted under the victory overlay until dismiss.
       run.lastResultText = narrativeLines.filter(Boolean).join("\n\n") || null;
       run.awaitingAdvance = false;
     } else {
+      run.combat = null;
       const text = [...lines, ...narrativeLines].filter(Boolean).join("\n\n") || (run.lastResultText ?? "");
       run.lastResultText = text;
       run.awaitingAdvance = true;
@@ -953,9 +1018,40 @@ export const EncounterEngine = {
     if (!encounter) {
       return { profile: next, text: "There is no encounter.", gameOver: run.gameOver };
     }
-    const choice = availableChoices(encounter, run).find((item) => item.id === choiceId);
-    if (!choice) {
+    const presented = presentedChoices(encounter, run).find((entry) => entry.choice.id === choiceId);
+    if (!presented) {
       return { profile: next, text: "That choice is no longer available.", gameOver: run.gameOver };
+    }
+    if (presented.lockReason) {
+      return { profile: next, text: presented.lockReason, gameOver: run.gameOver };
+    }
+    const choice = presented.choice;
+    const minParticipants = choice.minParticipants ?? (choice.requiresParticipant ? 1 : 0);
+    if (minParticipants > 0) {
+      const selected =
+        run.pendingParticipantIds && run.pendingParticipantIds.length > 0
+          ? run.pendingParticipantIds
+          : run.pendingParticipantId
+            ? [run.pendingParticipantId]
+            : [];
+      if (selected.length < minParticipants) {
+        return {
+          profile: next,
+          text: `Select ${minParticipants} crew member${minParticipants === 1 ? "" : "s"} first.`,
+          gameOver: run.gameOver,
+        };
+      }
+      for (const id of selected) {
+        if (!CharacterScheduleService.isAvailable(run, id)) {
+          return {
+            profile: next,
+            text: "One of the selected characters is unavailable.",
+            gameOver: run.gameOver,
+          };
+        }
+      }
+      run.pendingParticipantIds = selected;
+      run.pendingParticipantId = selected[0] ?? null;
     }
 
     run.lastHpChange = null;
@@ -964,6 +1060,8 @@ export const EncounterEngine = {
 
     const lines: string[] = [];
     applyOutcome(next, choice.outcome, rng, lines);
+    run.pendingParticipantId = null;
+    run.pendingParticipantIds = [];
     const combat = next.activeRun?.combat;
     if (combat && !combat.finished) {
       run.lastResultText = lines.filter(Boolean).join("\n\n");
@@ -994,9 +1092,7 @@ export const EncounterEngine = {
       CollectionService.discoverTechnique(next, fruitId, firstTechniqueId(fruitId));
     }
     syncCombatResources(run);
-    if (run.combat.finished) {
-      concludeCombat(next, rng);
-    }
+    // Leave finished combat mounted so the UI can play hit/defeat presentation first.
     refreshStats(next);
     return next;
   },
@@ -1013,9 +1109,6 @@ export const EncounterEngine = {
     run.combat = CombatEngine.resolveEnemyTurn(run.combat, rng, run);
     applyCombatHpFeedback(run);
     syncCombatResources(run);
-    if (run.combat.finished) {
-      concludeCombat(next, rng);
-    }
     refreshStats(next);
     return next;
   },
@@ -1047,9 +1140,21 @@ export const EncounterEngine = {
       run.lastFeedback = used.message;
     }
     syncCombatResources(run);
-    if (run.combat.finished) {
-      concludeCombat(next, rng);
+    refreshStats(next);
+    return next;
+  },
+
+  /** Called after combat UI finishes hit/defeat presentation. */
+  finishCombatPresentation(
+    profile: ProfileSave,
+    rng = createRng(requireRun(profile).seed),
+  ): ProfileSave {
+    const next = cloneProfile(profile);
+    const run = requireRun(next);
+    if (!run.combat?.finished) {
+      return next;
     }
+    concludeCombat(next, rng);
     refreshStats(next);
     return next;
   },

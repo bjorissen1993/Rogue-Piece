@@ -167,6 +167,15 @@ function clearTurnBonuses(combatant: CombatantState): void {
   combatant.dodgeBonus = Math.max(0, combatant.dodgeBonus - 8);
 }
 
+function tickStatusEffects(combatant: CombatantState): void {
+  if (!combatant.statusEffects.length) {
+    return;
+  }
+  combatant.statusEffects = combatant.statusEffects
+    .map((effect) => ({ ...effect, remainingTurns: effect.remainingTurns - 1 }))
+    .filter((effect) => effect.remainingTurns > 0);
+}
+
 export const PartyCombatService = {
   allAllies(state: CombatState): CombatantState[] {
     const allies = [state.playerCombatant];
@@ -279,6 +288,8 @@ export const PartyCombatService = {
       if (!combatant || combatant.hp <= 0) {
         continue;
       }
+
+      tickStatusEffects(combatant);
 
       if (combatant.side === "ENEMY") {
         state.activeCombatantId = combatant.id;

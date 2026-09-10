@@ -1,4 +1,4 @@
-import type { Encounter, EncounterChoice, Player, TimeOfDay } from "../../models/types";
+import type { Encounter, EncounterChoice, Player, RunState, TimeOfDay } from "../../models/types";
 import type { ChoiceCostItem } from "../../utils/presentation";
 import { ChoiceEffectBadge } from "./ChoiceEffectBadge";
 
@@ -8,6 +8,7 @@ type ChoiceCostBarProps = {
   encounter?: Encounter | null;
   timeOfDay?: TimeOfDay;
   player?: Player | null;
+  run?: RunState | null;
   isDev?: boolean;
 };
 
@@ -17,6 +18,7 @@ export function ChoiceCostBar({
   encounter,
   timeOfDay,
   player,
+  run,
   isDev = false,
 }: ChoiceCostBarProps) {
   return (
@@ -29,6 +31,7 @@ export function ChoiceCostBar({
           item={item}
           key={`${item.kind}-${item.value}-${index}`}
           player={player}
+          run={run}
           timeOfDay={timeOfDay}
         />
       ))}

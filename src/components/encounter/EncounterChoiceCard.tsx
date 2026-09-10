@@ -14,6 +14,10 @@ import { ChoiceCostBar } from "./ChoiceCostBar";
 import { ChoiceDiamondIcon } from "./ChoiceDiamondIcon";
 import { ChoicePrimaryResult } from "./ChoicePrimaryResult";
 import { ChoiceRequirement } from "./ChoiceRequirement";
+import {
+  ChoiceParticipantPicker,
+  choiceNeedsParticipants,
+} from "./ChoiceParticipantPicker";
 
 type EncounterChoiceCardProps = {
   choice: EncounterChoice;
@@ -26,8 +30,10 @@ type EncounterChoiceCardProps = {
   locked?: boolean;
   lockReason?: string;
   isDev?: boolean;
+  participantIds?: string[];
+  onParticipantChange?: (ids: string[]) => void;
   onSelect: (choiceId: string) => void;
-  onConfirm: (choiceId: string) => void;
+  onConfirm: (choiceId: string, participantIds?: string[]) => void;
 };
 
 export function EncounterChoiceCard({
@@ -41,6 +47,8 @@ export function EncounterChoiceCard({
   locked = false,
   lockReason,
   isDev = false,
+  participantIds = [],
+  onParticipantChange,
   onSelect,
   onConfirm,
 }: EncounterChoiceCardProps) {
@@ -50,6 +58,9 @@ export function EncounterChoiceCard({
   const primary = choicePrimaryResult(choice);
   const costs = choiceCostItems(choice, encounter, timeOfDay, isDev);
   const primaryTip = primaryResultTooltip(choice, player, run);
+  const needsParticipants = Boolean(run && choiceNeedsParticipants(choice));
+  const minParticipants = choice.minParticipants ?? (needsParticipants ? 1 : 0);
+  const participantsReady = !needsParticipants || participantIds.length >= minParticipants;
 
   return (
     <div
@@ -81,7 +92,10 @@ export function EncounterChoiceCard({
             return;
           }
           if (selected) {
-            onConfirm(choice.id);
+            if (needsParticipants && !participantsReady) {
+              return;
+            }
+            onConfirm(choice.id, needsParticipants ? participantIds : undefined);
             return;
           }
           onSelect(choice.id);
@@ -107,6 +121,14 @@ export function EncounterChoiceCard({
             </div>
           )}
           {choice.flavour ? <p className="choice-flavour">{choice.flavour}</p> : null}
+          {selected && needsParticipants && run && onParticipantChange ? (
+            <ChoiceParticipantPicker
+              choice={choice}
+              onChange={onParticipantChange}
+              run={run}
+              selectedIds={participantIds}
+            />
+          ) : null}
         </div>
         <ChoiceCostBar
           choice={choice}
@@ -114,6 +136,7 @@ export function EncounterChoiceCard({
           isDev={isDev}
           items={costs}
           player={player}
+          run={run}
           timeOfDay={timeOfDay}
         />
         <ChoiceRequirement reason={lockReason} />

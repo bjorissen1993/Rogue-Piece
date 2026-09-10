@@ -29,6 +29,7 @@ import { FactionService } from "./FactionService";
 import { WeaponService } from "./WeaponService";
 import { MpService } from "./MpService";
 import { ProgressionService } from "./ProgressionService";
+import { ensurePlayerStats } from "../utils/stats";
 import { nowIso } from "../utils/ids";
 
 const PROFILE_KEYS: Record<Exclude<ProfileSlot, "dev">, string> = {
@@ -271,6 +272,13 @@ function migrateRunState(run: RunState): RunState {
     pendingLevelUps: run.pendingLevelUps ?? [],
     pendingTechniqueChoice: run.pendingTechniqueChoice ?? null,
     pendingEncounterId: run.pendingEncounterId ?? null,
+    characterAssignments: run.characterAssignments ?? [],
+    characterTrainingToday: run.characterTrainingToday ?? {},
+    pendingAssignmentResults: run.pendingAssignmentResults ?? [],
+    pendingParticipantId: run.pendingParticipantId ?? null,
+    pendingParticipantIds: run.pendingParticipantIds ?? [],
+    trainingToday: run.trainingToday ?? {},
+    runKnowledge: run.runKnowledge ?? [],
     factionMissions: run.factionMissions ?? [],
     factionOrders: run.factionOrders ?? [],
     activeParty: run.activeParty ?? CrewService.defaultActiveParty(),
@@ -307,6 +315,8 @@ function migrateRunState(run: RunState): RunState {
     },
   };
   WeaponService.migrateInventoryWeapons(next);
+  next.player.stats = ensurePlayerStats(next.player.stats);
+  next.runKnowledge = next.runKnowledge ?? [];
   const withFactions = migrateRunFactions(next);
   AffiliationService.ensure(withFactions);
   AuthorityService.ensure(withFactions);

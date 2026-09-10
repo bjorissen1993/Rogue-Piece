@@ -33,6 +33,10 @@ import { SaveService } from "../services/SaveService";
 import { StoryThreadService } from "../services/StoryThreadService";
 import { WeaponService } from "../services/WeaponService";
 import { ProgressionService } from "../services/ProgressionService";
+import { CharacterScheduleService } from "../services/CharacterScheduleService";
+import { TrainingService } from "../services/TrainingService";
+import { WorldService } from "../services/WorldService";
+import { KnowledgeService } from "../services/KnowledgeService";
 import { LootDispositionService } from "../services/LootDispositionService";
 import { PartyCombatService } from "../services/PartyCombatService";
 import { WorldCombatProgressionService } from "../services/WorldCombatProgressionService";
@@ -49,6 +53,7 @@ export type Overlay =
   | "crew"
   | "debug"
   | "gameMenu"
+  | "time"
   | null;
 export type NewRunStep = "race" | "origin" | "location" | "name";
 
@@ -85,16 +90,18 @@ type GameStoreValue = {
   resetDevProfile: () => void;
   requestResetDev: () => void;
   cancelResetDev: () => void;
-  choose: (choiceId: string) => void;
+  choose: (choiceId: string, participantIds?: string[]) => void;
   continueResult: () => void;
+  dismissAssignmentResults: () => void;
   dismissBattleResult: () => void;
+  finishCombatPresentation: () => void;
   combatAction: (action: CombatAction) => void;
   resolveEnemyTurn: () => void;
   useCombatItem: (itemId: string) => void;
   useInventoryItem: (itemId: string) => void;
   equipWeapon: (instanceId: string) => void;
   unequipWeapon: (instanceId: string) => void;
-  confirmLevelUp: (stat: StatName) => void;
+  confirmLevelUp: (stat: StatName) => boolean;
   selectTechnique: (techniqueId: string) => void;
   skipTechniqueChoice: () => void;
   fruitInventoryAction: (action: "EAT" | "SELL" | "KEEP", fruitId: string) => void;
@@ -133,6 +140,16 @@ type GameStoreValue = {
   debugOpenClinic: () => void;
   debugGenerateSupplySearch: () => void;
   debugGenerateTraining: () => void;
+  debugStartCrewTraining: () => void;
+  debugEndCrewTraining: () => void;
+  debugAdvanceTimeSlot: () => void;
+  debugAdvanceDay: () => void;
+  debugGenerateCrewRequirement: () => void;
+  debugGenerateCharacterChoice: () => void;
+  debugGenerateRuinedMechanism: () => void;
+  debugGiveKnowledgeCollectable: () => void;
+  debugSetIntelligence: (value: number) => void;
+  debugClearRunKnowledge: () => void;
   debugSetTimeSlots: (time: TimeOfDay) => void;
   debugSpawnEasyFight: () => void;
   debugSpawnStandardFight: () => void;
@@ -305,14 +322,32 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   }, [bump]);
 
   const choose = useCallback(
-    (choiceId: string) => {
+    (choiceId: string, participantIds?: string[]) => {
       if (!profile?.activeRun || profile.activeRun.awaitingAdvance || profile.activeRun.combat) {
         return;
       }
-      persist(EncounterEngine.resolveChoice(profile, choiceId).profile);
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      if (participantIds?.length) {
+        run.pendingParticipantIds = participantIds;
+        run.pendingParticipantId = participantIds[0] ?? null;
+      } else {
+        run.pendingParticipantIds = [];
+        run.pendingParticipantId = null;
+      }
+      persist(EncounterEngine.resolveChoice(next, choiceId).profile);
     },
     [profile, persist],
   );
+
+  const dismissAssignmentResults = useCallback(() => {
+    if (!profile?.activeRun?.pendingAssignmentResults?.length) {
+      return;
+    }
+    const next = structuredClone(profile);
+    next.activeRun!.pendingAssignmentResults = [];
+    persist(next);
+  }, [profile, persist]);
 
   const continueResult = useCallback(() => {
     if (!profile?.activeRun) {
@@ -330,11 +365,25 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     if (!profile?.activeRun?.pendingBattleResult) {
       return;
     }
+    if (profile.activeRun.pendingLevelUps?.length) {
+      return;
+    }
     const next = structuredClone(profile);
     const run = next.activeRun!;
     run.pendingBattleResult = null;
+    run.combat = null;
     run.awaitingAdvance = true;
     persist(next);
+  }, [profile, persist]);
+
+  const finishCombatPresentation = useCallback(() => {
+    if (!profile?.activeRun?.combat?.finished) {
+      return;
+    }
+    if (profile.activeRun.pendingBattleResult) {
+      return;
+    }
+    persist(EncounterEngine.finishCombatPresentation(profile));
   }, [profile, persist]);
 
   const combatAction = useCallback(
@@ -402,15 +451,21 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
 
   const confirmLevelUp = useCallback(
     (stat: StatName) => {
-      if (!profile?.activeRun) return;
+      if (!profile?.activeRun) return false;
       const next = structuredClone(profile);
       const run = next.activeRun!;
       const pending = ProgressionService.peekPendingLevelUp(run);
-      if (!pending) return;
+      if (!pending) return false;
       const message = ProgressionService.applyStatPoint(run, pending.characterId, stat);
+      if (message === "No stat points available." || message === "Crewmate not found.") {
+        run.lastFeedback = message;
+        persist(next);
+        return false;
+      }
       ProgressionService.consumePendingLevelUp(run);
       run.lastFeedback = message;
       persist(next);
+      return true;
     },
     [profile, persist],
   );
@@ -592,8 +647,9 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     ItemService.grant(run, "dried_meat", 1, next);
     ItemService.grant(run, "medicine", 1, next);
     ItemService.grant(run, "bandage", 1, next);
+    ItemService.grant(run, "energy_tonic", 1, next);
     ItemService.grant(run, "smoke_bomb", 1, next);
-    setDebugFeedback("Granted dried meat, medicine, bandage, smoke bomb.");
+    setDebugFeedback("Granted dried meat, medicine, bandage, energy tonic, smoke bomb.");
     persist(next);
   }, [profile, persist]);
 
@@ -907,6 +963,101 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   const debugGenerateTraining = useCallback(() => {
     loadDebugEncounter("island_shore_day", "A Day Ashore (train/rest/explore)");
   }, [loadDebugEncounter]);
+
+  const debugStartCrewTraining = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    const target =
+      run.crew.find((member) => CharacterScheduleService.isAvailable(run, member.characterId))
+        ?.characterId ?? "player";
+    const result = TrainingService.beginLongTraining(run, target, {
+      label: "Intensive Sword Training",
+      focus: "strength",
+      durationSlots: 8,
+      type: "WEAPON_TRAINING",
+    });
+    setDebugFeedback(result.message);
+    persist(next);
+  }, [profile, persist]);
+
+  const debugEndCrewTraining = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    CharacterScheduleService.ensure(run);
+    const assignment = run.characterAssignments?.[0];
+    if (!assignment) {
+      setDebugFeedback("No active training.");
+      return;
+    }
+    const report = CharacterScheduleService.completeAssignment(run, assignment);
+    run.characterAssignments = run.characterAssignments!.filter(
+      (entry) => entry.characterId !== assignment.characterId,
+    );
+    run.pendingAssignmentResults = [...(run.pendingAssignmentResults ?? []), report];
+    setDebugFeedback(report.summary);
+    persist(next);
+  }, [profile, persist]);
+
+  const debugAdvanceTimeSlot = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    const rng = createRng(`${run.seed}_slot_${Date.now()}`);
+    WorldService.spendTime(run, 1, rng);
+    setDebugFeedback(`Advanced 1 slot → Day ${run.day} ${run.timeOfDay}`);
+    persist(next);
+  }, [profile, persist]);
+
+  const debugAdvanceDay = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    const rng = createRng(`${run.seed}_day_${Date.now()}`);
+    WorldService.turnDay(run, rng);
+    setDebugFeedback(`Advanced to Day ${run.day}`);
+    persist(next);
+  }, [profile, persist]);
+
+  const debugGenerateCrewRequirement = useCallback(() => {
+    loadDebugEncounter("crew_roadblock", "Collapsed Road (3 crew)");
+  }, [loadDebugEncounter]);
+
+  const debugGenerateCharacterChoice = useCallback(() => {
+    loadDebugEncounter("chase_the_thief", "Chase the Thief");
+  }, [loadDebugEncounter]);
+
+  const debugGenerateRuinedMechanism = useCallback(() => {
+    loadDebugEncounter("ruined_mechanism", "Sealed Ruin Gate");
+  }, [loadDebugEncounter]);
+
+  const debugGiveKnowledgeCollectable = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    const msg = KnowledgeService.grantFromCollectable(next.activeRun!, next, "ancient_gear_diagram");
+    setDebugFeedback(msg);
+    persist(next);
+  }, [profile, persist]);
+
+  const debugSetIntelligence = useCallback(
+    (value: number) => {
+      if (!profile?.activeRun) return;
+      const next = structuredClone(profile);
+      next.activeRun!.player.stats.intelligence = Math.max(1, Math.min(20, value));
+      setDebugFeedback(`Player Intelligence set to ${next.activeRun!.player.stats.intelligence}.`);
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const debugClearRunKnowledge = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    KnowledgeService.clearRunKnowledge(next.activeRun!);
+    setDebugFeedback("Cleared run knowledge.");
+    persist(next);
+  }, [profile, persist]);
 
   const debugSetTimeSlots = useCallback(
     (time: TimeOfDay) => {
@@ -1419,7 +1570,9 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     cancelResetDev,
     choose,
     continueResult,
+    dismissAssignmentResults,
     dismissBattleResult,
+    finishCombatPresentation,
     combatAction,
     resolveEnemyTurn,
     useCombatItem,
@@ -1465,6 +1618,16 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     debugOpenClinic,
     debugGenerateSupplySearch,
     debugGenerateTraining,
+    debugStartCrewTraining,
+    debugEndCrewTraining,
+    debugAdvanceTimeSlot,
+    debugAdvanceDay,
+    debugGenerateCrewRequirement,
+    debugGenerateCharacterChoice,
+    debugGenerateRuinedMechanism,
+    debugGiveKnowledgeCollectable,
+    debugSetIntelligence,
+    debugClearRunKnowledge,
     debugSetTimeSlots,
     debugSpawnEasyFight,
     debugSpawnStandardFight,
