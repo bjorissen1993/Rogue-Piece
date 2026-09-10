@@ -1,0 +1,207 @@
+import type { EncounterCondition, FightingStyle, Technique } from "../models/types";
+
+export const FIGHTING_STYLES: FightingStyle[] = [
+  {
+    id: "swordsmanship",
+    name: "Swordsmanship",
+    description: "Classic blade work — cut, parry, and finish.",
+    requirements: [],
+    techniqueIds: ["style_quick_draw", "style_dual_guard", "style_finish_cut"],
+  },
+  {
+    id: "black_leg",
+    name: "Black Leg",
+    description: "Kicks that hit harder than fists ever could.",
+    requirements: [],
+    techniqueIds: ["style_collier", "style_party_table", "style_diable_jambe_lite"],
+  },
+  {
+    id: "fishman_karate",
+    name: "Fish-Man Karate",
+    description: "Water-flow strikes. Only fish-folk truly master it.",
+    requirements: [{ type: "PLAYER_RACE", raceId: "FISHMAN" }],
+    techniqueIds: ["style_water_shot", "style_karate_blow", "style_shark_bite"],
+  },
+  {
+    id: "rokushiki",
+    name: "Rokushiki",
+    description: "Government-grade martial arts. Locked for now.",
+    requirements: [{ type: "RUN_FLAG", flag: "rokushiki_unlocked" }],
+    techniqueIds: ["style_soru", "style_rankyaku", "style_tekkai"],
+  },
+  {
+    id: "brawler",
+    name: "Brawler",
+    description: "Fists, elbows, and whatever else is handy.",
+    requirements: [],
+    techniqueIds: ["style_haymaker", "style_body_slam", "style_headbutt"],
+  },
+];
+
+export const STYLE_TECHNIQUES: Technique[] = [
+  {
+    id: "style_quick_draw",
+    name: "Quick Draw",
+    description: "Steel out before they blink.",
+    source: "FIGHTING_STYLE",
+    power: 5,
+    scalingStat: "speed",
+    accuracyMod: 4,
+    styleId: "swordsmanship",
+  },
+  {
+    id: "style_dual_guard",
+    name: "Dual Guard",
+    description: "Blade and body move as one.",
+    source: "FIGHTING_STYLE",
+    power: 4,
+    scalingStat: "defense",
+    accuracyMod: 2,
+    styleId: "swordsmanship",
+  },
+  {
+    id: "style_finish_cut",
+    name: "Finishing Cut",
+    description: "End it cleanly.",
+    source: "FIGHTING_STYLE",
+    power: 9,
+    scalingStat: "strength",
+    accuracyMod: -2,
+    styleId: "swordsmanship",
+  },
+  {
+    id: "style_collier",
+    name: "Collier",
+    description: "A spinning kick to the jaw.",
+    source: "FIGHTING_STYLE",
+    power: 6,
+    scalingStat: "strength",
+    accuracyMod: 0,
+    styleId: "black_leg",
+  },
+  {
+    id: "style_party_table",
+    name: "Party Table Kick",
+    description: "Feet-first through the problem.",
+    source: "FIGHTING_STYLE",
+    power: 8,
+    scalingStat: "speed",
+    accuracyMod: -2,
+    styleId: "black_leg",
+  },
+  {
+    id: "style_diable_jambe_lite",
+    name: "Heated Kick",
+    description: "Friction turns the strike burning hot.",
+    source: "FIGHTING_STYLE",
+    power: 10,
+    scalingStat: "willpower",
+    accuracyMod: -4,
+    styleId: "black_leg",
+  },
+  {
+    id: "style_water_shot",
+    name: "Water Shot",
+    description: "Condensed moisture strikes like a bullet.",
+    source: "FIGHTING_STYLE",
+    power: 7,
+    scalingStat: "strength",
+    accuracyMod: 2,
+    styleId: "fishman_karate",
+  },
+  {
+    id: "style_karate_blow",
+    name: "Karate Blow",
+    description: "Open-palm impact through water.",
+    source: "FIGHTING_STYLE",
+    power: 6,
+    scalingStat: "strength",
+    accuracyMod: 0,
+    styleId: "fishman_karate",
+  },
+  {
+    id: "style_shark_bite",
+    name: "Shark Bite",
+    description: "Predator's grip and tear.",
+    source: "FIGHTING_STYLE",
+    power: 9,
+    scalingStat: "strength",
+    accuracyMod: -3,
+    styleId: "fishman_karate",
+  },
+  {
+    id: "style_soru",
+    name: "Soru",
+    description: "Vanish and reappear behind them.",
+    source: "FIGHTING_STYLE",
+    power: 4,
+    scalingStat: "speed",
+    accuracyMod: 8,
+    styleId: "rokushiki",
+  },
+  {
+    id: "style_rankyaku",
+    name: "Rankyaku",
+    description: "A blade of air.",
+    source: "FIGHTING_STYLE",
+    power: 8,
+    scalingStat: "speed",
+    accuracyMod: 0,
+    styleId: "rokushiki",
+  },
+  {
+    id: "style_tekkai",
+    name: "Tekkai",
+    description: "Iron body, immovable.",
+    source: "FIGHTING_STYLE",
+    power: 2,
+    scalingStat: "defense",
+    accuracyMod: 10,
+    styleId: "rokushiki",
+  },
+  {
+    id: "style_haymaker",
+    name: "Haymaker",
+    description: "Wind up. Connect. Repeat.",
+    source: "FIGHTING_STYLE",
+    power: 7,
+    scalingStat: "strength",
+    accuracyMod: -4,
+    styleId: "brawler",
+  },
+  {
+    id: "style_body_slam",
+    name: "Body Slam",
+    description: "Use your whole weight.",
+    source: "FIGHTING_STYLE",
+    power: 6,
+    scalingStat: "defense",
+    accuracyMod: 0,
+    styleId: "brawler",
+  },
+  {
+    id: "style_headbutt",
+    name: "Headbutt",
+    description: "Desperate and effective.",
+    source: "FIGHTING_STYLE",
+    power: 5,
+    scalingStat: "willpower",
+    accuracyMod: 2,
+    styleId: "brawler",
+  },
+];
+
+export function getFightingStyle(id: string): FightingStyle | undefined {
+  return FIGHTING_STYLES.find((style) => style.id === id);
+}
+
+export function getStyleTechnique(id: string): Technique | undefined {
+  return STYLE_TECHNIQUES.find((tech) => tech.id === id);
+}
+
+export function styleRequirementsMet(
+  style: FightingStyle,
+  check: (condition: EncounterCondition) => boolean,
+): boolean {
+  return style.requirements.every((condition) => check(condition));
+}

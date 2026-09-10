@@ -1,0 +1,213 @@
+import type { Technique, Weapon } from "../models/types";
+
+export const WEAPONS: Weapon[] = [
+  {
+    id: "wooden_club",
+    name: "Wooden Club",
+    weaponType: "CLUB",
+    rarity: "COMMON",
+    damage: 6,
+    speed: 4,
+    traits: ["crude"],
+    techniqueIds: ["club_swing", "club_bash"],
+  },
+  {
+    id: "iron_spear",
+    name: "Iron Spear",
+    weaponType: "SPEAR",
+    rarity: "COMMON",
+    damage: 7,
+    speed: 6,
+    traits: ["reach"],
+    techniqueIds: ["spear_thrust", "spear_sweep"],
+  },
+  {
+    id: "steel_cutlass",
+    name: "Steel Cutlass",
+    weaponType: "SWORD",
+    rarity: "UNCOMMON",
+    damage: 9,
+    speed: 7,
+    traits: ["balanced"],
+    techniqueIds: ["sword_slash", "sword_parry_riposte"],
+  },
+  {
+    id: "rusty_cutlass_weapon",
+    name: "Rusty Cutlass",
+    weaponType: "SWORD",
+    rarity: "COMMON",
+    damage: 6,
+    speed: 5,
+    traits: ["rusty"],
+    techniqueIds: ["sword_slash"],
+  },
+  {
+    id: "flintlock_pistol",
+    name: "Flintlock Pistol",
+    weaponType: "GUN",
+    rarity: "UNCOMMON",
+    damage: 10,
+    speed: 3,
+    traits: ["ranged", "single_shot"],
+    techniqueIds: ["gun_shot"],
+  },
+  {
+    id: "iron_knuckles",
+    name: "Iron Knuckles",
+    weaponType: "FISTS",
+    rarity: "COMMON",
+    damage: 5,
+    speed: 8,
+    traits: ["brawling"],
+    techniqueIds: ["fist_jab", "fist_combo"],
+  },
+  {
+    id: "sea_king_harpoon",
+    name: "Sea King Harpoon",
+    weaponType: "SPEAR",
+    rarity: "RARE",
+    damage: 11,
+    speed: 5,
+    traits: ["heavy", "harpoons"],
+    techniqueIds: ["spear_thrust", "spear_impale"],
+  },
+  {
+    id: "captain_saber",
+    name: "Captain's Saber",
+    weaponType: "SWORD",
+    rarity: "RARE",
+    damage: 12,
+    speed: 8,
+    traits: ["precise", "captain"],
+    techniqueIds: ["sword_slash", "sword_crescent"],
+  },
+];
+
+export const WEAPON_TECHNIQUES: Technique[] = [
+  {
+    id: "sword_slash",
+    name: "Slash",
+    description: "A clean horizontal cut.",
+    source: "WEAPON",
+    power: 4,
+    scalingStat: "strength",
+    accuracyMod: 0,
+    weaponType: "SWORD",
+  },
+  {
+    id: "sword_parry_riposte",
+    name: "Parry Riposte",
+    description: "Deflect and counter in one motion.",
+    source: "WEAPON",
+    power: 6,
+    scalingStat: "speed",
+    accuracyMod: 4,
+    weaponType: "SWORD",
+  },
+  {
+    id: "sword_crescent",
+    name: "Crescent Cut",
+    description: "A sweeping arc that bites deep.",
+    source: "WEAPON",
+    power: 8,
+    scalingStat: "strength",
+    accuracyMod: -2,
+    weaponType: "SWORD",
+  },
+  {
+    id: "spear_thrust",
+    name: "Thrust",
+    description: "Point-first at the gap in their guard.",
+    source: "WEAPON",
+    power: 5,
+    scalingStat: "strength",
+    accuracyMod: 2,
+    weaponType: "SPEAR",
+  },
+  {
+    id: "spear_sweep",
+    name: "Leg Sweep",
+    description: "Knock their footing out from under them.",
+    source: "WEAPON",
+    power: 3,
+    scalingStat: "speed",
+    accuracyMod: 6,
+    weaponType: "SPEAR",
+  },
+  {
+    id: "spear_impale",
+    name: "Impale",
+    description: "Drive the point home.",
+    source: "WEAPON",
+    power: 10,
+    scalingStat: "strength",
+    accuracyMod: -4,
+    weaponType: "SPEAR",
+  },
+  {
+    id: "club_swing",
+    name: "Club Swing",
+    description: "Blunt force, no finesse required.",
+    source: "WEAPON",
+    power: 5,
+    scalingStat: "strength",
+    accuracyMod: 0,
+    weaponType: "CLUB",
+  },
+  {
+    id: "club_bash",
+    name: "Overhead Bash",
+    description: "Bring it down hard.",
+    source: "WEAPON",
+    power: 7,
+    scalingStat: "strength",
+    accuracyMod: -3,
+    weaponType: "CLUB",
+  },
+  {
+    id: "gun_shot",
+    name: "Pistol Shot",
+    description: "One loud answer.",
+    source: "WEAPON",
+    power: 9,
+    scalingStat: "speed",
+    accuracyMod: -6,
+    weaponType: "GUN",
+  },
+  {
+    id: "fist_jab",
+    name: "Jab",
+    description: "Quick and close.",
+    source: "WEAPON",
+    power: 3,
+    scalingStat: "speed",
+    accuracyMod: 4,
+    weaponType: "FISTS",
+  },
+  {
+    id: "fist_combo",
+    name: "Combo Rush",
+    description: "A flurry of blows.",
+    source: "WEAPON",
+    power: 6,
+    scalingStat: "speed",
+    accuracyMod: 0,
+    weaponType: "FISTS",
+  },
+];
+
+export function getWeapon(id: string): Weapon | undefined {
+  return WEAPONS.find((weapon) => weapon.id === id);
+}
+
+export function requireWeapon(id: string): Weapon {
+  const weapon = getWeapon(id);
+  if (!weapon) {
+    throw new Error(`Unknown weapon: ${id}`);
+  }
+  return weapon;
+}
+
+export function getTechnique(id: string): Technique | undefined {
+  return WEAPON_TECHNIQUES.find((tech) => tech.id === id);
+}
