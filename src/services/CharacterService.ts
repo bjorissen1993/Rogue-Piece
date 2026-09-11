@@ -106,8 +106,23 @@ export const CharacterService = {
     if (!character) {
       return;
     }
+    const aliases: Partial<Record<CharacterMemoryType, CharacterMemoryType[]>> = {
+      HELPED: ["PLAYER_SAVED_ME"],
+      BETRAYED: ["PLAYER_BETRAYED_ME"],
+      FOUGHT: ["PLAYER_ATTACKED_ME"],
+      RESCUED: ["PLAYER_SAVED_ME"],
+      RECRUITED: ["WAS_RECRUITED"],
+    };
     const memory: CharacterMemory = { type, day: run.day, importance, note };
     character.memories = [...(character.memories ?? []), memory];
+    for (const alias of aliases[type] ?? []) {
+      character.memories.push({ type: alias, day: run.day, importance, note });
+    }
+  },
+
+  hasMemory(run: RunState, characterId: string, type: CharacterMemoryType): boolean {
+    const character = findCharacter(run, characterId);
+    return Boolean(character?.memories?.some((memory) => memory.type === type));
   },
 
   modifyJoinInterest(run: RunState, characterId: string, amount: number): number {
@@ -155,15 +170,25 @@ export const CharacterService = {
     const name = character.epithet ? `${character.name} "${character.epithet}"` : character.name;
     switch (recent.type) {
       case "HELPED":
+      case "PLAYER_SAVED_ME":
         return `${name} remembers you helped them on day ${recent.day}.`;
       case "BETRAYED":
+      case "PLAYER_BETRAYED_ME":
         return `${name} has not forgotten your betrayal.`;
       case "FOUGHT":
+      case "PLAYER_ATTACKED_ME":
         return `${name} still bears scars from your last fight.`;
       case "RESCUED":
         return `${name} owes you their life.`;
+      case "PLAYER_SPARED_ME":
+        return `${name} remembers you spared them.`;
       case "RECRUITED":
+      case "WAS_RECRUITED":
         return `${name} sails with you now.`;
+      case "FOUGHT_TOGETHER":
+        return `${name} nods — you've bled together before.`;
+      case "SHARED_SECRET":
+        return `${name} lowers their voice. Shared secrets still bind you.`;
       default:
         return `${name} recognizes you from day ${recent.day}.`;
     }

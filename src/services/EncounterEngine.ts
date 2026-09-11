@@ -34,9 +34,16 @@ import { TrainingService } from "./TrainingService";
 import { IslandService } from "./IslandService";
 import { ProgressionService } from "./ProgressionService";
 import { AffiliationService } from "./AffiliationService";
+import { IdentityService } from "./IdentityService";
+import { RecruitmentModelService } from "./RecruitmentModelService";
+import { CrewService } from "./CrewService";
 import { FactionMissionService } from "./FactionMissionService";
 import { CharacterScheduleService } from "./CharacterScheduleService";
 import { KnowledgeService } from "./KnowledgeService";
+import {
+  choiceNeedsParticipants,
+  participantBounds,
+} from "../game/encounterParticipants";
 import { getRankById } from "../data/ranks";
 import { XP_REWARDS } from "../game/constants";
 import { resolveTimeCost } from "../utils/presentation";
@@ -118,8 +125,21 @@ export function conditionMet(condition: EncounterCondition, run: RunState): bool
     case "FACTION_DISCOVERED":
       return FactionService.isFactionDiscovered(run, condition.factionId) !== Boolean(condition.negate);
     case "PLAYER_AFFILIATION": {
+      if (condition.factionId === "BOUNTY_HUNTER") {
+        const isHunter = IdentityService.isPlayerBountyHunter(run);
+        return isHunter !== Boolean(condition.negate);
+      }
       const belongs = AffiliationService.belongsToFaction(run, condition.factionId);
       return belongs !== Boolean(condition.negate);
+    }
+    case "PLAYER_ROLE": {
+      const has = IdentityService.hasRole(run, condition.roleId);
+      return has !== Boolean(condition.negate);
+    }
+    case "PLAYER_LEGAL_STATUS": {
+      const status = IdentityService.get(run).legalStatusId;
+      const matched = status === condition.statusId;
+      return matched !== Boolean(condition.negate);
     }
     case "MEMBERSHIP_STATUS": {
       const status = AffiliationService.get(run).membershipStatus;
@@ -285,7 +305,7 @@ function softLockReason(choice: EncounterChoice, run: RunState): string | undefi
     return req.reasons[0];
   }
 
-  const minParticipants = choice.minParticipants ?? (choice.requiresParticipant ? 1 : 0);
+  const { min: minParticipants } = participantBounds(choice);
   if (minParticipants > 0) {
     const have = CharacterScheduleService.availableCount(run);
     if (have < minParticipants) {
@@ -332,6 +352,7 @@ function effectiveWeight(encounter: Encounter, run: RunState): number {
   }
   weight *= threatWeightMultiplier(encounter, run);
   weight *= EncounterHistoryService.historyWeightMultiplier(run, encounter);
+  weight *= StoryThreadService.contextScore(run, encounter);
   if (encounter.tier && !tierAllowed(encounter.tier, run)) {
     return 0;
   }
@@ -453,6 +474,35 @@ function resolveCharacterId(run: RunState, characterId?: string): string | null 
   return characterId ?? run.currentBoundNpcId;
 }
 
+const RECRUIT_NPC_STUBS: Record<
+  string,
+  { name: string; faction: "MARINE" | "PIRATE" | "CIVILIAN" | "UNDERWORLD" }
+> = {
+  npc_milo_hunter: { name: "Milo", faction: "CIVILIAN" },
+  npc_marine_hana: { name: "Hana", faction: "MARINE" },
+  npc_dock_hand: { name: "Dock Hand", faction: "PIRATE" },
+  npc_hunter_kira: { name: "Kira", faction: "CIVILIAN" },
+  npc_cp_veyl: { name: "Veyl", faction: "UNDERWORLD" },
+  npc_celestial_wannabe: { name: "Hopeful Sailor", faction: "CIVILIAN" },
+  npc_celestial_attendant: { name: "Attendant", faction: "CIVILIAN" },
+};
+
+function ensureRecruitNpc(run: RunState, characterId: string): void {
+  if (CharacterService.getCharacter(run, characterId)) return;
+  const stub = RECRUIT_NPC_STUBS[characterId] ?? {
+    name: characterId.replace(/^npc_/, "").replace(/_/g, " "),
+    faction: "CIVILIAN" as const,
+  };
+  CharacterService.getOrCreateCharacter(run, {
+    id: characterId,
+    name: stub.name,
+    faction: stub.faction,
+    tags: ["recruit_stub"],
+    joinInterest: 80,
+    relationshipWithPlayer: 2,
+  });
+}
+
 function applyStoryAndCharacterOutcomes(run: RunState, outcome: EncounterOutcome, lines: string[]): void {
   if (outcome.startStoryThread) {
     const thread = StoryThreadService.createThread(run, outcome.startStoryThread, {
@@ -514,16 +564,20 @@ function applyStoryAndCharacterOutcomes(run: RunState, outcome: EncounterOutcome
 
   const recruitId = resolveCharacterId(run, outcome.acceptRecruitment?.characterId);
   if (outcome.acceptRecruitment && recruitId) {
-    const member = CharacterService.acceptRecruitment(
+    ensureRecruitNpc(run, recruitId);
+    const { member, reason } = RecruitmentModelService.recruit(
       run,
       recruitId,
       outcome.acceptRecruitment.role ?? "FIGHTER",
-      outcome.acceptRecruitment.membership ?? "ALLY",
+      outcome.acceptRecruitment.membership,
     );
     if (member) {
       const character = CharacterService.getCharacter(run, recruitId);
       const party = AffiliationService.getCrewLabel(run).toLowerCase();
-      lines.push(`${character?.name ?? "A new ally"} joins your ${party}.`);
+      const membershipLabel = CrewService.membershipLabel(member.membership);
+      lines.push(`${character?.name ?? "A new ally"} joins your ${party} (${membershipLabel}).`);
+    } else if (reason) {
+      lines.push(reason);
     }
   }
 
@@ -548,6 +602,32 @@ function applyStoryAndCharacterOutcomes(run: RunState, outcome: EncounterOutcome
         note: outcome.joinFaction.note,
       }),
     );
+  }
+  if (outcome.setRole) {
+    IdentityService.setRole(
+      run,
+      outcome.setRole.roleId,
+      outcome.setRole.rankId,
+      outcome.setRole.note,
+    );
+    lines.push(`Your path shifts: you are now known as a ${outcome.setRole.roleId.replace(/_/g, " ").toLowerCase()}.`);
+  }
+  if (outcome.setLegalStatus) {
+    IdentityService.setLegalStatus(run, outcome.setLegalStatus.statusId, outcome.setLegalStatus.note);
+    lines.push(`Legal standing: ${outcome.setLegalStatus.statusId.replace(/_/g, " ").toLowerCase()}.`);
+  }
+  if (outcome.tendencyChanges) {
+    IdentityService.applyTendencyChanges(run, outcome.tendencyChanges);
+    if (IdentityService.hasRole(run, "CELESTIAL_DRAGON")) {
+      const compassion = outcome.tendencyChanges.compassion ?? 0;
+      const entitlement = outcome.tendencyChanges.entitlement ?? 0;
+      if (compassion > 0) {
+        IdentityService.nudgeCelestial(run, { humanConnection: Math.round(compassion / 2), acceptance: -2 });
+      }
+      if (entitlement > 0) {
+        IdentityService.nudgeCelestial(run, { privilegeLevel: Math.round(entitlement / 2), humanConnection: -2 });
+      }
+    }
   }
   if (outcome.leaveFaction) {
     lines.push(AffiliationService.leave(run, outcome.leaveFaction.mode, outcome.leaveFaction.note));
@@ -684,6 +764,12 @@ function applyOutcome(
     run.player.bounty = Math.max(0, run.player.bounty + outcome.bountyChange);
     if (outcome.bountyChange > 0 && !run.worldProgressionFlags.first_bounty) {
       run.worldProgressionFlags.first_bounty = true;
+    }
+    IdentityService.syncLegalFromBounty(run);
+    if (outcome.bountyChange > 0) {
+      IdentityService.applyTendencyChanges(run, {
+        criminality: Math.min(5, Math.round(outcome.bountyChange / 2000)),
+      });
     }
   }
   if (outcome.trainStat) {
@@ -1026,8 +1112,8 @@ export const EncounterEngine = {
       return { profile: next, text: presented.lockReason, gameOver: run.gameOver };
     }
     const choice = presented.choice;
-    const minParticipants = choice.minParticipants ?? (choice.requiresParticipant ? 1 : 0);
-    if (minParticipants > 0) {
+    const { min: minParticipants } = participantBounds(choice);
+    if (minParticipants > 0 || choiceNeedsParticipants(choice)) {
       const selected =
         run.pendingParticipantIds && run.pendingParticipantIds.length > 0
           ? run.pendingParticipantIds

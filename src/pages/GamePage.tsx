@@ -108,6 +108,11 @@ export function GamePage() {
     debugTechniquePoint,
     debugGenerateChestEncounter,
     debugJoinFaction,
+    debugSetIdentityRole,
+    debugSetLegalStatus,
+    debugNudgeTendency,
+    debugBecomeCelestial,
+    debugLoseCelestialPrivilege,
     debugSetIndependent,
     debugPromote,
     debugDemote,
@@ -346,6 +351,11 @@ export function GamePage() {
           onClearCooldowns={debugClearCooldowns}
           onGenerateChestEncounter={debugGenerateChestEncounter}
           onJoinFaction={debugJoinFaction}
+          onSetIdentityRole={debugSetIdentityRole}
+          onSetLegalStatus={debugSetLegalStatus}
+          onNudgeTendency={debugNudgeTendency}
+          onBecomeCelestial={debugBecomeCelestial}
+          onLoseCelestialPrivilege={debugLoseCelestialPrivilege}
           onSetIndependent={debugSetIndependent}
           onPromote={debugPromote}
           onDemote={debugDemote}

@@ -1,6 +1,7 @@
 import { getLocation, getRegionName } from "../data/locations";
 import type { RunState } from "../models/types";
 import { AffiliationService } from "../services/AffiliationService";
+import { IdentityService } from "../services/IdentityService";
 import { clockFromTimeOfDay } from "../utils/presentation";
 import { formatHudAmount } from "../utils/text";
 import { BOUNTY_ART, CrestEmblem, HudArt, HudIcon, TITLE_ART } from "./HudIcons";
@@ -18,7 +19,9 @@ export function RunBar({ run, isDev, onMenu, onOpenTime }: RunBarProps) {
   const region = location ? getRegionName(location.regionId) : "Unknown seas";
   const place = location?.name ?? "Unknown waters";
   AffiliationService.ensure(run);
+  IdentityService.ensure(run);
   const metric = AffiliationService.getHudMetric(run);
+  const identity = IdentityService.hudSummary(run);
   const metricDisplay =
     metric.kind === "BOUNTY" ? formatHudAmount(run.player.bounty) : metric.value;
   const metricArt =
@@ -67,10 +70,16 @@ export function RunBar({ run, isDev, onMenu, onOpenTime }: RunBarProps) {
             <span className="run-wealth-label">{metric.label}</span>
             <strong>{metricDisplay}</strong>
           </p>
-          <p className="run-wealth">
+          <p
+            className="run-wealth run-identity"
+            title={`${identity.faction} · ${identity.role} · ${identity.legal}`}
+          >
             <HudArt className="run-glyph" size={18} src={TITLE_ART} />
-            <span className="run-wealth-label">Title</span>
-            <strong>{run.player.title || "Independent Sailor"}</strong>
+            <span className="run-wealth-label">Identity</span>
+            <strong>
+              {identity.faction} · {identity.role}
+            </strong>
+            <span className="run-identity-legal">{identity.legal}</span>
           </p>
         </div>
       </div>

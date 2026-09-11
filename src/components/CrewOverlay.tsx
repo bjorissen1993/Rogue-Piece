@@ -8,6 +8,7 @@ import { CrewService } from "../services/CrewService";
 import { CrewCombatService, SUPPORT_ABILITIES } from "../services/CrewCombatService";
 import { ProgressionService } from "../services/ProgressionService";
 import { AffiliationService } from "../services/AffiliationService";
+import { IdentityService } from "../services/IdentityService";
 import { AuthorityService } from "../services/AuthorityService";
 import { FleetService } from "../services/FleetService";
 import { RaceService } from "../services/RaceService";
@@ -372,10 +373,18 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                 <p className="hud-kicker">{leaderLabel}</p>
                 <h3 className="font-display mt-2 text-2xl">{run.player.name}</h3>
                 <section className="detail-section mt-3">
-                  <p className="detail-label">Affiliation</p>
-                  <p className="detail-value text-sm">{affiliation.factionLabel}</p>
+                  <p className="detail-label">Identity</p>
                   <p className="detail-value text-sm">
-                    Rank: {affiliation.rankLabel} · {affiliation.standingLabel}
+                    Faction: {IdentityService.hudSummary(run).faction}
+                  </p>
+                  <p className="detail-value text-sm">
+                    Role: {IdentityService.hudSummary(run).role}
+                  </p>
+                  <p className="detail-value text-sm">
+                    Legal: {IdentityService.hudSummary(run).legal}
+                  </p>
+                  <p className="detail-value text-sm text-parchment-dim">
+                    Standing: {affiliation.rankLabel} · {affiliation.standingLabel}
                   </p>
                 </section>
                 <section className="detail-section">

@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import type { CrewStatus, PlayerStats, RunState } from "../../models/types";
 import { CharacterScheduleService } from "../../services/CharacterScheduleService";
 import { ProgressionService } from "../../services/ProgressionService";
@@ -132,8 +133,8 @@ export function CrewBadgeDetailPanel({
   const progression = ProgressionService.getProgression(run, id);
   const level = progression?.level ?? 1;
 
-  return (
-    <div className="overlay-scrim" onClick={onClose} role="presentation">
+  return createPortal(
+    <div className="overlay-scrim crew-badge-detail-scrim" onClick={onClose} role="presentation">
       <section
         className="overlay-panel overlay-panel-narrow crew-badge-detail"
         onClick={(event) => event.stopPropagation()}
@@ -163,6 +164,7 @@ export function CrewBadgeDetailPanel({
           </p>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

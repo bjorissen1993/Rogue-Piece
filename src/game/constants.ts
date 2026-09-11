@@ -1,4 +1,4 @@
-export const SAVE_VERSION = 14;
+export const SAVE_VERSION = 15;
 
 /** Core roster cap including the player character. */
 export const CORE_CREW_CAP = 10;

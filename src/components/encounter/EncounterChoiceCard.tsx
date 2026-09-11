@@ -14,10 +14,7 @@ import { ChoiceCostBar } from "./ChoiceCostBar";
 import { ChoiceDiamondIcon } from "./ChoiceDiamondIcon";
 import { ChoicePrimaryResult } from "./ChoicePrimaryResult";
 import { ChoiceRequirement } from "./ChoiceRequirement";
-import {
-  ChoiceParticipantPicker,
-  choiceNeedsParticipants,
-} from "./ChoiceParticipantPicker";
+import { choiceNeedsParticipants, participantBounds } from "./ChoiceParticipantPicker";
 
 type EncounterChoiceCardProps = {
   choice: EncounterChoice;
@@ -31,7 +28,6 @@ type EncounterChoiceCardProps = {
   lockReason?: string;
   isDev?: boolean;
   participantIds?: string[];
-  onParticipantChange?: (ids: string[]) => void;
   onSelect: (choiceId: string) => void;
   onConfirm: (choiceId: string, participantIds?: string[]) => void;
 };
@@ -48,7 +44,6 @@ export function EncounterChoiceCard({
   lockReason,
   isDev = false,
   participantIds = [],
-  onParticipantChange,
   onSelect,
   onConfirm,
 }: EncounterChoiceCardProps) {
@@ -59,8 +54,8 @@ export function EncounterChoiceCard({
   const costs = choiceCostItems(choice, encounter, timeOfDay, isDev);
   const primaryTip = primaryResultTooltip(choice, player, run);
   const needsParticipants = Boolean(run && choiceNeedsParticipants(choice));
-  const minParticipants = choice.minParticipants ?? (needsParticipants ? 1 : 0);
-  const participantsReady = !needsParticipants || participantIds.length >= minParticipants;
+  const { min } = participantBounds(choice);
+  const participantsReady = !needsParticipants || participantIds.length >= min;
 
   return (
     <div
@@ -109,25 +104,22 @@ export function EncounterChoiceCard({
       >
         <h3 className="choice-title font-display">{choiceLabel(choice)}</h3>
         <div className="choice-body">
-          {primaryTip ? (
-            <EffectTooltip tip={primaryTip}>
+          {primary ? (
+            primaryTip ? (
+              <EffectTooltip tip={primaryTip}>
+                <div className="choice-primary-wrap">
+                  <ChoicePrimaryResult result={primary} />
+                </div>
+              </EffectTooltip>
+            ) : (
               <div className="choice-primary-wrap">
                 <ChoicePrimaryResult result={primary} />
               </div>
-            </EffectTooltip>
-          ) : (
-            <div className="choice-primary-wrap">
-              <ChoicePrimaryResult result={primary} />
-            </div>
-          )}
+            )
+          ) : null}
           {choice.flavour ? <p className="choice-flavour">{choice.flavour}</p> : null}
-          {selected && needsParticipants && run && onParticipantChange ? (
-            <ChoiceParticipantPicker
-              choice={choice}
-              onChange={onParticipantChange}
-              run={run}
-              selectedIds={participantIds}
-            />
+          {selected && needsParticipants && !participantsReady ? (
+            <p className="choice-participant-card-hint">Pick who acts below</p>
           ) : null}
         </div>
         <ChoiceCostBar

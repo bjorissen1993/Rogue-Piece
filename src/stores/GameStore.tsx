@@ -2,8 +2,11 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { endRun, startRun } from "../game/createGame";
 import type {
   CareerFactionId,
+  CareerRoleId,
   CombatAction,
   CombatRequest,
+  IdentityTendencyId,
+  LegalStatusId,
   ProfileSave,
   ProfileSlot,
   RaceDefinition,
@@ -13,6 +16,7 @@ import type {
 } from "../models/types";
 import { AchievementService } from "../services/AchievementService";
 import { AffiliationService } from "../services/AffiliationService";
+import { IdentityService } from "../services/IdentityService";
 import { CharacterService } from "../services/CharacterService";
 import { CombatEngine } from "../services/CombatEngine";
 import { AuthorityService } from "../services/AuthorityService";
@@ -176,6 +180,11 @@ type GameStoreValue = {
   debugTechniquePoint: () => void;
   debugGenerateChestEncounter: () => void;
   debugJoinFaction: (factionId: CareerFactionId) => void;
+  debugSetIdentityRole: (roleId: CareerRoleId) => void;
+  debugSetLegalStatus: (statusId: LegalStatusId) => void;
+  debugNudgeTendency: (key: IdentityTendencyId, delta: number) => void;
+  debugBecomeCelestial: () => void;
+  debugLoseCelestialPrivilege: () => void;
   debugSetIndependent: () => void;
   debugPromote: () => void;
   debugDemote: () => void;
@@ -1374,6 +1383,50 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     [withRunFeedback],
   );
 
+  const debugSetIdentityRole = useCallback(
+    (roleId: CareerRoleId) => {
+      withRunFeedback((run) => {
+        IdentityService.setRole(run, roleId, undefined, `Debug set role ${roleId}`);
+        return `Role → ${roleId}`;
+      });
+    },
+    [withRunFeedback],
+  );
+
+  const debugSetLegalStatus = useCallback(
+    (statusId: LegalStatusId) => {
+      withRunFeedback((run) => {
+        IdentityService.setLegalStatus(run, statusId, `Debug set legal ${statusId}`);
+        return `Legal → ${statusId}`;
+      });
+    },
+    [withRunFeedback],
+  );
+
+  const debugNudgeTendency = useCallback(
+    (key: IdentityTendencyId, delta: number) => {
+      withRunFeedback((run) => {
+        IdentityService.applyTendencyChanges(run, { [key]: delta });
+        return `Tendency ${key} ${delta >= 0 ? "+" : ""}${delta}`;
+      });
+    },
+    [withRunFeedback],
+  );
+
+  const debugBecomeCelestial = useCallback(() => {
+    withRunFeedback((run) => {
+      IdentityService.setRole(run, "CELESTIAL_DRAGON", undefined, "Debug celestial");
+      return "You awaken as a Celestial Dragon.";
+    });
+  }, [withRunFeedback]);
+
+  const debugLoseCelestialPrivilege = useCallback(() => {
+    withRunFeedback((run) => {
+      IdentityService.loseCelestialPrivilege(run, "Debug exile");
+      return "Celestial privilege stripped.";
+    });
+  }, [withRunFeedback]);
+
   const debugSetIndependent = useCallback(() => {
     withRunFeedback((run) => AffiliationService.setIndependent(run, "Debug set independent"));
   }, [withRunFeedback]);
@@ -1654,6 +1707,11 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     debugTechniquePoint,
     debugGenerateChestEncounter,
     debugJoinFaction,
+    debugSetIdentityRole,
+    debugSetLegalStatus,
+    debugNudgeTendency,
+    debugBecomeCelestial,
+    debugLoseCelestialPrivilege,
     debugSetIndependent,
     debugPromote,
     debugDemote,

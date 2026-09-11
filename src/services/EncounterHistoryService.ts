@@ -3,7 +3,10 @@ import {
   ENCOUNTER_HISTORY_PENALTY,
   MAX_CATEGORY_STREAK,
 } from "../game/constants";
-import type { Encounter, EncounterCategory, EncounterHistory, RunState } from "../models/types";
+import type { Encounter, EncounterCategory, EncounterHistory, NarrativeArchetype, RunState } from "../models/types";
+
+const ARCHETYPE_COOLDOWN_DAYS = 4;
+const THEME_COOLDOWN_DAYS = 3;
 
 function daysSince(day: number, currentDay: number): number {
   return Math.max(0, currentDay - day);
@@ -68,6 +71,38 @@ function categoryStreakPenalty(run: RunState, category: EncounterCategory | stri
   return 1;
 }
 
+function noveltyPenalty(
+  history: EncounterHistory[],
+  archetypes: NarrativeArchetype[] | undefined,
+  themes: string[] | undefined,
+  currentDay: number,
+): number {
+  let penalty = 1;
+  for (const archetype of archetypes ?? []) {
+    const recent = history
+      .filter((entry) => entry.archetypes?.includes(archetype))
+      .sort((a, b) => b.day - a.day)[0];
+    if (!recent) continue;
+    const days = daysSince(recent.day, currentDay);
+    if (days <= ARCHETYPE_COOLDOWN_DAYS) {
+      penalty *= 0.45;
+    } else if (days <= ARCHETYPE_COOLDOWN_DAYS * 2) {
+      penalty *= 0.75;
+    }
+  }
+  for (const theme of themes ?? []) {
+    const recent = history
+      .filter((entry) => entry.themes?.includes(theme))
+      .sort((a, b) => b.day - a.day)[0];
+    if (!recent) continue;
+    const days = daysSince(recent.day, currentDay);
+    if (days <= THEME_COOLDOWN_DAYS) {
+      penalty *= 0.55;
+    }
+  }
+  return penalty;
+}
+
 function encounterCharacterIds(run: RunState, encounter: Encounter): string[] {
   const ids: string[] = [];
   if (run.currentBoundNpcId) {
@@ -94,6 +129,10 @@ export const EncounterHistoryService = {
       storyThreadId,
       day: run.day,
       result,
+      archetypes: encounter.narrativeArchetypes?.length
+        ? [...encounter.narrativeArchetypes]
+        : undefined,
+      themes: encounter.narrativeThemes?.length ? [...encounter.narrativeThemes] : undefined,
     };
     run.encounterHistory.push(entry);
     if (encounter.category) {
@@ -110,7 +149,21 @@ export const EncounterHistoryService = {
       run.day,
     );
     weight *= categoryStreakPenalty(run, encounter.category);
+    weight *= noveltyPenalty(
+      run.encounterHistory,
+      encounter.narrativeArchetypes,
+      encounter.narrativeThemes,
+      run.day,
+    );
     return weight;
+  },
+
+  noveltyPenaltyFor(
+    run: RunState,
+    archetypes?: NarrativeArchetype[],
+    themes?: string[],
+  ): number {
+    return noveltyPenalty(run.encounterHistory, archetypes, themes, run.day);
   },
 
   clearCooldowns(run: RunState): void {

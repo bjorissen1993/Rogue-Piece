@@ -21,6 +21,7 @@ import { defaultEncounterHistory } from "../services/EncounterHistoryService";
 import { defaultStoryThreads } from "../services/StoryThreadService";
 import { defaultCrew } from "../services/CharacterService";
 import { AffiliationService } from "../services/AffiliationService";
+import { IdentityService } from "../services/IdentityService";
 import { defaultAuthority, defaultStandingOrders } from "../services/AuthorityService";
 import { CrewService } from "../services/CrewService";
 
@@ -48,8 +49,9 @@ export function createPlayer(options: {
     stats,
     berries: origin.berries,
     bounty: 0,
-    title: "Independent Sailor",
+    title: "Wanderer",
     affiliation,
+    identity: IdentityService.defaultIdentity(),
     devilFruitId: null,
     haki: { observation: 0, armament: 0, conquerors: 0 },
     inventory: [],

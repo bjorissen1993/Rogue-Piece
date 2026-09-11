@@ -249,6 +249,33 @@ body {
   color: var(--color-gold);
 }
 
+.encounter-dialogue {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.encounter-dialogue li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.encounter-dialogue-speaker {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-gold);
+}
+
+.encounter-dialogue-line {
+  font-size: 0.95rem;
+  color: var(--color-parchment, #f2e6c9);
+}
+
 .run-wealth strong {
   font-family: var(--font-display);
   font-size: 1.05rem;
@@ -1301,6 +1328,10 @@ img.run-glyph,
   background: rgba(0, 0, 0, 0.72);
 }
 
+.crew-badge-detail-scrim {
+  z-index: 70;
+}
+
 .overlay-panel {
   width: min(1480px, 90vw);
   height: min(920px, 84vh);
@@ -2049,8 +2080,6 @@ img.run-glyph,
 }
 
 .encounter-frame {
-  /* Height-zoom past the stage so baked letterboxing is cropped away. */
-  --encounter-bg-zoom: 1.55;
   position: relative;
   isolation: isolate;
   width: 100%;
@@ -2060,7 +2089,7 @@ img.run-glyph,
   margin: 0;
   padding: 0.85rem 0.75rem 0.55rem;
   border-radius: 0.35rem;
-  overflow: visible;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   border: 1px solid rgba(197, 160, 89, 0.28);
@@ -2070,7 +2099,7 @@ img.run-glyph,
   background-color: #0a1014;
   background-image: var(--encounter-bg, none);
   background-repeat: no-repeat;
-  background-size: auto calc(100% * var(--encounter-bg-zoom));
+  background-size: cover;
   background-position: center center;
 }
 
@@ -6626,17 +6655,205 @@ html.battle-result-open .game-shell {
 .crew-presence-badge-name { font-size: 0.82rem; line-height: 1.1; }
 .crew-presence-badge-status { font-size: 0.65rem; letter-spacing: 0.04em; color: #b9a67a; }
 
-.choice-participant-picker {
-  margin-top: 0.55rem;
-  padding-top: 0.45rem;
-  border-top: 1px solid color-mix(in srgb, #7a5c24 35%, transparent);
+.encounter-choice-stack {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   width: 100%;
 }
-.choice-participant-label,
-.choice-participant-assessment {
-  margin: 0.25rem 0;
-  font-size: 0.78rem;
-  color: #3d2e18;
+
+.encounter-choice-rail {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.encounter-choice-rail.is-open {
+  pointer-events: none;
+}
+
+.encounter-frame.is-picking-participant .choice-grid {
+  filter: brightness(0.55) saturate(0.85);
+  pointer-events: none;
+}
+
+.choice-participant-overlay {
+  position: relative;
+  z-index: 1;
+  width: min(48rem, 96%);
+  margin: 0 auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+  pointer-events: auto;
+  background: none;
+  border: none;
+  box-shadow: none;
+  animation: combat-choice-pull 0.34s cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+.choice-participant-overlay::before {
+  display: none;
+}
+
+.choice-participant-kicker {
+  margin: 0;
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-gold, #d4af5f);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.75);
+}
+
+.choice-participant-wheel-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Image-as-button: no circular chrome, ~2× art size. */
+.choice-participant-wheel .combat-choice-wheel {
+  width: min(52rem, 94vw);
+  height: 18rem;
+}
+
+.choice-participant-wheel.is-single .combat-choice-wheel {
+  width: min(20rem, 70vw);
+  height: 18rem;
+  min-height: 18rem;
+}
+
+.choice-participant-wheel .combat-wheel-option {
+  width: 16rem;
+  margin-left: -8rem;
+  filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.6));
+}
+
+.choice-participant-wheel .combat-wheel-icon {
+  width: auto;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+  display: block;
+}
+
+.choice-participant-wheel .combat-wheel-icon .hud-icon,
+.choice-participant-wheel .combat-wheel-icon .hud-art,
+.choice-participant-wheel .combat-wheel-icon svg {
+  width: 12.6rem;
+  height: 12.6rem;
+}
+
+.choice-participant-wheel .combat-wheel-option.is-focus .combat-wheel-icon {
+  border: none;
+  box-shadow: none;
+  filter: drop-shadow(0 0 16px rgba(212, 179, 106, 0.35));
+}
+
+.choice-participant-wheel .combat-wheel-option.is-picked .combat-wheel-icon {
+  border: none;
+  box-shadow: none;
+  filter: drop-shadow(0 0 18px rgba(80, 160, 220, 0.55));
+}
+
+.choice-participant-wheel .combat-wheel-option.is-disabled .combat-wheel-icon {
+  border: none;
+  box-shadow: none;
+}
+
+.choice-participant-wheel .combat-wheel-arrow {
+  margin-bottom: 5.5rem;
+}
+
+.choice-participant-stat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(5.5rem, 1fr));
+  gap: 0.35rem 1.1rem;
+  width: min(24rem, 92%);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.75);
+}
+
+.choice-participant-stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.55rem;
+  font-size: 0.86rem;
+  color: var(--color-parchment, #f0e6d2);
+}
+
+.choice-participant-stat.is-focus {
+  color: var(--color-gold, #d4af5f);
+}
+
+.choice-participant-stat strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.choice-participant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: center;
+  align-items: center;
+}
+
+.choice-participant-selected-count,
+.choice-participant-card-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #b9a67a;
+  text-align: center;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.75);
+}
+
+.choice-participant-card-hint {
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 520px) {
+  .choice-participant-stat-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .choice-participant-wheel .combat-wheel-icon .hud-icon,
+  .choice-participant-wheel .combat-wheel-icon .hud-art,
+  .choice-participant-wheel .combat-wheel-icon svg {
+    width: 9.5rem;
+    height: 9.5rem;
+  }
+
+  .choice-participant-wheel .combat-choice-wheel {
+    height: 14.5rem;
+  }
+}
+.combat-wheel-option.is-picked .combat-wheel-icon {
+  border-color: rgba(120, 200, 255, 0.85);
+  box-shadow:
+    0 0 0 1px rgba(120, 200, 255, 0.35) inset,
+    0 10px 20px rgba(0, 0, 0, 0.35),
+    0 0 18px rgba(80, 160, 220, 0.35);
+}
+.combat-wheel-option.is-picked .combat-wheel-label {
+  border-color: rgba(120, 200, 255, 0.55);
+  color: #d7efff;
 }
 .choice-cost-item.is-time-prominent { font-weight: 700; letter-spacing: 0.08em; }
 
@@ -6680,6 +6897,16 @@ html.battle-result-open .game-shell {
   gap: 0.6rem;
   justify-content: center;
   margin: 0.5rem 0 0.75rem;
+}
+
+.combat-target-confirm-inline {
+  margin: 0.55rem 0 0;
+  position: relative;
+  z-index: 2;
+}
+
+.combat-stage-copy .combat-cancel-target {
+  margin-top: 0;
 }
 
 /* Skill badges */

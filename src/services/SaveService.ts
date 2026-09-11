@@ -19,6 +19,7 @@ import { SAVE_VERSION } from "../game/constants";
 import { createEmptyProfile, emptyPity, emptyStatistics } from "../game/profileFactory";
 import { getRace } from "../data/races";
 import { AffiliationService } from "./AffiliationService";
+import { IdentityService } from "./IdentityService";
 import { AuthorityService, defaultAuthority, defaultStandingOrders } from "./AuthorityService";
 import { CrewCombatService } from "./CrewCombatService";
 import { CrewService } from "./CrewService";
@@ -296,7 +297,8 @@ function migrateRunState(run: RunState): RunState {
       unlockedStyles: run.player.unlockedStyles ?? [],
       progression: run.player.progression ?? ProgressionService.defaultProgression(),
       unlockedTechniques: run.player.unlockedTechniques ?? [],
-      title: run.player.title ?? "Independent Sailor",
+      title: run.player.title ?? "Wanderer",
+      identity: run.player.identity,
       inventory: (run.player.inventory ?? []).map((item) => ({
         ...item,
         itemId: item.itemId || item.id,
@@ -319,6 +321,7 @@ function migrateRunState(run: RunState): RunState {
   next.runKnowledge = next.runKnowledge ?? [];
   const withFactions = migrateRunFactions(next);
   AffiliationService.ensure(withFactions);
+  IdentityService.ensure(withFactions);
   AuthorityService.ensure(withFactions);
   FleetService.ensure(withFactions);
   RaceService.ensureRunKnowledge(withFactions);

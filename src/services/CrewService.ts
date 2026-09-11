@@ -9,6 +9,7 @@ import type {
 } from "../models/types";
 import { CharacterService } from "./CharacterService";
 import { FleetService } from "./FleetService";
+import { RecruitmentModelService } from "./RecruitmentModelService";
 import { WeaponService } from "./WeaponService";
 
 export type CrewOverviewEntry = {
@@ -103,7 +104,7 @@ export const CrewService = {
       FleetService.offerFleetCaptain(run, character);
       return { kind: "FLEET" };
     }
-    const member = CharacterService.acceptRecruitment(run, characterId, role, membership);
+    const member = RecruitmentModelService.recruit(run, characterId, role, membership).member;
     return member ? { kind: "CORE", member } : null;
   },
 
@@ -163,7 +164,17 @@ export const CrewService = {
   },
 
   membershipLabel(membership: CrewMember["membership"]): string {
-    return membership.charAt(0) + membership.slice(1).toLowerCase();
+    const labels: Record<CrewMember["membership"], string> = {
+      CONTRACTOR: "Contractor",
+      PARTNER: "Partner",
+      ASSIGNED: "Assigned",
+      CELL_CONTACT: "Cell contact",
+      PERMANENT: "Permanent",
+      TEMPORARY: "Temporary",
+      GUEST: "Guest",
+      ALLY: "Ally",
+    };
+    return labels[membership] ?? membership;
   },
 
   activePartySummary(run: RunState): { fighters: string[]; support: string[] } {

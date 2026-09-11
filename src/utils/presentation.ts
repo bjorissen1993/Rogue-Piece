@@ -810,6 +810,15 @@ export function choicePrimaryResult(choice: EncounterChoice): ChoicePrimaryDispl
   if (choice.outcome.combat) {
     return { kind: "label", text: "FIGHT", tone: "neutral" };
   }
+  const checkStat = choice.outcome.skillCheck?.stat ?? choice.checkStat;
+  if (checkStat) {
+    return {
+      kind: "label",
+      text: "TEST",
+      stats: [checkStat],
+      tone: "neutral",
+    };
+  }
   const action = choiceAction(choice);
   if (action === "keepDistance") {
     const hay = `${choice.id} ${choice.text}`.toLowerCase();
@@ -821,7 +830,8 @@ export function choicePrimaryResult(choice: EncounterChoice): ChoicePrimaryDispl
   if (fromAction) {
     return { kind: "label", text: fromAction, tone: "neutral" };
   }
-  return { kind: "label", text: choiceLabel(choice).toUpperCase(), tone: "neutral" };
+  // Never echo the choice title in the body — costs/risk already cover the rest.
+  return null;
 }
 
 export type ChoiceCostKind = "time" | "berries" | "hp" | "focus" | "risk" | "free" | "bounty";

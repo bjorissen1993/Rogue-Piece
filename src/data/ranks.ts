@@ -1,5 +1,6 @@
 import type {
   CareerFactionId,
+  CareerRoleId,
   FactionRankDefinition,
   OrganizationDefinition,
   RelationFactionId,
@@ -14,6 +15,7 @@ function ranks(
     minReputationWithin?: number;
     minFactionStanding?: number;
     benefits?: string[];
+    roleId?: CareerRoleId;
   }>,
 ): FactionRankDefinition[] {
   return entries.map((entry, order) => ({
@@ -230,44 +232,50 @@ export const WORLD_GOVERNMENT_RANKS: FactionRankDefinition[] = ranks("WORLD_GOVE
   },
 ]);
 
-export const BOUNTY_HUNTER_RANKS: FactionRankDefinition[] = ranks("BOUNTY_HUNTER", [
+/** Bounty Hunter is a Civilian role ladder — not a separate faction. */
+export const BOUNTY_HUNTER_RANKS: FactionRankDefinition[] = ranks("CIVILIAN", [
   {
     id: "hunter_unknown",
     name: "Unknown Hunter",
     membershipStatus: "PROSPECT",
+    roleId: "BOUNTY_HUNTER",
   },
   {
     id: "hunter_local",
     name: "Local Hunter",
     membershipStatus: "MEMBER",
     minReputationWithin: 10,
+    roleId: "BOUNTY_HUNTER",
   },
   {
     id: "hunter_known",
     name: "Known Hunter",
     membershipStatus: "MEMBER",
     minReputationWithin: 30,
+    roleId: "BOUNTY_HUNTER",
   },
   {
     id: "hunter_famous",
     name: "Famous Hunter",
     membershipStatus: "OFFICER",
     minReputationWithin: 55,
+    roleId: "BOUNTY_HUNTER",
   },
   {
     id: "hunter_elite",
     name: "Elite Hunter",
     membershipStatus: "OFFICER",
     minReputationWithin: 85,
+    roleId: "BOUNTY_HUNTER",
   },
   {
     id: "hunter_legendary",
     name: "Legendary Hunter",
     membershipStatus: "HIGH_RANK",
     minReputationWithin: 130,
+    roleId: "BOUNTY_HUNTER",
   },
 ]);
-
 export const INDEPENDENT_RANKS: FactionRankDefinition[] = ranks("INDEPENDENT", [
   {
     id: "indie_traveler",
@@ -296,6 +304,12 @@ export const INDEPENDENT_RANKS: FactionRankDefinition[] = ranks("INDEPENDENT", [
 
 export const CIVILIAN_RANKS: FactionRankDefinition[] = ranks("CIVILIAN", [
   {
+    id: "civilian_wanderer",
+    name: "Wanderer",
+    membershipStatus: "INDEPENDENT",
+    roleId: "WANDERER",
+  },
+  {
     id: "civilian_citizen",
     name: "Citizen",
     membershipStatus: "INDEPENDENT",
@@ -307,7 +321,6 @@ export const CIVILIAN_RANKS: FactionRankDefinition[] = ranks("CIVILIAN", [
     minReputationWithin: 25,
   },
 ]);
-
 /** Organizations under factions — Cipher Pol etc. stubbed for later. */
 export const ORGANIZATIONS: OrganizationDefinition[] = [
   {
@@ -338,7 +351,18 @@ const ALL_RANK_TABLES: FactionRankDefinition[][] = [
 export const ALL_RANKS: FactionRankDefinition[] = ALL_RANK_TABLES.flat();
 
 export function getRanksForFaction(factionId: CareerFactionId): FactionRankDefinition[] {
-  return ALL_RANKS.filter((rank) => rank.factionId === factionId).sort((a, b) => a.order - b.order);
+  return ALL_RANKS.filter(
+    (rank) => rank.factionId === factionId && !rank.roleId,
+  ).sort((a, b) => a.order - b.order);
+}
+
+export function getRanksForRole(roleId: CareerRoleId): FactionRankDefinition[] {
+  const byRole = ALL_RANKS.filter((rank) => rank.roleId === roleId).sort((a, b) => a.order - b.order);
+  if (byRole.length) return byRole;
+  if (roleId === "WANDERER") {
+    return ALL_RANKS.filter((rank) => rank.id === "civilian_wanderer" || rank.id === "civilian_citizen");
+  }
+  return [];
 }
 
 export function getRankById(rankId: string): FactionRankDefinition | undefined {
@@ -346,8 +370,11 @@ export function getRankById(rankId: string): FactionRankDefinition | undefined {
 }
 
 export function getStartingRankId(factionId: CareerFactionId): string {
+  if (factionId === "BOUNTY_HUNTER") {
+    return getRanksForRole("BOUNTY_HUNTER")[0]?.id ?? "hunter_unknown";
+  }
   const list = getRanksForFaction(factionId);
-  return list[0]?.id ?? "indie_sailor";
+  return list[0]?.id ?? "civilian_wanderer";
 }
 
 export function getOrganization(id: string): OrganizationDefinition | undefined {
@@ -379,7 +406,7 @@ export const CAREER_FACTION_LABELS: Record<CareerFactionId, string> = {
   MARINES: "Marines",
   REVOLUTIONARY_ARMY: "Revolutionary Army",
   WORLD_GOVERNMENT: "World Government",
-  BOUNTY_HUNTER: "Bounty Hunters",
+  BOUNTY_HUNTER: "Bounty Hunter (legacy)",
   CIVILIAN: "Civilians",
   INDEPENDENT: "Independent",
 };

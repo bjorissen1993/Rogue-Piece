@@ -17,6 +17,7 @@ import { createId } from "../utils/ids";
 import { clamp } from "../utils/stats";
 import { FactionService } from "./FactionService";
 import { WorldService } from "./WorldService";
+import { IdentityService } from "./IdentityService";
 
 const ACTIVE_MEMBERSHIP: MembershipStatus[] = [
   "PROSPECT",
@@ -58,10 +59,10 @@ function pushHistory(
 
 export function defaultAffiliation(): PlayerAffiliation {
   return {
-    primaryFactionId: null,
+    primaryFactionId: "CIVILIAN",
     organizationId: null,
     membershipStatus: "INDEPENDENT",
-    rankId: "indie_sailor",
+    rankId: "civilian_wanderer",
     joinedDay: null,
     loyalty: 50,
     reputationWithinFaction: 0,
@@ -142,6 +143,9 @@ export const AffiliationService = {
   },
 
   isPlayerBountyHunter(run: RunState): boolean {
+    if (run.player.identity?.roleId === "BOUNTY_HUNTER") {
+      return true;
+    }
     const aff = this.get(run);
     return aff.primaryFactionId === "BOUNTY_HUNTER" && this.isActiveMember(aff);
   },
@@ -168,8 +172,23 @@ export const AffiliationService = {
 
   computeTitle(run: RunState): string {
     const aff = materializeAffiliation(run);
+    const identity = run.player.identity;
+    const hunterRankId = identity?.roleRankId;
+    const hunterRank = hunterRankId ? getRankById(hunterRankId) : undefined;
     const rank = aff.rankId ? getRankById(aff.rankId) : undefined;
-    const wanted = run.player.bounty > 0;
+    const wanted =
+      identity?.legalStatusId === "WANTED" ||
+      identity?.legalStatusId === "FUGITIVE" ||
+      run.player.bounty > 0;
+
+    if (identity?.roleId === "BOUNTY_HUNTER") {
+      const name = hunterRank?.name ?? "Bounty Hunter";
+      return wanted ? `${name} · Wanted` : name;
+    }
+
+    if (identity?.roleId === "CELESTIAL_DRAGON") {
+      return identity.celestial?.lostStatus ? "Ex-Celestial" : "Celestial Dragon";
+    }
 
     if (aff.membershipStatus === "TRAITOR") {
       const label = aff.primaryFactionId
@@ -209,10 +228,13 @@ export const AffiliationService = {
     if (aff.primaryFactionId === "BOUNTY_HUNTER" && this.isActiveMember(aff) && rank) {
       return rank.name;
     }
-    if (rank && (aff.primaryFactionId === "INDEPENDENT" || aff.membershipStatus === "INDEPENDENT")) {
-      return rank.name;
+    if (identity?.roleId === "WANDERER") {
+      return wanted ? "Wanderer · Wanted" : "Wanderer";
     }
-    return "Independent Sailor";
+    if (rank && (aff.primaryFactionId === "INDEPENDENT" || aff.primaryFactionId === "CIVILIAN" || aff.membershipStatus === "INDEPENDENT")) {
+      return wanted ? `${rank.name} · Wanted` : rank.name;
+    }
+    return wanted ? "Wanderer · Wanted" : "Wanderer";
   },
 
   syncTitle(run: RunState): void {
@@ -299,6 +321,61 @@ export const AffiliationService = {
       silent?: boolean;
     },
   ): string {
+    // Bounty Hunter is a Civilian role, not an institutional faction.
+    if (options.factionId === "BOUNTY_HUNTER") {
+      const aff = this.ensure(run);
+      aff.primaryFactionId = "CIVILIAN";
+      aff.membershipStatus = options.asProspect ? "PROSPECT" : "MEMBER";
+      aff.rankId = "civilian_citizen";
+      aff.joinedDay = run.day;
+      aff.pendingOffer = null;
+      pushHistory(aff, run.day, "JOINED", options.note ?? "Registered as civilian bounty hunter");
+      const identity = run.player.identity ?? {
+        factionId: "CIVILIAN" as const,
+        roleId: "WANDERER" as const,
+        legalStatusId: "LAWFUL" as const,
+        roleRankId: "civilian_wanderer",
+        tendencies: {
+          authorityAlignment: 0,
+          civilianConduct: 10,
+          profitMotive: 0,
+          criminality: 0,
+          independence: 20,
+          worldGovernmentLoyalty: 0,
+          compassion: 0,
+          entitlement: 0,
+          ideologicalAlignment: 0,
+          violenceAgainstCivilians: 0,
+          violenceAgainstMarines: 0,
+          violenceAgainstPirates: 0,
+          bountyCollectionBehavior: 0,
+          protectionBehavior: 0,
+          obedience: 0,
+          rebellion: 0,
+        },
+        celestial: null,
+        assignedPartnerId: null,
+        roleHistory: [],
+        legalHistory: [],
+      };
+      identity.factionId = "CIVILIAN";
+      identity.roleId = "BOUNTY_HUNTER";
+      identity.roleRankId = options.rankId ?? "hunter_unknown";
+      identity.roleHistory.push({
+        id: createId("role_hist"),
+        day: run.day,
+        roleId: "BOUNTY_HUNTER",
+        note: options.note,
+      });
+      run.player.identity = identity;
+      this.syncTitle(run);
+      const message = `You register as a Bounty Hunter while remaining a Civilian.`;
+      if (!options.silent) {
+        WorldService.addNews(run, `${run.player.name} takes up bounty contracts as a civilian hunter.`);
+      }
+      return message;
+    }
+
     const aff = this.ensure(run);
     const previous = aff.primaryFactionId;
     const switching =
@@ -330,6 +407,39 @@ export const AffiliationService = {
           ? `Switched from ${previous} to ${options.factionId}`
           : `Joined ${CAREER_FACTION_LABELS[options.factionId]}`),
     );
+
+    const identity = IdentityService.ensure(run);
+    switch (options.factionId) {
+      case "MARINES":
+        IdentityService.setFaction(run, "MARINES");
+        if (identity.roleId === "WANDERER" || identity.roleId === "BOUNTY_HUNTER" || switching) {
+          IdentityService.setRole(run, "MARINE_RECRUIT", rank?.id, options.note);
+        }
+        break;
+      case "PIRATES":
+        IdentityService.setFaction(run, "PIRATES");
+        IdentityService.setRole(
+          run,
+          rank?.id === "pirate_captain" ? "PIRATE_CAPTAIN" : "PIRATE_CREW",
+          rank?.id,
+          options.note,
+        );
+        break;
+      case "REVOLUTIONARY_ARMY":
+        IdentityService.setFaction(run, "REVOLUTIONARY_ARMY");
+        IdentityService.setRole(run, "REVOLUTIONARY_OPERATIVE", rank?.id, options.note);
+        break;
+      case "WORLD_GOVERNMENT":
+        IdentityService.setFaction(run, "WORLD_GOVERNMENT");
+        IdentityService.setRole(run, "CIPHER_POL_AGENT", rank?.id, options.note);
+        IdentityService.setLegalStatus(run, "GOVERNMENT_AGENT", options.note);
+        break;
+      case "CIVILIAN":
+        IdentityService.setFaction(run, "CIVILIAN");
+        break;
+      default:
+        break;
+    }
 
     this.syncTitle(run);
 
@@ -569,6 +679,11 @@ export const AffiliationService = {
     if (!offer) {
       return "No pending recruitment offer.";
     }
+    if (offer.source === "identity_bounty_hunter_path" || offer.offeredRankId?.startsWith("hunter_")) {
+      aff.pendingOffer = null;
+      IdentityService.setRole(run, "BOUNTY_HUNTER", offer.offeredRankId ?? "hunter_unknown", `Accepted offer from ${offer.source}`);
+      return "You take the hunter's path — still Civilian, now a bounty hunter.";
+    }
     return this.join(run, {
       factionId: offer.factionId,
       rankId: offer.offeredRankId,
@@ -598,13 +713,21 @@ export const AffiliationService = {
     standingLabel: string;
   } {
     const aff = this.get(run);
+    const identity = run.player.identity;
     const rank = this.getRank(run);
-    const factionLabel = aff.primaryFactionId
-      ? CAREER_FACTION_LABELS[aff.primaryFactionId]
-      : "Independent";
+    const hunterRank = identity?.roleRankId ? getRankById(identity.roleRankId) : undefined;
+    const factionLabel =
+      identity?.roleId === "BOUNTY_HUNTER"
+        ? "Civilian"
+        : aff.primaryFactionId
+          ? CAREER_FACTION_LABELS[aff.primaryFactionId]
+          : "Independent";
     return {
       factionLabel,
-      rankLabel: rank?.name ?? "—",
+      rankLabel:
+        identity?.roleId === "BOUNTY_HUNTER"
+          ? hunterRank?.name ?? "Bounty Hunter"
+          : rank?.name ?? "—",
       status: aff.membershipStatus,
       loyalty: aff.loyalty,
       reputationWithin: aff.reputationWithinFaction,

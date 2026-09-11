@@ -769,19 +769,23 @@ export const EXTENDED_ENCOUNTERS: Encounter[] = [
     weight: 6,
     conditions: [
       { type: "MEMBERSHIP_STATUS", statuses: ["INDEPENDENT", "FORMER_MEMBER"] },
-      { type: "PLAYER_AFFILIATION", factionId: "BOUNTY_HUNTER", negate: true },
+      { type: "PLAYER_ROLE", roleId: "BOUNTY_HUNTER", negate: true },
     ],
     choices: [
       {
         id: "register",
         text: "Register as Unknown Hunter",
         outcome: {
-          text: "Ink dries on a cheap license. You are an Unknown Hunter — the lowest rung, but a rung.",
-          joinFaction: {
-            factionId: "BOUNTY_HUNTER",
+          text: "Ink dries on a cheap license. You remain a Civilian — but now you are an Unknown Hunter.",
+          setRole: {
+            roleId: "BOUNTY_HUNTER",
             rankId: "hunter_unknown",
-            asProspect: true,
             note: "Registered at hunter board",
+          },
+          tendencyChanges: {
+            bountyCollectionBehavior: 15,
+            profitMotive: 8,
+            independence: 5,
           },
           grantExperience: 10,
           berriesChange: 50,
@@ -1699,6 +1703,285 @@ export const EXTENDED_ENCOUNTERS: Encounter[] = [
         text: "Leave it sealed",
         timeCost: "BRIEF",
         outcome: { text: "The ruins keep their secrets for another day." },
+      },
+    ],
+  },
+  {
+    id: "milo_memory_reunion",
+    title: "Milo Remembers",
+    category: "STORY",
+    tier: "EARLY",
+    visual: { overlay: "TAVERN", background: "/backgrounds/tavern.png", variant: "parley" },
+    description:
+      "Bounty Hunter Milo leans on the bar. His eyes catch on your face — not the poster, the person.",
+    weight: 4,
+    narrativeArchetypes: ["bounty_pursuit", "friendship"],
+    narrativeThemes: ["bounty_hunter", "dialogue"],
+    storyThreadTemplateId: "bounty_hunter_milo",
+    bindCharacterId: "npc_milo_hunter",
+    dialogueBeats: [
+      {
+        speakerId: "npc_milo_hunter",
+        speakerName: "Milo",
+        line: "Last time you pulled me out of a ditch. Don't make me cash that in for a poster.",
+        memoryGate: "PLAYER_SAVED_ME",
+      },
+      {
+        speakerId: "npc_milo_hunter",
+        speakerName: "Milo",
+        line: "Funny. The board pays either way. You choosing the high road today?",
+      },
+    ],
+    conditions: [{ type: "STORY_THREAD", templateId: "bounty_hunter_milo", minStage: 0 }],
+    choices: [
+      {
+        id: "spare_talk",
+        text: "Talk it out — hunter to hunter",
+        outcome: {
+          text: "Milo lowers the warrant. Whatever you are now, he still knows your name.",
+          advanceStoryThread: "bounty_hunter_milo",
+          addCharacterMemory: { characterId: "npc_milo_hunter", type: "FOUGHT_TOGETHER", importance: 2 },
+          tendencyChanges: { compassion: 5, bountyCollectionBehavior: 3 },
+        },
+      },
+      {
+        id: "draw_steel",
+        text: "Make it a fight",
+        outcome: {
+          text: "Steel scrapes. Friendship and contracts don't share a table for long.",
+          advanceStoryThread: "bounty_hunter_milo",
+          addCharacterMemory: { characterId: "npc_milo_hunter", type: "FOUGHT", importance: 2 },
+          tendencyChanges: { violenceAgainstPirates: 5, criminality: 4 },
+        },
+      },
+    ],
+  },
+  {
+    id: "marine_partner_assignment",
+    title: "Shore Patrol Pairing",
+    category: "FACTION",
+    tier: "EARLY",
+    visual: { overlay: "LIGHT", background: "/backgrounds/city.png", variant: "parley" },
+    description:
+      "A lieutenant slides a thin folder across the desk. \"You're not recruiting. You're being paired.\"",
+    weight: 5,
+    narrativeArchetypes: ["faction_promotion", "apprenticeship"],
+    narrativeThemes: ["marines", "assigned"],
+    conditions: [
+      { type: "PLAYER_AFFILIATION", factionId: "MARINES" },
+    ],
+    choices: [
+      {
+        id: "accept_partner",
+        text: "Accept the assigned partner",
+        outcome: {
+          text: "Seaman Hana salutes stiffly. Official attachment — not a pirate press-gang.",
+          setRole: { roleId: "MARINE_OFFICER", note: "Shore patrol pairing" },
+          acceptRecruitment: {
+            characterId: "npc_marine_hana",
+            role: "FIGHTER",
+            membership: "ASSIGNED",
+          },
+          tendencyChanges: { authorityAlignment: 8, obedience: 6, protectionBehavior: 4 },
+          grantExperience: 15,
+        },
+      },
+      {
+        id: "defer_partner",
+        text: "Request a delay",
+        outcome: {
+          text: "The lieutenant frowns. The folder stays open.",
+          tendencyChanges: { independence: 4, obedience: -3 },
+        },
+      },
+    ],
+  },
+  {
+    id: "pirate_free_recruit_contrast",
+    title: "Deck Hands Wanted",
+    category: "RECRUITMENT",
+    tier: "EARLY",
+    visual: { overlay: "SEA", background: "/backgrounds/sea.png", variant: "parley" },
+    description:
+      "A dock tough grins. \"You fly a pirate flag? Then grab whoever's crazy enough. No paperwork.\"",
+    weight: 5,
+    narrativeArchetypes: ["recruitment"],
+    narrativeThemes: ["pirates", "free_recruit"],
+    conditions: [{ type: "PLAYER_AFFILIATION", factionId: "PIRATES" }],
+    choices: [
+      {
+        id: "grab_hand",
+        text: "Wave them aboard",
+        outcome: {
+          text: "They hop the rail laughing. Pirate crews grow by hunger and rumor.",
+          acceptRecruitment: { characterId: "npc_dock_hand", role: "FIGHTER", membership: "ALLY" },
+          tendencyChanges: { criminality: 3, independence: 4 },
+        },
+      },
+      {
+        id: "pass_hand",
+        text: "Not this one",
+        outcome: { text: "They shrug and melt back into the crowd." },
+      },
+    ],
+  },
+  {
+    id: "hunter_contractor_pitch",
+    title: "Contract Partner",
+    category: "RECRUITMENT",
+    tier: "EARLY",
+    visual: { overlay: "TAVERN", background: "/backgrounds/tavern.png", variant: "parley" },
+    description:
+      "Another hunter slides a split-fee sheet across the table. Partners first. Full crew later.",
+    weight: 5,
+    narrativeArchetypes: ["recruitment", "bounty_pursuit"],
+    narrativeThemes: ["bounty_hunter", "contractor"],
+    conditions: [{ type: "PLAYER_ROLE", roleId: "BOUNTY_HUNTER" }],
+    choices: [
+      {
+        id: "sign_contract",
+        text: "Sign a contractor split",
+        outcome: {
+          text: "Ink, percentages, and a temporary partner who still watches the door.",
+          acceptRecruitment: {
+            characterId: "npc_hunter_kira",
+            role: "FIGHTER",
+            membership: "CONTRACTOR",
+          },
+          tendencyChanges: { bountyCollectionBehavior: 6, profitMotive: 5 },
+        },
+      },
+      {
+        id: "solo_hunts",
+        text: "Hunt alone for now",
+        outcome: {
+          text: "You keep your share and your solitude.",
+          tendencyChanges: { independence: 5 },
+        },
+      },
+    ],
+  },
+  {
+    id: "cipher_pol_partner_briefing",
+    title: "Gray Room Briefing",
+    category: "FACTION",
+    tier: "MID",
+    visual: { overlay: "LIGHT", background: "/backgrounds/city.png", variant: "parley" },
+    description:
+      "No open recruit. A handler names your partner and burns the paper.",
+    weight: 3,
+    narrativeArchetypes: ["undercover_mission", "secret_organization"],
+    narrativeThemes: ["cipher_pol"],
+    storyThreadTemplateId: "cipher_pol_attachment",
+    conditions: [
+      { type: "PLAYER_AFFILIATION", factionId: "WORLD_GOVERNMENT" },
+      { type: "PLAYER_ROLE", roleId: "CIPHER_POL_AGENT" },
+    ],
+    choices: [
+      {
+        id: "accept_cp_partner",
+        text: "Accept the assignment",
+        outcome: {
+          text: "Agent Veyl falls into step. Cipher Pol does not ask twice.",
+          startStoryThread: "cipher_pol_attachment",
+          acceptRecruitment: {
+            characterId: "npc_cp_veyl",
+            role: "FIGHTER",
+            membership: "ASSIGNED",
+          },
+          setLegalStatus: { statusId: "GOVERNMENT_AGENT", note: "Cipher Pol attachment" },
+          tendencyChanges: { worldGovernmentLoyalty: 10, obedience: 8 },
+        },
+      },
+      {
+        id: "refuse_cp",
+        text: "Request reassignment",
+        outcome: {
+          text: "The handler's smile does not reach their eyes.",
+          tendencyChanges: { rebellion: 6, worldGovernmentLoyalty: -4 },
+        },
+      },
+    ],
+  },
+  {
+    id: "celestial_slave_gaze",
+    title: "Eyes Beneath Heaven",
+    category: "STORY",
+    tier: "MID",
+    visual: { overlay: "LIGHT", background: "/backgrounds/city.png", variant: "parley" },
+    description:
+      "A kneeling attendant looks up. For a heartbeat, the world is not yours by birthright — it is theirs by suffering.",
+    weight: 2,
+    narrativeArchetypes: ["moral_dilemma", "hidden_lineage"],
+    narrativeThemes: ["celestial", "privilege"],
+    storyThreadTemplateId: "celestial_privilege_fracture",
+    conditions: [
+      { type: "PLAYER_ROLE", roleId: "CELESTIAL_DRAGON" },
+      { type: "PLAYER_LEGAL_STATUS", statusId: "CELESTIAL_PRIVILEGE" },
+    ],
+    dialogueBeats: [
+      {
+        speakerId: "npc_celestial_attendant",
+        speakerName: "Attendant",
+        line: "World Noble… please. Don't look away.",
+      },
+    ],
+    choices: [
+      {
+        id: "humane",
+        text: "Help them rise",
+        outcome: {
+          text: "You offer a hand. Somewhere, a protector's patience thins.",
+          startStoryThread: "celestial_privilege_fracture",
+          tendencyChanges: { compassion: 12, entitlement: -8 },
+          grantExperience: 20,
+        },
+      },
+      {
+        id: "cruel",
+        text: "Remind them of their place",
+        outcome: {
+          text: "Privilege hardens. The attendant's eyes go empty again.",
+          startStoryThread: "celestial_privilege_fracture",
+          tendencyChanges: { entitlement: 12, compassion: -10, violenceAgainstCivilians: 6 },
+        },
+      },
+    ],
+  },
+  {
+    id: "celestial_recruit_blocked",
+    title: "A Would-Be Crew",
+    category: "RECRUITMENT",
+    tier: "MID",
+    visual: { overlay: "SEA", background: "/backgrounds/sea.png", variant: "parley" },
+    description:
+      "Common sailors kneel and beg to sail under your protection. Heaven does not keep pirate crews.",
+    weight: 2,
+    narrativeThemes: ["celestial"],
+    conditions: [
+      { type: "PLAYER_ROLE", roleId: "CELESTIAL_DRAGON" },
+      { type: "PLAYER_LEGAL_STATUS", statusId: "CELESTIAL_PRIVILEGE" },
+    ],
+    choices: [
+      {
+        id: "try_recruit",
+        text: "Order them onto your ship as crew",
+        outcome: {
+          text: "Attendants rearrange themselves as staff — never as your crew roster. Privilege forbids it.",
+          acceptRecruitment: {
+            characterId: "npc_celestial_wannabe",
+            role: "FIGHTER",
+            membership: "ALLY",
+          },
+        },
+      },
+      {
+        id: "dismiss_rabble",
+        text: "Dismiss them",
+        outcome: {
+          text: "They scatter. Heaven needs no friends — only distance.",
+          tendencyChanges: { entitlement: 4, independence: 3 },
+        },
       },
     ],
   },

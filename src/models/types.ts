@@ -24,16 +24,102 @@ export type RelationFactionId =
   | "CIVILIANS"
   | "REVOLUTIONARY_ARMY";
 
-/** Career / membership path — distinct from world reputation (RelationFactionId). */
+/** Career / institutional membership path — distinct from world reputation and from Role. */
 export type CareerFactionId =
   | "PIRATES"
   | "MARINES"
   | "REVOLUTIONARY_ARMY"
   | "WORLD_GOVERNMENT"
-  | "BOUNTY_HUNTER"
   | "CIVILIAN"
-  | "INDEPENDENT";
+  | "INDEPENDENT"
+  /** @deprecated Migrated to CareerRoleId BOUNTY_HUNTER under CIVILIAN faction. */
+  | "BOUNTY_HUNTER";
 
+/** World / institutional affiliation (player faction layer). */
+export type AffiliationFactionId =
+  | "CIVILIAN"
+  | "PIRATES"
+  | "MARINES"
+  | "REVOLUTIONARY_ARMY"
+  | "WORLD_GOVERNMENT";
+
+/** Role / career — not a faction. Bounty Hunter lives here under Civilian. */
+export type CareerRoleId =
+  | "WANDERER"
+  | "BOUNTY_HUNTER"
+  | "PIRATE_CAPTAIN"
+  | "PIRATE_CREW"
+  | "MARINE_RECRUIT"
+  | "MARINE_OFFICER"
+  | "REVOLUTIONARY_OPERATIVE"
+  | "CIPHER_POL_AGENT"
+  | "CELESTIAL_DRAGON"
+  | "MERCHANT"
+  | "MERCENARY"
+  | "EXPLORER";
+
+export type LegalStatusId =
+  | "LAWFUL"
+  | "SUSPECTED"
+  | "WANTED"
+  | "FUGITIVE"
+  | "PROTECTED"
+  | "GOVERNMENT_AGENT"
+  | "CELESTIAL_PRIVILEGE";
+
+export type IdentityTendencyId =
+  | "authorityAlignment"
+  | "civilianConduct"
+  | "profitMotive"
+  | "criminality"
+  | "independence"
+  | "worldGovernmentLoyalty"
+  | "compassion"
+  | "entitlement"
+  | "ideologicalAlignment"
+  | "violenceAgainstCivilians"
+  | "violenceAgainstMarines"
+  | "violenceAgainstPirates"
+  | "bountyCollectionBehavior"
+  | "protectionBehavior"
+  | "obedience"
+  | "rebellion";
+
+export type IdentityTendencies = Record<IdentityTendencyId, number>;
+
+export interface CelestialIdentityState {
+  acceptance: number;
+  humanConnection: number;
+  privilegeLevel: number;
+  protectionLevel: number;
+  royalKnightTraining: boolean;
+  lostStatus: boolean;
+}
+
+export interface PlayerIdentity {
+  factionId: AffiliationFactionId;
+  roleId: CareerRoleId;
+  legalStatusId: LegalStatusId;
+  /** Role ladder rank (e.g. hunter_local) when distinct from institutional affiliation.rankId. */
+  roleRankId?: string | null;
+  tendencies: IdentityTendencies;
+  celestial?: CelestialIdentityState | null;
+  assignedPartnerId?: string | null;
+  /** Day last identity offer was generated, keyed by offer source id. */
+  offerCooldowns?: Record<string, number>;
+  roleHistory: Array<{
+    id: string;
+    day: number;
+    roleId: CareerRoleId;
+    note?: string;
+  }>;
+  legalHistory: Array<{
+    id: string;
+    day: number;
+    statusId: LegalStatusId;
+    note?: string;
+  }>;
+}
 export type MembershipStatus =
   | "INDEPENDENT"
   | "PROSPECT"
@@ -116,6 +202,8 @@ export interface PlayerAffiliation {
 export interface FactionRankDefinition {
   id: string;
   factionId: CareerFactionId;
+  /** When set, rank belongs to a Civilian (or other) role ladder rather than institutional faction. */
+  roleId?: CareerRoleId;
   name: string;
   /** Ascending seniority (0 = junior). */
   order: number;
@@ -472,9 +560,116 @@ export type CharacterMemoryType =
   | "TRADED"
   | "RESCUED"
   | "INSULTED"
-  | "RECRUITED";
+  | "RECRUITED"
+  | "PLAYER_SAVED_ME"
+  | "PLAYER_BETRAYED_ME"
+  | "PLAYER_SPARED_ME"
+  | "PLAYER_ATTACKED_ME"
+  | "PLAYER_TRAINED_ME"
+  | "PLAYER_ABANDONED_ME"
+  | "PLAYER_BROKE_PROMISE"
+  | "PLAYER_KEPT_PROMISE"
+  | "PLAYER_PROTECTED_FAMILY"
+  | "PLAYER_HUMILIATED_ME"
+  | "FOUGHT_TOGETHER"
+  | "LOST_BATTLE_TOGETHER"
+  | "SHARED_SECRET"
+  | "TRAINED_TOGETHER"
+  | "WAS_RECRUITED"
+  | "WAS_REJECTED"
+  | "WAS_PARDONED"
+  | "WAS_ARRESTED";
 
-export type CrewMembershipType = "PERMANENT" | "TEMPORARY" | "GUEST" | "ALLY";
+export type CrewMembershipType =
+  | "PERMANENT"
+  | "TEMPORARY"
+  | "GUEST"
+  | "ALLY"
+  | "CONTRACTOR"
+  | "PARTNER"
+  | "ASSIGNED"
+  | "CELL_CONTACT";
+
+export type NarrativeArchetype =
+  | "rivalry"
+  | "friendship"
+  | "betrayal"
+  | "mentorship"
+  | "investigation"
+  | "mystery"
+  | "political_conflict"
+  | "faction_corruption"
+  | "revenge"
+  | "rescue"
+  | "competition"
+  | "romance"
+  | "debt"
+  | "bounty_pursuit"
+  | "mistaken_identity"
+  | "hidden_lineage"
+  | "stolen_artifact"
+  | "trainer_rivalry"
+  | "ship_conflict"
+  | "crew_disagreement"
+  | "island_rebellion"
+  | "criminal_conspiracy"
+  | "recruitment"
+  | "apprenticeship"
+  | "faction_promotion"
+  | "defection"
+  | "moral_dilemma"
+  | "survival"
+  | "disaster"
+  | "tournament"
+  | "exploration"
+  | "treasure_hunt"
+  | "missing_person"
+  | "secret_organization"
+  | "assassination_attempt"
+  | "hostage_situation"
+  | "smuggling"
+  | "undercover_mission";
+
+export type StoryThreadStageKind =
+  | "HOOK"
+  | "DEVELOPMENT"
+  | "COMPLICATION"
+  | "ESCALATION"
+  | "CLIMAX"
+  | "AFTERMATH"
+  | "INVESTIGATION"
+  | "RESOLUTION";
+
+export interface StoryThreadStageDefinition {
+  kind: StoryThreadStageKind;
+  label: string;
+  encounterTags?: string[];
+  encounterIds?: string[];
+}
+
+export interface SpeechProfile {
+  speechStyle?: string;
+  verbosity?: number;
+  confidence?: number;
+  humor?: number;
+  formality?: number;
+  aggression?: number;
+  education?: number;
+  emotionalOpenness?: number;
+  directness?: number;
+  optimism?: number;
+  cynicism?: number;
+  dialectFlavor?: string;
+}
+
+export interface DialogueBeat {
+  speakerId: string;
+  speakerName?: string;
+  line: string;
+  /** If set, only show when this crew member is present/available. */
+  requireCrewId?: string;
+  memoryGate?: CharacterMemoryType;
+}
 
 export type CrewRole =
   | "CAPTAIN"
@@ -575,10 +770,12 @@ export interface Player {
   stats: PlayerStats;
   berries: number;
   bounty: number;
-  /** Dynamic reputation/career title — kept in sync from affiliation + rank. */
+  /** Dynamic reputation/career title — kept in sync from identity + affiliation + rank. */
   title: string;
   /** Career membership; world reputation lives on `WorldState.factions`. */
   affiliation?: PlayerAffiliation;
+  /** Faction / Role / Legal / tendencies — separate from institutional affiliation blob. */
+  identity?: PlayerIdentity;
   devilFruitId: string | null;
   haki: {
     observation: number;
@@ -698,6 +895,7 @@ export interface WorldCharacter {
   joinInterest?: number;
   crewRole?: CrewRole;
   recruitmentPath?: string;
+  speechProfile?: SpeechProfile;
   crewStats?: PlayerStats;
   progression?: CharacterProgression;
   unlockedTechniques?: string[];
@@ -1128,6 +1326,8 @@ export interface EncounterHistory {
   storyThreadId: string | null;
   day: number;
   result: string;
+  archetypes?: NarrativeArchetype[];
+  themes?: string[];
 }
 
 export interface StoryThreadHistoryEntry {
@@ -1144,12 +1344,15 @@ export interface StoryThread {
   state: StoryThreadState;
   stage: number;
   maxStage?: number;
+  stageKind?: StoryThreadStageKind;
   startedDay: number;
   lastUpdatedDay: number;
   involvedCharacterIds: string[];
   involvedFactionIds: RelationFactionId[];
   involvedIslandIds: string[];
   tags: string[];
+  archetypes?: NarrativeArchetype[];
+  mergedFromThreadIds?: string[];
   history: StoryThreadHistoryEntry[];
   cooldownUntilDay?: number;
   metadata?: Record<string, unknown>;
@@ -1267,6 +1470,8 @@ export type EncounterCondition =
   | { type: "FACTION_MAX"; factionId: RelationFactionId; value: number }
   | { type: "FACTION_DISCOVERED"; factionId: RelationFactionId; negate?: boolean }
   | { type: "PLAYER_AFFILIATION"; factionId: CareerFactionId; negate?: boolean }
+  | { type: "PLAYER_ROLE"; roleId: CareerRoleId; negate?: boolean }
+  | { type: "PLAYER_LEGAL_STATUS"; statusId: LegalStatusId; negate?: boolean }
   | {
       type: "MEMBERSHIP_STATUS";
       statuses: MembershipStatus[];
@@ -1407,6 +1612,16 @@ export interface EncounterOutcome {
     asProspect?: boolean;
     note?: string;
   };
+  setRole?: {
+    roleId: CareerRoleId;
+    rankId?: string;
+    note?: string;
+  };
+  setLegalStatus?: {
+    statusId: LegalStatusId;
+    note?: string;
+  };
+  tendencyChanges?: Partial<IdentityTendencies>;
   leaveFaction?: {
     mode: LeaveAffiliationMode;
     note?: string;
@@ -1500,6 +1715,9 @@ export interface Encounter {
   fruitEncounter?: boolean;
   relevantRaces?: string[];
   storyThreadTemplateId?: string;
+  narrativeArchetypes?: NarrativeArchetype[];
+  narrativeThemes?: string[];
+  dialogueBeats?: DialogueBeat[];
 }
 
 export interface RacialTrait {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type WheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   beatsFromLogAndHits,
   defeatBeats,
@@ -20,17 +20,13 @@ import { EffectTooltip } from "./EffectTooltip";
 import { HpBar } from "./HpBar";
 import { ResourceBar } from "./ResourceBar";
 import { ActionIcon } from "./StatIcon";
-import { SkillBadgeRow } from "./SkillBadgeRow";
+import { ChoiceWheel, CHOICE_WHEEL_ICON_SIZE, type ChoiceWheelOption } from "./ChoiceWheel";
 import { resolveSkillBadges, skillBadgeTip, SKILL_BADGE_CATALOG } from "../game/skillBadges";
-import type { SkillBadgeRef } from "../models/types";
 
 const ACTION_ICON_SIZE = 190;
-const WHEEL_ICON_SIZE = 200;
+const WHEEL_ICON_SIZE = CHOICE_WHEEL_ICON_SIZE;
 const ACTIVE_SIZE = 1.04;
 const CARD_BASE_PCT = 20;
-const WHEEL_STEP_REM = 8.5;
-const WHEEL_SIDE_SCALE = 0.74;
-const WHEEL_ANIM_MS = 240;
 const CHOICE_PANEL_MS = 340;
 const TURN_BANNER_MS = 1000;
 const ENEMY_THINK_MS = 1100;
@@ -59,17 +55,6 @@ type Targeting = null | {
 
 type ActionMenu = "attack" | "technique" | "defend" | "observe" | "item" | "escape";
 
-type WheelOption = {
-  id: string;
-  title: string;
-  costLabel: string;
-  hint: string;
-  disabled?: boolean;
-  icon?: ReactNode;
-  badges?: SkillBadgeRef[];
-  onConfirm: () => void;
-};
-
 function hitSignature(hits: CombatHit[]): string {
   return hits.map((hit) => hit.id).join("|");
 }
@@ -85,175 +70,6 @@ function initiativeTip(combatant: CombatantState, position: number | undefined):
     variance ? `Initiative variance +${variance}` : "No extra initiative",
     `Final initiative ${finalScore}`,
   ].join("\n");
-}
-
-function wrapIndex(index: number, length: number): number {
-  if (length <= 0) {
-    return 0;
-  }
-  return ((index % length) + length) % length;
-}
-
-function bridgeOffsets(count: number): number[] {
-  if (count <= 1) {
-    return [0];
-  }
-  // Always keep both sides populated (with wrap) so scroll animations stay filled.
-  return [-2, -1, 0, 1, 2];
-}
-
-function ChoiceWheel({
-  options,
-  onHoverHint,
-  onFocusChange,
-  disabled,
-}: {
-  options: WheelOption[];
-  onHoverHint: (hint: string | null) => void;
-  onFocusChange: (option: WheelOption | null) => void;
-  disabled?: boolean;
-}) {
-  const [focus, setFocus] = useState(0);
-  const [motion, setMotion] = useState(0);
-  const [instant, setInstant] = useState(false);
-  const locked = useRef(false);
-  const wheelLock = useRef(0);
-  const multi = options.length > 1;
-
-  useEffect(() => {
-    setFocus(0);
-    setMotion(0);
-    locked.current = false;
-  }, [options.length, options[0]?.id]);
-
-  useEffect(() => {
-    const current = options[wrapIndex(focus, options.length)] ?? null;
-    onHoverHint(current?.hint ?? null);
-    onFocusChange(current);
-    return () => {
-      onHoverHint(null);
-      onFocusChange(null);
-    };
-  }, [focus, options.length, options[0]?.id, options[focus]?.id, onHoverHint, onFocusChange]);
-
-  if (!options.length) {
-    return <p className="combat-wheel-empty">No options available.</p>;
-  }
-
-  const rotate = (delta: number) => {
-    if (disabled || locked.current || !multi || delta === 0) {
-      return;
-    }
-    locked.current = true;
-    setInstant(false);
-    const dir = delta > 0 ? 1 : -1;
-    setMotion(dir);
-    window.setTimeout(() => {
-      setInstant(true);
-      setFocus((current) => wrapIndex(current + dir, options.length));
-      setMotion(0);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setInstant(false);
-          locked.current = false;
-        });
-      });
-    }, WHEEL_ANIM_MS);
-  };
-
-  const onWheel = (event: WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    if (!multi || Math.abs(event.deltaY) < 2) {
-      return;
-    }
-    const now = Date.now();
-    if (now - wheelLock.current < WHEEL_ANIM_MS) {
-      return;
-    }
-    wheelLock.current = now;
-    rotate(event.deltaY > 0 ? 1 : -1);
-  };
-
-  const offsets = bridgeOffsets(options.length);
-
-  return (
-    <div className={`combat-choice-wheel-wrap ${multi ? "has-arrows" : "is-single"}`}>
-      <div className="combat-choice-wheel-row">
-        {multi ? (
-          <button
-            aria-label="Previous choice"
-            className="combat-wheel-arrow"
-            disabled={disabled || locked.current}
-            onClick={() => rotate(-1)}
-            type="button"
-          >
-            ‹
-          </button>
-        ) : null}
-        <div className="combat-choice-wheel" onWheel={onWheel}>
-          {offsets.map((offset) => {
-            const option = options[wrapIndex(focus + offset, options.length)];
-            const visual = offset - motion;
-            const isFocus = Math.abs(visual) < 0.01;
-            const absVisual = Math.abs(visual);
-            const scale = isFocus ? 1 : absVisual >= 1.5 ? 0.62 : WHEEL_SIDE_SCALE;
-            const opacity = isFocus ? 1 : absVisual >= 1.5 ? 0.4 : 0.78;
-            // Same lowered focus seat as solo choices; sides sit slightly lower.
-            const y = isFocus ? 0.45 : 0.95;
-            return (
-              <button
-                className={`combat-wheel-option ${isFocus ? "is-focus" : ""} ${instant ? "is-instant" : ""} ${option.disabled ? "is-disabled" : ""}`}
-                disabled={disabled}
-                key={`slot-${offset}`}
-                onClick={() => {
-                  if (!isFocus) {
-                    rotate(visual < 0 ? -1 : 1);
-                    return;
-                  }
-                  if (!option.disabled) {
-                    option.onConfirm();
-                  }
-                }}
-                style={{
-                  transform: `translateX(${visual * WHEEL_STEP_REM}rem) translateY(${y}rem) scale(${scale})`,
-                  opacity,
-                  zIndex: isFocus ? 12 : Math.max(1, 8 - Math.round(absVisual)),
-                  cursor: "pointer",
-                }}
-                tabIndex={isFocus ? 0 : -1}
-                type="button"
-              >
-                <span className="combat-wheel-icon">
-                  {option.icon ?? <ActionIcon name="technique" size={WHEEL_ICON_SIZE} />}
-                </span>
-                <span className="combat-wheel-label">{option.title}</span>
-                {isFocus ? <span className="combat-wheel-cost">{option.costLabel}</span> : null}
-                {isFocus && option.badges?.length ? (
-                  <SkillBadgeRow
-                    badges={option.badges}
-                    className="combat-wheel-badges"
-                    layout="column"
-                    size={60}
-                  />
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-        {multi ? (
-          <button
-            aria-label="Next choice"
-            className="combat-wheel-arrow"
-            disabled={disabled || locked.current}
-            onClick={() => rotate(1)}
-            type="button"
-          >
-            ›
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
 }
 
 function CombatantCard({
@@ -415,7 +231,7 @@ export function CombatView({
 }: CombatViewProps) {
   const [actionMenu, setActionMenu] = useState<ActionMenu | null>(null);
   const [choicePhase, setChoicePhase] = useState<"open" | "closing" | null>(null);
-  const [focusedOption, setFocusedOption] = useState<WheelOption | null>(null);
+  const [focusedOption, setFocusedOption] = useState<ChoiceWheelOption | null>(null);
   const [targeting, setTargeting] = useState<Targeting>(null);
   const [hoverTargetId, setHoverTargetId] = useState<string | null>(null);
   const [logOpen, setLogOpen] = useState(false);
@@ -817,7 +633,7 @@ export function CombatView({
     setActionHint(null);
   };
 
-  const techniqueOptions: WheelOption[] = activeCombatant.abilities.map((ability) => {
+  const techniqueOptions: ChoiceWheelOption[] = activeCombatant.abilities.map((ability) => {
     const mpCost = MpService.abilityMpCost(ability);
     const canAfford = (activeCombatant.mp ?? 0) >= mpCost;
     const previewTech = CombatPreviewService.previewAttack(combat, ability, activeCombatant.id, livingEnemies[0]?.id);
@@ -849,7 +665,7 @@ export function CombatView({
     };
   });
 
-  const itemOptions: WheelOption[] = combatItems.map((item) => {
+  const itemOptions: ChoiceWheelOption[] = combatItems.map((item) => {
     const defId = item.itemId || item.id;
     return {
       id: item.id,
@@ -883,7 +699,7 @@ export function CombatView({
     .filter(Boolean)
     .join("\n");
 
-  const menuOptions: WheelOption[] = (() => {
+  const menuOptions: ChoiceWheelOption[] = (() => {
     switch (actionMenu) {
       case "attack":
         return [
@@ -1127,6 +943,30 @@ export function CombatView({
                       Hit {preview.hitChance}% · {preview.damageMin}–{preview.damageMax} dmg · {preview.costLabel}
                     </p>
                   ) : null}
+                  {targeting ? (
+                    <div className="combat-target-confirm-row combat-target-confirm-inline">
+                      {manualTargeting && (manualExact == null || manualExact > 1 || (manualMax ?? 1) > 1) ? (
+                        <button
+                          className="gold-btn"
+                          disabled={!canConfirmManual}
+                          onClick={() => fireTargetedAction(targeting.selectedIds)}
+                          type="button"
+                        >
+                          Confirm Targets ({selectedCount}/{manualExact ?? manualMax})
+                        </button>
+                      ) : null}
+                      <button
+                        className="ghost-btn combat-cancel-target"
+                        onClick={() => {
+                          setTargeting(null);
+                          setActionHint(null);
+                        }}
+                        type="button"
+                      >
+                        Cancel targeting
+                      </button>
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>
@@ -1278,31 +1118,6 @@ export function CombatView({
           </div>
         </div>
       )}
-
-      {targeting ? (
-        <div className="combat-target-confirm-row">
-          {manualTargeting && (manualExact == null || manualExact > 1 || (manualMax ?? 1) > 1) ? (
-            <button
-              className="gold-btn"
-              disabled={!canConfirmManual}
-              onClick={() => fireTargetedAction(targeting.selectedIds)}
-              type="button"
-            >
-              Confirm Targets ({selectedCount}/{manualExact ?? manualMax})
-            </button>
-          ) : null}
-          <button
-            className="ghost-btn combat-cancel-target"
-            onClick={() => {
-              setTargeting(null);
-              setActionHint(null);
-            }}
-            type="button"
-          >
-            Cancel targeting
-          </button>
-        </div>
-      ) : null}
     </section>
   );
 }

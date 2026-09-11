@@ -1,10 +1,20 @@
 import { HUMAN_RACE_ID } from "../data/races";
 import { getFaction } from "../data/factions";
 import { getLocation, getRegionName } from "../data/locations";
-import type { CareerFactionId, ProfileSave, RelationFactionId, TimeOfDay } from "../models/types";
+import type {
+  CareerFactionId,
+  CareerRoleId,
+  IdentityTendencyId,
+  LegalStatusId,
+  ProfileSave,
+  RelationFactionId,
+  TimeOfDay,
+} from "../models/types";
 import { AffiliationService } from "../services/AffiliationService";
 import { EncounterHistoryService } from "../services/EncounterHistoryService";
+import { IdentityService } from "../services/IdentityService";
 import { RaceService } from "../services/RaceService";
+import { RecruitmentModelService } from "../services/RecruitmentModelService";
 import { StoryThreadService } from "../services/StoryThreadService";
 import { debugCombatSnapshot } from "../services/ThreatService";
 import { OverlayFrame } from "./OverlayFrame";
@@ -74,6 +84,11 @@ type DebugOverlayProps = {
   onTechniquePoint?: () => void;
   onGenerateChestEncounter?: () => void;
   onJoinFaction?: (factionId: CareerFactionId) => void;
+  onSetIdentityRole?: (roleId: CareerRoleId) => void;
+  onSetLegalStatus?: (statusId: LegalStatusId) => void;
+  onNudgeTendency?: (key: IdentityTendencyId, delta: number) => void;
+  onBecomeCelestial?: () => void;
+  onLoseCelestialPrivilege?: () => void;
   onSetIndependent?: () => void;
   onPromote?: () => void;
   onDemote?: () => void;
@@ -158,6 +173,11 @@ export function DebugOverlay({
   onTechniquePoint,
   onGenerateChestEncounter,
   onJoinFaction,
+  onSetIdentityRole,
+  onSetLegalStatus,
+  onNudgeTendency,
+  onBecomeCelestial,
+  onLoseCelestialPrivilege,
   onSetIndependent,
   onPromote,
   onDemote,
@@ -214,6 +234,18 @@ export function DebugOverlay({
             <div>
               affiliation: {affiliation?.factionLabel ?? "—"} · {affiliation?.rankLabel ?? "—"} ·{" "}
               {affiliation?.status ?? "—"}
+            </div>
+            <div>
+              identity:{" "}
+              {run
+                ? `${IdentityService.hudSummary(run).faction} · ${IdentityService.hudSummary(run).role} · ${IdentityService.hudSummary(run).legal}`
+                : "—"}
+            </div>
+            <div>
+              recruit:{" "}
+              {run
+                ? RecruitmentModelService.routeLabel(RecruitmentModelService.resolveRoute(run))
+                : "—"}
             </div>
             <div>
               loyalty: {affiliation?.loyalty ?? "—"} · internal rep:{" "}
@@ -617,11 +649,51 @@ export function DebugOverlay({
             </button>
             <button
               className="choice-btn"
-              disabled={!run}
-              onClick={() => onJoinFaction("BOUNTY_HUNTER")}
+              disabled={!run || !onSetIdentityRole}
+              onClick={() => onSetIdentityRole?.("BOUNTY_HUNTER")}
               type="button"
             >
-              Become Bounty Hunter
+              Become Bounty Hunter (Civilian role)
+            </button>
+            <button
+              className="choice-btn"
+              disabled={!run || !onBecomeCelestial}
+              onClick={() => onBecomeCelestial?.()}
+              type="button"
+            >
+              Become Celestial Dragon
+            </button>
+            <button
+              className="choice-btn"
+              disabled={!run || !onLoseCelestialPrivilege}
+              onClick={() => onLoseCelestialPrivilege?.()}
+              type="button"
+            >
+              Lose Celestial Privilege
+            </button>
+            <button
+              className="choice-btn"
+              disabled={!run || !onSetLegalStatus}
+              onClick={() => onSetLegalStatus?.("WANTED")}
+              type="button"
+            >
+              Force Legal: Wanted
+            </button>
+            <button
+              className="choice-btn"
+              disabled={!run || !onNudgeTendency}
+              onClick={() => onNudgeTendency?.("bountyCollectionBehavior", 15)}
+              type="button"
+            >
+              Nudge Hunter Tendency +15
+            </button>
+            <button
+              className="choice-btn"
+              disabled={!run || !onNudgeTendency}
+              onClick={() => onNudgeTendency?.("authorityAlignment", 15)}
+              type="button"
+            >
+              Nudge Authority +15
             </button>
           </>
         ) : null}
