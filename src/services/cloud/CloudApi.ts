@@ -2,27 +2,52 @@ import type { AuthUser, CloudWorldDetail, CloudWorldSummary, SaveConflictPayload
 
 /**
  * Cloud is ON unless VITE_API_URL is explicitly "off".
- * - unset / empty → same-origin (`/auth`, `/api`) via Vite proxy → localhost:3001
+ * - unset / empty in DEV → same-origin (`/auth`, `/api`) via Vite proxy → localhost:3001
+ * - unset / empty in PROD → production API host (never relative — Hostnet SPA would swallow /auth)
  * - full URL → call that API host directly
  */
-const RAW_API = import.meta.env.VITE_API_URL;
+const RAW_API = (import.meta.env.VITE_API_URL ?? "").trim();
 const CLOUD_DISABLED = RAW_API === "off" || RAW_API === "0" || RAW_API === "false";
-const API_BASE = CLOUD_DISABLED ? null : (RAW_API ?? "").replace(/\/$/, "");
+const PRODUCTION_API_FALLBACK = "https://api.roguepiece.freakydev.com";
+
+function resolveApiBase(): string | null {
+  if (CLOUD_DISABLED) {
+    return null;
+  }
+  const cleaned = RAW_API.replace(/\/$/, "");
+  if (cleaned) {
+    return cleaned;
+  }
+  if (import.meta.env.DEV) {
+    return "";
+  }
+  return PRODUCTION_API_FALLBACK;
+}
+
+const API_BASE = resolveApiBase();
 
 export function isCloudConfigured(): boolean {
   return API_BASE !== null;
 }
 
+/** Absolute Google OAuth start URL (required on mobile — relative /auth hits the SPA). */
 export function googleSignInUrl(): string {
-  return `${API_BASE ?? ""}/auth/google`;
+  if (API_BASE === null) {
+    return "#";
+  }
+  if (API_BASE === "") {
+    return "/auth/google";
+  }
+  return `${API_BASE}/auth/google`;
 }
 
-/** Start Google OAuth (full-page redirect). */
+/** Start Google OAuth (full-page redirect). Prefer navigating via <a href> on mobile. */
 export function signInWithGoogle(): void {
   if (!isCloudConfigured()) {
     throw new Error("Cloud API is not configured (set VITE_API_URL or leave it empty for the Vite proxy).");
   }
-  window.location.assign(googleSignInUrl());
+  const url = googleSignInUrl();
+  window.location.assign(url);
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {

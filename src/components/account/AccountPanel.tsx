@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CloudApi, isCloudConfigured, signInWithGoogle } from "../../services/cloud/CloudApi";
+import { CloudApi, googleSignInUrl, isCloudConfigured } from "../../services/cloud/CloudApi";
 import { CloudSync } from "../../services/cloud/CloudSyncService";
 import type { AuthUser, CloudWorldSummary } from "../../services/cloud/types";
 import type { ProfileSlot } from "../../models/types";
@@ -66,13 +66,9 @@ export function AccountPanel({ selectedSlot = null }: AccountPanelProps) {
       {!user ? (
         <>
           <p className="account-panel-copy">Play as Guest anytime. Sign in to sync your world across devices.</p>
-          <button
-            className="gold-btn account-google-btn"
-            onClick={() => signInWithGoogle()}
-            type="button"
-          >
+          <a className="gold-btn account-google-btn" href={googleSignInUrl()} rel="noopener">
             Sign in with Google
-          </button>
+          </a>
         </>
       ) : (
         <>
