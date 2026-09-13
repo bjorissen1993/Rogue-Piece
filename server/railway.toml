@@ -1,4 +1,5 @@
-# Used when Root Directory = /server. Prefer repo-root railway.toml (DOCKERFILE).
+# Prefer repo-root Dockerfile when deploying from GitHub without Root Directory.
+# This file is for local `railway up` from ./server only.
 
 [build]
 builder = "DOCKERFILE"

@@ -1,10 +1,8 @@
-# Force API-only deploy (avoids Vite frontend + npm workspace issues).
-# Dashboard: clear custom Build/Start commands so this file is used,
-# or set Build Command / Start Command empty and builder = DOCKERFILE.
+# API-only deploy from monorepo root (Docker build context = repo root).
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "server/Dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"
