@@ -14,6 +14,7 @@ import { FleetService } from "../services/FleetService";
 import { RaceService } from "../services/RaceService";
 import { LootDispositionService } from "../services/LootDispositionService";
 import { WeaponService } from "../services/WeaponService";
+import { MedicalRecoveryService } from "../services/MedicalRecoveryService";
 import { STAT_LABELS } from "../utils/text";
 import { ensurePlayerStats } from "../utils/stats";
 import { CharacterCard } from "./CharacterCard";
@@ -21,6 +22,7 @@ import { HpBar } from "./HpBar";
 import { ResourceBar } from "./ResourceBar";
 import { MpService } from "../services/MpService";
 import { OverlayFrame } from "./OverlayFrame";
+import { WeaponStatsBlock } from "./WeaponStatsBlock";
 
 type CrewOverlayProps = {
   run: RunState;
@@ -66,6 +68,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
   const [tab, setTab] = useState<CrewTab>("CORE");
   const [sidePanel, setSidePanel] = useState<SidePanelMode>("character");
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [selectedWeaponId, setSelectedWeaponId] = useState<string | null>(null);
   const crew = CrewService.list(run);
   const captain = CrewService.captainEntry(run);
   const captainFruit = run.player.devilFruitId ? getDevilFruit(run.player.devilFruitId) : undefined;
@@ -78,8 +81,16 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
   CrewCombatService.ensurePartyConfig(run);
   const fleet = FleetService.list(run);
   const apprentices = FleetService.listApprentices(run);
-  const showExtendedTabs = run.runFlags.includes("crew_overflow_unlocked");
+  const showExtendedTabs =
+    CrewService.isFleetUnlocked(run) ||
+    run.runFlags.includes("crew_overflow_unlocked") ||
+    (run.fleet?.length ?? 0) > 0;
+  const fleetUnlockLine = CrewService.fleetUnlockSummary(run);
   const weaponRows = WeaponService.listCrewWeapons(run);
+  const selectedWeaponRow = weaponRows.find((entry) => entry.instance.id === selectedWeaponId) ?? null;
+  const selectedWeaponView = selectedWeaponRow
+    ? WeaponService.resolveWeaponView(selectedWeaponRow.instance)
+    : undefined;
   const stashFruits = LootDispositionService.stashItems(run).filter(
     (item) => item.type === "DEVIL_FRUIT" || item.fruitId,
   );
@@ -107,6 +118,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
         fruit: captainFruit?.name ?? null,
         isCaptain: true,
         isActiveFighter: true,
+        statusLine: MedicalRecoveryService.recoverySummary(run, "player"),
       },
       ...crew.map((entry) => {
         const hp = CrewService.estimatedHp(entry.character);
@@ -132,6 +144,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
           fruit: fruit?.name ?? null,
           isCaptain: false,
           entry,
+          statusLine: MedicalRecoveryService.recoverySummary(run, entry.member.characterId),
         };
       }),
     ];
@@ -143,6 +156,13 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
   );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedCharacterWeaponInstance =
+    selectedId === run.player.id
+      ? captainWeaponInstance
+      : selectedId
+        ? WeaponService.equippedInstanceFor(run, selectedId)
+        : undefined;
+  const selectedCharacterWeaponView = WeaponService.resolveWeaponView(selectedCharacterWeaponInstance);
   const selectedCrew =
     selectedId && selectedId !== run.player.id ? CrewService.getMember(run, selectedId) : null;
   const selectedCharacter =
@@ -238,6 +258,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
             portraitInitials={portraitInitials(member.name)}
             primaryWeapon={member.weapon}
             selected={selectedId === member.id}
+            statusLine={member.statusLine}
             vitals={member.vitals}
             weaponInstanceId={member.weaponInstanceId}
           />
@@ -285,6 +306,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
       {tab === "CORE" ? (
         <div className="split-overlay crew-split-overlay">
           <div className="split-pane crew-roster-pane">
+            <p className="text-sm text-parchment-dim crew-fleet-unlock-line">{fleetUnlockLine}</p>
             <div className="crew-roster-wrap">
               <span className="crew-battle-formation-label">Battle Formation</span>
               <div aria-hidden="true" className="crew-battle-formation-marker" />
@@ -336,7 +358,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
 
             {sidePanel === "weapons" ? (
               <div className="crew-weapons-panel">
-                <p className="detail-label">Drag weapons onto crew cards</p>
+                <p className="detail-label">Drag weapons onto crew cards — click to inspect stats</p>
                 {weaponRows.length === 0 ? (
                   <p className="text-sm text-parchment-dim">No weapons in the crew pack.</p>
                 ) : (
@@ -344,8 +366,11 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                     {weaponRows.map(({ instance, ownerLabel, ownerName }) => (
                       <li key={instance.id}>
                         <button
-                          className="crew-weapon-row"
+                          className={`crew-weapon-row ${selectedWeaponId === instance.id ? "is-selected" : ""}`}
                           draggable
+                          onClick={() =>
+                            setSelectedWeaponId((current) => (current === instance.id ? null : instance.id))
+                          }
                           onDragStart={(event) =>
                             handleDragStart(event, { kind: "weapon", instanceId: instance.id })
                           }
@@ -362,9 +387,15 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                     ))}
                   </ul>
                 )}
-                <p className="text-sm text-parchment-dim mt-3">
-                  Drag a weapon from a crewmate&apos;s card to swap it to someone else.
-                </p>
+                {selectedWeaponView ? (
+                  <div className="crew-weapon-stats mt-3">
+                    <WeaponStatsBlock weapon={selectedWeaponView} />
+                  </div>
+                ) : (
+                  <p className="text-sm text-parchment-dim mt-3">
+                    Select a weapon to see damage, speed, and other stats. Drag onto a crewmate to assign.
+                  </p>
+                )}
               </div>
             ) : selectedId === null ? (
               <p className="text-parchment-dim">Select a crewmate to view details.</p>
@@ -415,6 +446,14 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                     ))}
                   </ul>
                 </section>
+                <section className="detail-section">
+                  <p className="detail-label">Equipped weapon</p>
+                  {selectedCharacterWeaponView ? (
+                    <WeaponStatsBlock weapon={selectedCharacterWeaponView} />
+                  ) : (
+                    <p className="text-sm text-parchment-dim">No weapon equipped.</p>
+                  )}
+                </section>
               </>
             ) : selectedCrew && selectedCharacter ? (
               <>
@@ -463,6 +502,14 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                     })}
                   </ul>
                 </section>
+                <section className="detail-section">
+                  <p className="detail-label">Equipped weapon</p>
+                  {selectedCharacterWeaponView ? (
+                    <WeaponStatsBlock weapon={selectedCharacterWeaponView} />
+                  ) : (
+                    <p className="text-sm text-parchment-dim">No weapon equipped.</p>
+                  )}
+                </section>
               </>
             ) : (
               <p className="text-parchment-dim">Select a crewmate.</p>
@@ -498,6 +545,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
       {tab === "FLEET" ? (
         <div className="panel">
           <p className="detail-label">Named fleet captains</p>
+          <p className="text-sm text-parchment-dim mb-2">{fleetUnlockLine}</p>
           {fleet.length ? (
             <ul className="detail-history">
               {fleet.map((entry) => {
@@ -510,10 +558,14 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                 );
               })}
             </ul>
-          ) : (
+          ) : CrewService.isFleetUnlocked(run) ? (
             <p className="text-sm text-parchment-dim">
               When core crew is full ({CORE_CREW_CAP}/{CORE_CREW_CAP}), new recruits may join as fleet captains under
-              your flag.
+              your banner — not as direct active crew.
+            </p>
+          ) : (
+            <p className="text-sm text-parchment-dim">
+              You are not yet known enough to gather followers under your banner. Raise your bounty to unlock the fleet.
             </p>
           )}
         </div>

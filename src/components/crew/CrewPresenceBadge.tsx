@@ -32,6 +32,8 @@ function statusLabel(status: CrewStatus): string {
       return "Busy";
     case "Injured":
       return "Recovering";
+    case "Hospitalized":
+      return "Hospitalized";
     case "Resting":
       return "Resting";
     case "Captured":

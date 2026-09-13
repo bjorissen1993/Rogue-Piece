@@ -31,4 +31,20 @@ export const MpService = {
   regenPerRound(): number {
     return MP_REGEN_PER_ROUND;
   },
+
+  /** Default MP restored when an outcome heals HP but does not set mpChange. */
+  companionRestoreFromHpHeal(hpChange: number): number {
+    if (hpChange <= 0) {
+      return 0;
+    }
+    return Math.max(1, Math.round(hpChange * 0.75));
+  },
+
+  /** Resolved MP delta for an encounter outcome (explicit mpChange wins; 0 disables companion heal). */
+  effectiveOutcomeMpChange(outcome: { mpChange?: number; hpChange?: number }): number {
+    if (outcome.mpChange != null) {
+      return outcome.mpChange;
+    }
+    return this.companionRestoreFromHpHeal(outcome.hpChange ?? 0);
+  },
 };

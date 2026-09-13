@@ -9,6 +9,7 @@ import type {
   StatName,
   TimeOfDay,
 } from "../models/types";
+import { MpService } from "../services/MpService";
 import { STAT_LABELS } from "./text";
 import {
   choiceFocusStat,
@@ -69,6 +70,33 @@ export function hpEffectTip(change: number, player?: Player | null): string {
     return `Recover ${abs} HP.`;
   }
   return "No HP change.";
+}
+
+function clampMp(value: number, max: number): number {
+  return Math.max(0, Math.min(max, value));
+}
+
+export function mpEffectTip(change: number, player?: Player | null): string {
+  const abs = Math.abs(change);
+  if (change < 0) {
+    if (player) {
+      const maxMp = player.maxMp ?? 0;
+      const current = player.mp ?? 0;
+      const next = clampMp(current + change, maxMp);
+      return `Lose ${abs} MP. Current ${current} → ${next}.`;
+    }
+    return `Lose ${abs} MP.`;
+  }
+  if (change > 0) {
+    if (player) {
+      const maxMp = player.maxMp ?? 0;
+      const current = player.mp ?? 0;
+      const next = clampMp(current + change, maxMp);
+      return `Recover ${abs} MP. Current ${current} → ${next}.`;
+    }
+    return `Recover ${abs} MP.`;
+  }
+  return "No MP change.";
 }
 
 export function berriesEffectTip(change: number, player?: Player | null): string {
@@ -295,6 +323,10 @@ export function primaryResultTooltip(
   const hp = choice.outcome.hpChange ?? 0;
   if (hp > 0) {
     parts.push(hpEffectTip(hp, player));
+  }
+  const mp = MpService.effectiveOutcomeMpChange(choice.outcome);
+  if (mp > 0) {
+    parts.push(mpEffectTip(mp, player));
   }
   const berries = choice.outcome.berriesChange ?? 0;
   if (berries > 0) {

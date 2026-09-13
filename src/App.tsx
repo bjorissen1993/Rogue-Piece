@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { GameStoreProvider, useGameStore } from "./stores/GameStore";
 import { SaveSelect } from "./pages/SaveSelect";
 import { ProfileMenu } from "./pages/ProfileMenu";
@@ -8,8 +9,53 @@ import { GameOverPage } from "./pages/GameOverPage";
 import { CollectionOverlay } from "./components/CollectionOverlay";
 import { AchievementsOverlay } from "./components/AchievementsOverlay";
 import { StatisticsOverlay } from "./components/StatisticsOverlay";
+import { SettingsOverlay } from "./components/SettingsOverlay";
 import { DebugOverlay } from "./components/DebugOverlay";
 import { ConfirmModal } from "./components/ConfirmModal";
+import { installMusicUnlock, MusicService } from "./services/MusicService";
+import { CloudSync } from "./services/cloud/CloudSyncService";
+import { CloudConflictModal } from "./components/account/CloudConflictModal";
+
+function AuthBootstrap() {
+  useEffect(() => {
+    void CloudSync.refreshSession();
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("auth") || params.has("authError")) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("auth");
+      url.searchParams.delete("authError");
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    }
+  }, []);
+  return null;
+}
+
+function MusicDirector() {
+  const { screen, profile } = useGameStore();
+  const inCombat = Boolean(profile?.activeRun?.combat && !profile.activeRun.combat.finished);
+
+  useEffect(() => installMusicUnlock(), []);
+
+  useEffect(() => {
+    if (screen === "game" && inCombat) {
+      MusicService.setMode("combat");
+      return;
+    }
+    if (
+      screen === "profileMenu" ||
+      screen === "playMenu" ||
+      screen === "newRun" ||
+      screen === "game" ||
+      screen === "gameOver"
+    ) {
+      MusicService.setMode("ambient");
+      return;
+    }
+    MusicService.setMode("ambient");
+  }, [screen, inCombat]);
+
+  return null;
+}
 
 function ScreenRouter() {
   const {
@@ -38,11 +84,16 @@ function ScreenRouter() {
   else if (screen === "game") page = <GamePage />;
   else if (screen === "gameOver") page = <GameOverPage />;
 
-  const showProfileOverlays = profile && overlay && overlay !== "gameMenu" && overlay !== "inventory";
+  const showProfileOverlays =
+    profile && overlay && overlay !== "gameMenu" && overlay !== "inventory" && overlay !== "settings";
 
   return (
     <>
+      <AuthBootstrap />
+      <MusicDirector />
       {page}
+      <CloudConflictModal />
+      {overlay === "settings" ? <SettingsOverlay onClose={closeOverlay} /> : null}
       {showProfileOverlays && overlay === "collection" ? (
         <CollectionOverlay onClose={closeOverlay} profile={profile} />
       ) : null}

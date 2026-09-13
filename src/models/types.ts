@@ -427,7 +427,79 @@ export interface CombatPartyState {
 }
 
 export type ThreatLevel = "TRIVIAL" | "EASY" | "FAIR" | "DANGEROUS" | "DEADLY";
-export type CombatKind = "NORMAL" | "HIGH_RISK" | "BOSS" | "DUEL" | "STORY";
+
+/** How the fight is classified for rules, UI, and composition. */
+export type CombatKind =
+  | "NORMAL"
+  | "HIGH_RISK"
+  | "BOSS"
+  | "DUEL"
+  | "STORY"
+  | "SKIRMISH"
+  | "TEAM_BATTLE"
+  | "SPARRING"
+  | "ELITE";
+
+export type EnemyFamily =
+  | "STREET"
+  | "MARINE"
+  | "PIRATE"
+  | "HUNTER"
+  | "SEA_BEAST"
+  | "BEAST"
+  | "GOVERNMENT"
+  | "REVOLUTIONARY"
+  | "TRAINING"
+  | "STORY";
+
+export type EnemyRole = "NORMAL" | "ELITE" | "BOSS" | "SUPPORT";
+
+export type BattleFormatId = "TEAM" | "DUEL_1V1" | "SKIRMISH_2V2" | "BOSS_RAID" | "CUSTOM";
+
+export type SparWagerType =
+  | "NONE"
+  | "BERRIES"
+  | "ITEM"
+  | "MEAL"
+  | "TRAINING"
+  | "INFORMATION"
+  | "FAVOR"
+  | "PRIDE";
+
+export interface BattleFormat {
+  id: BattleFormatId;
+  /** Ally fighters besides optional captain rules — total player-side combatants. */
+  minPlayerFighters: number;
+  maxPlayerFighters: number;
+  minEnemies: number;
+  maxEnemies: number;
+  playerChoosesParticipants: boolean;
+  allowCaptainSitOut: boolean;
+  isFriendly: boolean;
+  stakesAllowed: boolean;
+  label: string;
+}
+
+export interface SparWager {
+  type: SparWagerType;
+  berries?: number;
+  label: string;
+  /** NPC inventory item id if ITEM wager. */
+  itemId?: string;
+}
+
+export interface PendingBattleSetup {
+  request: CombatRequest;
+  format: BattleFormat;
+  /** Pre-selected / forced character ids (player id or crew character ids). */
+  forcedParticipantIds: string[];
+  /** Opponent display name(s). */
+  opponentLabel: string;
+  wager?: SparWager | null;
+  /** Optional NPC id for relationship / memory updates. */
+  opponentCharacterId?: string | null;
+}
+
 export type ItemUseContext = "OUT_OF_COMBAT" | "COMBAT" | "BOTH" | "PASSIVE" | "SPECIAL";
 export type ChoiceRisk = "LOW" | "MODERATE" | "HIGH" | "DEADLY";
 export type ChoiceRiskLevel = "SAFE" | "FAIR" | "RISKY" | "DANGEROUS";
@@ -482,6 +554,7 @@ export type InventoryItemType =
 export type CrewStatus =
   | "Ready"
   | "Injured"
+  | "Hospitalized"
   | "Resting"
   | "Missing"
   | "Captured"
@@ -496,12 +569,28 @@ export type AssignmentType =
   | "WEAPON_TRAINING"
   | "STYLE_TRAINING"
   | "RECOVERING"
+  | "HOSPITALIZED"
   | "ON_MISSION"
   | "RESTING"
   | "PERSONAL_ACTIVITY"
   | "CAPTURED"
   | "MISSING"
   | "HELPING";
+
+export type KoSeverity = "MINOR" | "MODERATE" | "SEVERE" | "CRITICAL";
+
+export type CombatantCondition = "ACTIVE" | "KNOCKED_OUT";
+
+export interface CharacterRecoveryMeta {
+  severity: KoSeverity;
+  daysRemaining: number;
+  treatedByCharacterId?: string | null;
+  needsExternalCare?: boolean;
+  causeCombatKind?: CombatKind;
+  hospitalizedLocationId?: string;
+  hospitalizedLocationName?: string;
+  overkill?: number;
+}
 
 export interface CharacterAssignment {
   characterId: "player" | string;
@@ -578,7 +667,37 @@ export type CharacterMemoryType =
   | "WAS_RECRUITED"
   | "WAS_REJECTED"
   | "WAS_PARDONED"
-  | "WAS_ARRESTED";
+  | "WAS_ARRESTED"
+  | "SPARRED_WITH_PLAYER"
+  | "DEFEATED_PLAYER"
+  | "LOST_TO_PLAYER"
+  | "TEAM_DEFEATED_BY_PLAYER"
+  | "PLAYER_KEPT_WAGER"
+  | "PLAYER_BROKE_WAGER"
+  | "FRIENDLY_RIVAL"
+  | "TRAINED_TOGETHER_COMBAT"
+  | "WAS_KNOCKED_OUT"
+  | "WAS_HOSPITALIZED"
+  | "WAS_LEFT_RECOVERING"
+  | "CREW_FOUGHT_WITHOUT_ME"
+  | "CREW_DIED_WHILE_I_RECOVERED"
+  | "SURVIVED_RUN_LOSS"
+  | "LOST_ENTIRE_CREW"
+  | "RETURNED_TO_EMPTY_CREW"
+  | "RECOVERED_AFTER_BOSS_FIGHT"
+  | "PRIOR_CREW_WIPED"
+  | "FORMER_CREWMATE"
+  | "LOST_OLD_CREW"
+  | "SURVIVED_RUN_COLLAPSE"
+  | "FOUGHT_WITH_LEGEND"
+  | "TRAINED_BY_MASTER"
+  | "TAUGHT_APPRENTICE"
+  | "OLD_RIVAL"
+  | "FOUNDED_SCHOOL"
+  | "LOST_CHILD"
+  | "RETIRED_AFTER_BATTLE"
+  | "IS_DESCENDANT_OF"
+  | "IS_APPRENTICE_OF";
 
 export type CrewMembershipType =
   | "PERMANENT"
@@ -693,6 +812,37 @@ export type WeaponType = "SWORD" | "SPEAR" | "CLUB" | "GUN" | "KICKS" | "FISTS";
 
 export type WeaponRarity = "COMMON" | "UNCOMMON" | "RARE" | "LEGENDARY";
 
+export type WeaponCategory = "BLADE" | "POLEARM" | "BLUNT" | "RANGED" | "UNUSUAL";
+
+export type WeaponMaterial =
+  | "WOOD"
+  | "SCRAP"
+  | "BONE"
+  | "BRONZE"
+  | "IRON"
+  | "STEEL"
+  | "IVORY"
+  | "OBSIDIAN"
+  | "SEA_STONE_ALLOY";
+
+export type WeaponQuality =
+  | "RUSTY"
+  | "WORN"
+  | "STANDARD"
+  | "FINE"
+  | "MASTERWORK"
+  | "LEGENDARY_CRAFT";
+
+export type WeaponShopTheme =
+  | "GENERAL"
+  | "BLADE_SMITH"
+  | "GUNSMITH"
+  | "MARTIAL"
+  | "DOCKSIDE"
+  | "MARINE"
+  | "LUXURY"
+  | "BLACK_MARKET";
+
 export type MasteryRank =
   | "BEGINNER"
   | "TRAINED"
@@ -747,6 +897,8 @@ export interface InventoryItem {
   healAmount?: number;
   /** Present when this stack is a weapon instance. */
   weaponDefinitionId?: string;
+  /** Rolled/shop-generated weapon stats (takes priority over static catalog). */
+  generatedWeapon?: GeneratedWeapon;
   ownerCharacterId?: string | null;
   equipped?: boolean;
   category?: InventoryCategory;
@@ -790,6 +942,14 @@ export interface Player {
   unlockedStyles?: string[];
   progression?: CharacterProgression;
   unlockedTechniques?: string[];
+  /** Combat devil-fruit technique ids unlocked by use (starters auto-granted on eat). */
+  unlockedFruitTechniques?: string[];
+  /** Total DF technique uses this run — drives progressive unlocks. */
+  fruitTechniqueUses?: number;
+  /** Per-technique use counts for gated unlocks. */
+  fruitTechniqueUseCounts?: Record<string, number>;
+  /** Active Zoan form when the eaten fruit is ZOAN. */
+  zoanForm?: ZoanFormId | null;
 }
 
 export interface DevilFruitEffect {
@@ -1154,7 +1314,19 @@ export type SkillBadgeId =
   | "FOCUS"
   | "CONTROL_BREAK"
   | "AFFLICTION"
-  | "VULNERABILITY";
+  | "VULNERABILITY"
+  | "DEVIL_FRUIT";
+
+/** Zoan transformation state — hybrid variants stack different stat profiles. */
+export type ZoanFormId =
+  | "HUMAN"
+  | "HYBRID"
+  | "HYBRID_POWER"
+  | "HYBRID_SPEED"
+  | "FULL_BEAST";
+
+/** One- vs two-handed grip for dual-wield rules. */
+export type WeaponGrip = "ONE_HAND" | "TWO_HAND";
 
 /** Explicit or derived badge attachment for a skill. */
 export interface SkillBadgeRef {
@@ -1219,6 +1391,10 @@ export interface Ability {
    * targeting / effects / tags. Prefer explicit tips for unusual skills.
    */
   badges?: SkillBadgeRef[];
+  /** When set, ability only appears if one of these weapon classes is equipped. */
+  requiredWeaponTypes?: WeaponType[];
+  /** Marks devil-fruit sourced combat skills (also mirrored via badges). */
+  devilFruitSkill?: boolean;
 }
 
 export interface CombatLogEntry {
@@ -1260,6 +1436,15 @@ export interface CombatantState {
   initiativeScore?: number;
   initiativeVariance?: number;
   formation?: CombatFormation;
+  /** When false, excluded from turn order (e.g. captain sits out a duel). Default true. */
+  participating?: boolean;
+  /** ACTIVE until HP hits 0 — then KNOCKED_OUT (not dead). */
+  condition?: CombatantCondition;
+  /** Damage that exceeded remaining HP when KO'd. */
+  overkillDamage?: number;
+  /** Visual / composition role for enemies. */
+  enemyRole?: EnemyRole;
+  enemyFamily?: EnemyFamily;
 }
 
 export interface PendingCombatOutcome {
@@ -1294,6 +1479,12 @@ export interface CombatState {
   party?: CombatPartyState;
   /** Last resolved attack breakdown for dev / log expansion. */
   lastCombatResult?: CombatResult;
+  battleFormat?: BattleFormat;
+  isFriendly?: boolean;
+  wager?: SparWager | null;
+  opponentCharacterId?: string | null;
+  /** Rematch / spar tracking key for diminishing returns. */
+  sparKey?: string | null;
 }
 
 export interface CombatRequest {
@@ -1311,7 +1502,21 @@ export interface CombatRequest {
     strength: number;
     hp?: number;
     formation?: CombatFormation;
+    enemyRole?: EnemyRole;
+    enemyFamily?: EnemyFamily;
   }>;
+  enemyRole?: EnemyRole;
+  enemyFamily?: EnemyFamily;
+  compositionTemplateId?: string;
+  battleFormat?: BattleFormat;
+  participantIds?: string[];
+  forcedParticipantIds?: string[];
+  lockParticipants?: boolean;
+  isFriendly?: boolean;
+  wager?: SparWager | null;
+  opponentCharacterId?: string | null;
+  sparKey?: string | null;
+  requireSetup?: boolean;
   win: EncounterOutcome;
   lose: EncounterOutcome;
   escape?: EncounterOutcome;
@@ -1384,6 +1589,53 @@ export interface Weapon {
   speed: number;
   traits: string[];
   techniqueIds: string[];
+  accuracy?: number;
+  reach?: number;
+  weight?: number;
+  scalingStat?: StatName;
+  grip?: WeaponGrip;
+}
+
+/** Procedural / shop-rolled weapon snapshot stored on inventory items. */
+export interface GeneratedWeapon {
+  archetypeId: string;
+  material: WeaponMaterial;
+  quality: WeaponQuality;
+  name: string;
+  weaponType: WeaponType;
+  category: WeaponCategory;
+  rarity: WeaponRarity;
+  damage: number;
+  speed: number;
+  accuracy: number;
+  reach: number;
+  weight: number;
+  critBonus: number;
+  scalingStat: StatName;
+  traits: string[];
+  techniqueIds: string[];
+  price: number;
+  special?: string;
+  isNamed?: boolean;
+  namedId?: string;
+  grip?: WeaponGrip;
+}
+
+export interface WeaponShopListing {
+  listingId: string;
+  weapon: GeneratedWeapon;
+  sold: boolean;
+}
+
+export interface WeaponShopStock {
+  shopKey: string;
+  theme: WeaponShopTheme;
+  shopName: string;
+  proprietor: string;
+  proprietorFlavor: string;
+  generatedOnDay: number;
+  refreshOnDay: number;
+  listings: WeaponShopListing[];
 }
 
 export interface Technique {
@@ -1397,6 +1649,8 @@ export interface Technique {
   scalingStat: StatName;
   accuracyMod: number;
   weaponType?: WeaponType;
+  /** Alternate class gate (e.g. dual-wield needing SWORD + GUN). */
+  requiredWeaponTypes?: WeaponType[];
   styleId?: string;
   tags?: AbilityTag[];
   applyEffect?: AbilityEffectSpec;
@@ -1432,6 +1686,8 @@ export interface Island {
   introductionShown?: boolean;
   /** Shop encounter ids discovered on this island (food stall, clinic, etc.). */
   knownShops?: string[];
+  /** Preferred weapon shop theme when visiting the local smithy. */
+  weaponShopTheme?: WeaponShopTheme;
 }
 
 export interface BackgroundContext {
@@ -1536,6 +1792,8 @@ export interface WorldPowerChangeSpec {
 export interface EncounterOutcome {
   text: string;
   hpChange?: number;
+  /** Flat MP change. If omitted and hpChange > 0, a companion MP restore is applied. */
+  mpChange?: number;
   berriesChange?: number;
   bountyChange?: number;
   statChanges?: Partial<PlayerStats>;
@@ -1811,6 +2069,169 @@ export interface ProfileCollection {
   knowledge?: CollectionKnowledge[];
 }
 
+/** Survivors / notable NPCs retained across runs on a profile. */
+export interface PersistentCharacterRecord {
+  character: WorldCharacter;
+  survivalStatus: "ALIVE" | "MISSING" | "DEAD" | "UNKNOWN";
+  lastKnownLocationId?: string;
+  lastKnownIslandId?: string;
+  lastKnownLocationName?: string;
+  priorCrewCaptainNames?: string[];
+  lastRunEndId?: string;
+  updatedAt: string;
+}
+
+export interface RunEndSurvivorRecord {
+  characterId: string;
+  name: string;
+  fate: "SURVIVED_HOSPITAL" | "SURVIVED_RECOVERING" | "SURVIVED_ABSENT" | "DEFEATED" | "MISSING" | "DEAD";
+  locationId?: string;
+  note?: string;
+}
+
+export interface RunEndEvent {
+  id: string;
+  day: number;
+  locationId: string;
+  locationName?: string;
+  captainName: string;
+  cause: string;
+  enemyName?: string;
+  combatKind?: CombatKind;
+  presentCharacterIds: string[];
+  absentCharacterIds: string[];
+  survivors: RunEndSurvivorRecord[];
+  worldNews?: string;
+  createdAt: string;
+}
+
+/** How thoroughly a character is simulated and stored across runs. */
+export type LegacyPersistenceTier = "BACKGROUND" | "PERSISTENT" | "LEGACY";
+
+export type LegacyCharacterStatus = "ACTIVE" | "RETIRED" | "MISSING" | "DEAD" | "UNKNOWN";
+
+export type LegacyEventVisibility =
+  | "PRIVATE"
+  | "LOCAL"
+  | "FACTION"
+  | "RUMORED"
+  | "PUBLIC"
+  | "HISTORICAL";
+
+/** Authoritative world calendar shared by all runs on a profile. */
+export interface WorldTimeline {
+  year: number;
+  month: number;
+  day: number;
+  /** Absolute day counter for aging / comparisons. */
+  totalDays: number;
+}
+
+export interface LegacyAppearanceHeritage {
+  hairColor?: string;
+  eyeColor?: string;
+  skinTone?: string;
+  heightTendency?: "SHORT" | "AVERAGE" | "TALL";
+  buildTendency?: "SLIGHT" | "AVERAGE" | "STOUT" | "ATHLETIC";
+  notes?: string[];
+}
+
+/**
+ * Profile-scoped legacy character. Reuses WorldCharacter snapshot;
+ * family/mentor links reference characterIds rather than duplicating graphs.
+ */
+export interface LegacyCharacterRecord {
+  characterId: string;
+  tier: LegacyPersistenceTier;
+  character: WorldCharacter;
+  birthYear: number;
+  status: LegacyCharacterStatus;
+  deathYear?: number;
+  lastKnownLocationId?: string;
+  lastKnownIslandId?: string;
+  priorCrewCaptainNames?: string[];
+  parentIds?: string[];
+  childIds?: string[];
+  mentorId?: string | null;
+  apprenticeIds?: string[];
+  fightingStyleIds?: string[];
+  appearanceHeritage?: LegacyAppearanceHeritage;
+  careerNotes?: string[];
+  importanceScore: number;
+  lastSimulatedTotalDays: number;
+  lastRunEndId?: string;
+  updatedAt: string;
+}
+
+export interface LegacyEvent {
+  id: string;
+  worldTotalDays: number;
+  year: number;
+  month: number;
+  day: number;
+  eventType: string;
+  summary: string;
+  characterIds: string[];
+  locationId?: string;
+  factionIds?: string[];
+  runId?: string;
+  importance: number;
+  visibility: LegacyEventVisibility;
+  storyThreadIds?: string[];
+  knowledgeTags?: string[];
+  consequences?: string[];
+}
+
+export interface FamilyLineage {
+  id: string;
+  rootIds: string[];
+  memberIds: string[];
+  familyName?: string;
+}
+
+export interface MentorshipLineage {
+  id: string;
+  styleId?: string;
+  founderId: string;
+  chain: string[];
+}
+
+export interface FightingStyleLineage {
+  id: string;
+  styleId: string;
+  displayName: string;
+  founderId?: string;
+  masterIds: string[];
+  practitionerIds: string[];
+  derivedStyleIds?: string[];
+  signatureTechniqueIds?: string[];
+  locationIds?: string[];
+  reputation: number;
+}
+
+export interface LegacyItemRecord {
+  id: string;
+  baseItemId?: string;
+  name: string;
+  kind: "WEAPON" | "HEIRLOOM" | "JOURNAL" | "MANUAL" | "OTHER";
+  ownerHistory: Array<{ characterId: string; fromTotalDays: number; toTotalDays?: number }>;
+  famousBattles?: string[];
+  reputation: number;
+}
+
+/** Persistent world history that survives run reset. */
+export interface WorldLegacyState {
+  timeline: WorldTimeline;
+  characters: LegacyCharacterRecord[];
+  events: LegacyEvent[];
+  families: FamilyLineage[];
+  mentorships: MentorshipLineage[];
+  styleLineages: FightingStyleLineage[];
+  items: LegacyItemRecord[];
+  /** Days advanced when a new run starts after a finished one. */
+  betweenRunDaysDefault: number;
+}
+
 export type KnowledgeCategory =
   | "WORLD"
   | "ISLANDS"
@@ -1959,12 +2380,18 @@ export interface RunState {
   pendingTechniqueChoice?: PendingTechniqueChoice | null;
   /** Set by outcome.goToEncounter; consumed on completeEncounter. */
   pendingEncounterId?: string | null;
+  /** Runtime-only encounter (e.g. Legacy NPC meeting) not in static data. */
+  dynamicEncounter?: Encounter | null;
   pendingLootDispositions?: PendingLootDisposition[];
   factionMissions?: FactionMission[];
   factionOrders?: FactionOrder[];
   activeParty?: ActivePartyConfig;
   /** Post-combat report shown before encounter narrative (victory XP + stats). */
   pendingBattleResult?: BattleResultReport | null;
+  /** Pre-combat setup when the player must pick fighters / confirm stakes. */
+  pendingBattleSetup?: PendingBattleSetup | null;
+  /** Spar rematch cooldowns / diminishing returns keyed by sparKey. */
+  sparHistory?: Record<string, { count: number; lastDay: number }>;
   apprentices?: Apprentice[];
   fleet?: NamedFleetCharacter[];
   authority?: PlayerAuthority;
@@ -1973,6 +2400,10 @@ export interface RunState {
   raceKnowledge?: RaceKnowledge[];
   /** Actionable knowledge discovered this run (maps, journals, etc.). */
   runKnowledge?: RunKnowledgeEntry[];
+  /** Persisted weapon shop inventories keyed by shopKey (island + theme). */
+  weaponShops?: Record<string, WeaponShopStock>;
+  /** Recent shop weapon keys for anti-repetition (archetype:material:quality). */
+  recentShopWeaponKeys?: string[];
 }
 
 export interface ProfileSave {
@@ -1987,6 +2418,12 @@ export interface ProfileSave {
   achievements: AchievementProgress[];
   raceOfferPity: RaceOfferPity[];
   activeRun: RunState | null;
+  /** Survivors retained across runs (migrated into legacy when present). */
+  persistentCharacters?: PersistentCharacterRecord[];
+  /** Archive of run failures for world continuity. */
+  runEndHistory?: RunEndEvent[];
+  /** Persistent world timeline, lineages, and legacy characters. */
+  legacy?: WorldLegacyState;
 }
 
 export interface ResolveResult {

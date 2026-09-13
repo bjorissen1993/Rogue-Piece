@@ -9,6 +9,7 @@ function fruitChoices(fruitId: string): EncounterChoice[] {
       id: "eat",
       text: "Eat the fruit",
       conditions: [{ type: "HAS_EATEN_FRUIT", negate: true }],
+      visual: { icon: "Devil_Fruit" },
       outcome: {
         text: "The taste is worse than rotting kelp. Power crawls through your bones as the {fruitName} takes hold. The sea will never welcome you the same way again.",
         devilFruit: { action: "EAT", fruitId },
@@ -19,6 +20,7 @@ function fruitChoices(fruitId: string): EncounterChoice[] {
     {
       id: "keep",
       text: "Keep the fruit",
+      visual: { icon: "Devil_Fruit" },
       outcome: {
         text: "You wrap the {fruitName} in cloth and hide it in your pack. Power like this can wait — or be sold to someone desperate.",
         devilFruit: { action: "KEEP", fruitId },
@@ -27,6 +29,7 @@ function fruitChoices(fruitId: string): EncounterChoice[] {
     {
       id: "sell",
       text: "Sell the fruit",
+      visual: { icon: "Devil_Fruit" },
       outcome: {
         text: "You know a dockside fence who asks no questions. The {fruitName} leaves your hands in exchange for a heavy pouch. Somewhere out there, it will find a new owner.",
         devilFruit: { action: "SELL", fruitId },
@@ -37,6 +40,7 @@ function fruitChoices(fruitId: string): EncounterChoice[] {
     {
       id: "leave",
       text: "Leave it",
+      visual: { icon: "Bad_Devil_Fruit" },
       outcome: {
         text: "You walk away. The {fruitName} stays where the tide (or a fool) will find it.",
         devilFruit: { action: "LEAVE", fruitId },
@@ -242,7 +246,12 @@ export const ENCOUNTERS: Encounter[] = [
           combat: {
             enemyName: "Sea King",
             enemyStrength: 11,
-            combatKind: "HIGH_RISK",
+            enemyHp: 160,
+            combatKind: "BOSS",
+            enemyRole: "BOSS",
+            enemyFamily: "SEA_BEAST",
+            compositionTemplateId: "SEA_BEAST",
+            enemyCount: 1,
             canEscape: true,
             canSurrender: true,
             win: {
@@ -2150,17 +2159,24 @@ export const ENCOUNTERS: Encounter[] = [
         },
       },
       {
-        id: "leave",
-        text: "Not today",
-        timeCost: "BRIEF",
-        flavour: "The yard will still be here. Your coin might not.",
+        id: "intelligence",
+        text: "Study the charts",
+        flavour: "Maps, tide tables, and a quiet corner where guessing is expensive.",
+        checkStat: "intelligence",
+        costLabel: "Time · 15 berries",
+        timeCost: "LONG",
         visual: {
-          icon: "training_skip",
-          backgroundVariant: "quiet-harbor",
+          icon: "gain_intelligence",
+          backgroundVariant: "chart-room",
+          accent: "intelligence",
+          variant: "train",
         },
-        presentation: { primaryLabel: "LEAVE" },
+        conditions: [{ type: "MIN_BERRIES", value: 15 }],
         outcome: {
-          text: "You walk past the posts. Training can wait.",
+          text: "You trace currents until the pattern sticks.",
+          berriesChange: -15,
+          hpChange: -2,
+          trainStat: "intelligence",
         },
       },
     ],

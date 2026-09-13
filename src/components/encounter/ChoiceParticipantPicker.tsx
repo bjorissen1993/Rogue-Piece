@@ -46,7 +46,6 @@ export function ChoiceParticipantPicker({
   const { min, max } = participantBounds(choice);
   const multi = max > 1;
   const focus = focusStat(choice);
-  const difficulty = choice.outcome.skillCheck?.difficulty ?? 8;
 
   const candidates = useMemo(
     () => ["player", ...run.crew.map((member) => member.characterId)],
@@ -129,42 +128,44 @@ export function ChoiceParticipantPicker({
         />
       </div>
 
-      {previewStats ? (
-        <ul className="choice-participant-stat-list" aria-label="Stats">
-          {STAT_ORDER.map((stat) => (
-            <li
-              className={`choice-participant-stat${focus === stat ? " is-focus" : ""}`}
-              key={stat}
-            >
-              <span>{STAT_LABELS[stat]}</span>
-              <strong>{previewStats[stat]}</strong>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <div className="choice-participant-panel">
+        {previewStats ? (
+          <ul className="choice-participant-stat-list" aria-label="Stats">
+            {STAT_ORDER.map((stat) => (
+              <li
+                className={`choice-participant-stat${focus === stat ? " is-focus" : ""}`}
+                key={stat}
+              >
+                <span>{STAT_LABELS[stat]}</span>
+                <strong>{previewStats[stat]}</strong>
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
-      {multi && selectedIds.length ? (
-        <p className="choice-participant-selected-count">
-          Selected {selectedIds.length}/{min}
-        </p>
-      ) : null}
+        {multi && selectedIds.length ? (
+          <p className="choice-participant-selected-count">
+            Selected {selectedIds.length}/{min}
+          </p>
+        ) : null}
 
-      <div className="choice-participant-actions">
-        <button className="ghost-btn" onClick={onBack} type="button">
-          Back
-        </button>
-        <button
-          className="gold-btn combat-wheel-confirm"
-          disabled={!focused || focused.disabled}
-          onClick={() => {
-            if (focused && !focused.disabled) {
-              focused.onConfirm();
-            }
-          }}
-          type="button"
-        >
-          {multi ? (focused?.selected ? "Remove" : "Select") : "Choose"}
-        </button>
+        <div className="choice-participant-actions">
+          <button className="ghost-btn" onClick={onBack} type="button">
+            Back
+          </button>
+          <button
+            className="gold-btn combat-wheel-confirm"
+            disabled={!focused || focused.disabled}
+            onClick={() => {
+              if (focused && !focused.disabled) {
+                focused.onConfirm();
+              }
+            }}
+            type="button"
+          >
+            {multi ? (focused?.selected ? "Remove" : "Select") : "Choose"}
+          </button>
+        </div>
       </div>
     </div>
   );

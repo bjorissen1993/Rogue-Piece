@@ -1,14 +1,22 @@
-import { CORE_CREW_CAP, MAX_ACTIVE_FIGHTERS, MAX_SUPPORT_SLOTS } from "../game/constants";
+import {
+  CORE_CREW_CAP,
+  FLEET_UNLOCK_BOUNTY,
+  MAX_ACTIVE_FIGHTERS,
+  MAX_SUPPORT_SLOTS,
+} from "../game/constants";
 import type {
   ActivePartyConfig,
   CrewMember,
   CrewRole,
   CrewStatus,
+  NamedFleetCharacter,
   RunState,
   WorldCharacter,
 } from "../models/types";
+import { AffiliationService } from "./AffiliationService";
 import { CharacterService } from "./CharacterService";
 import { FleetService } from "./FleetService";
+import { RaceService } from "./RaceService";
 import { RecruitmentModelService } from "./RecruitmentModelService";
 import { WeaponService } from "./WeaponService";
 
@@ -19,6 +27,27 @@ export type CrewOverviewEntry = {
   isCaptain: boolean;
 };
 
+/** Where a character currently belongs relative to the player's organization. */
+export type CrewMembershipKind = "PLAYER" | "CORE" | "FLEET" | "APPRENTICE" | "NONE";
+
+export type JoinResolutionKind =
+  | "ALREADY_CREW"
+  | "ALREADY_FLEET"
+  | "JOINED_CORE"
+  | "JOINED_FLEET"
+  | "BLOCKED_CAPACITY"
+  | "BLOCKED_FLEET_BOUNTY"
+  | "BLOCKED_POLICY"
+  | "BLOCKED_RACE"
+  | "NOT_FOUND";
+
+export type JoinResolution = {
+  kind: JoinResolutionKind;
+  message: string;
+  member?: CrewMember;
+  fleetEntry?: NamedFleetCharacter;
+};
+
 function membershipStatus(membership: CrewMember["membership"], status?: CrewStatus): CrewStatus {
   if (status) {
     return status;
@@ -27,6 +56,10 @@ function membershipStatus(membership: CrewMember["membership"], status?: CrewSta
     return "Temporary";
   }
   return "Ready";
+}
+
+function partyNoun(run: RunState): string {
+  return AffiliationService.getCrewLabel(run).toLowerCase();
 }
 
 export const CrewService = {
@@ -40,6 +73,173 @@ export const CrewService = {
 
   canRecruitCore(run: RunState): boolean {
     return !this.isCoreFull(run);
+  },
+
+  fleetUnlockBounty(): number {
+    return FLEET_UNLOCK_BOUNTY;
+  },
+
+  /** True when the player's bounty is high enough to attract a fleet. */
+  isFleetUnlocked(run: RunState): boolean {
+    return run.player.bounty >= FLEET_UNLOCK_BOUNTY;
+  },
+
+  bountyNeededForFleet(run: RunState): number {
+    return Math.max(0, FLEET_UNLOCK_BOUNTY - run.player.bounty);
+  },
+
+  fleetUnlockSummary(run: RunState): string {
+    if (this.isFleetUnlocked(run)) {
+      return "Fleet available — your name carries enough weight for followers under your banner.";
+    }
+    const needed = this.bountyNeededForFleet(run);
+    return `Fleet unlocks at ฿${FLEET_UNLOCK_BOUNTY.toLocaleString()} bounty (฿${needed.toLocaleString()} more).`;
+  },
+
+  /**
+   * Authoritative "already on this team" check — includes recovering / hospitalized /
+   * injured members who are still on `run.crew`.
+   */
+  isCharacterAlreadyInCrew(run: RunState, characterId: string): boolean {
+    if (characterId === run.player.id || characterId === "player") {
+      return true;
+    }
+    return run.crew.some((entry) => entry.characterId === characterId);
+  },
+
+  isCharacterInFleet(run: RunState, characterId: string): boolean {
+    return (run.fleet ?? []).some((entry) => entry.characterId === characterId);
+  },
+
+  isCharacterApprentice(run: RunState, characterId: string): boolean {
+    return (run.apprentices ?? []).some((entry) => entry.characterId === characterId);
+  },
+
+  getCrewMembershipStatus(run: RunState, characterId: string): CrewMembershipKind {
+    if (characterId === run.player.id || characterId === "player") {
+      return "PLAYER";
+    }
+    if (this.isCharacterAlreadyInCrew(run, characterId)) {
+      return "CORE";
+    }
+    if (this.isCharacterInFleet(run, characterId)) {
+      return "FLEET";
+    }
+    if (this.isCharacterApprentice(run, characterId)) {
+      return "APPRENTICE";
+    }
+    return "NONE";
+  },
+
+  /** Soft gate for showing join prompts / offers. */
+  canOfferRecruitment(run: RunState, characterId: string): boolean {
+    const status = this.getCrewMembershipStatus(run, characterId);
+    return status === "NONE" || status === "APPRENTICE";
+  },
+
+  alreadyOnTeamMessage(run: RunState, characterId: string): string {
+    const character = CharacterService.getCharacter(run, characterId);
+    const name = character?.name ?? "They";
+    const status = this.getCrewMembershipStatus(run, characterId);
+    if (status === "FLEET") {
+      return `${name} already sails under your wider banner as a fleet captain.`;
+    }
+    if (status === "PLAYER") {
+      return "You cannot recruit yourself.";
+    }
+    const member = run.crew.find((entry) => entry.characterId === characterId);
+    if (member?.status === "Hospitalized" || member?.currentAssignment?.type === "HOSPITALIZED") {
+      return `${name} is already part of your ${partyNoun(run)} — recovering in care, not a new recruit.`;
+    }
+    if (member?.status === "Injured" || member?.currentAssignment?.type === "RECOVERING") {
+      return `${name} already sails with you, even while recovering.`;
+    }
+    return `${name} already sails under your flag.`;
+  },
+
+  /**
+   * Single recruitment resolver used by encounters and helpers.
+   * Never duplicates core crew or fleet entries.
+   */
+  resolveRecruitment(
+    run: RunState,
+    characterId: string,
+    role: CrewRole = "FIGHTER",
+    membership?: CrewMember["membership"],
+  ): JoinResolution {
+    const character = CharacterService.getCharacter(run, characterId);
+    if (!character) {
+      return { kind: "NOT_FOUND", message: "No one answers the call." };
+    }
+
+    const status = this.getCrewMembershipStatus(run, characterId);
+    if (status === "CORE" || status === "PLAYER") {
+      return {
+        kind: "ALREADY_CREW",
+        message: this.alreadyOnTeamMessage(run, characterId),
+        member: run.crew.find((entry) => entry.characterId === characterId),
+      };
+    }
+    if (status === "FLEET") {
+      return {
+        kind: "ALREADY_FLEET",
+        message: this.alreadyOnTeamMessage(run, characterId),
+        fleetEntry: (run.fleet ?? []).find((entry) => entry.characterId === characterId),
+      };
+    }
+
+    if (!RaceService.canRecruitCharacter(run, character)) {
+      return {
+        kind: "BLOCKED_RACE",
+        message: `${character.name} cannot join your ${partyNoun(run)} yet — the world has not opened that path.`,
+      };
+    }
+
+    const gate = RecruitmentModelService.canRecruitCoreCrew(run, membership);
+    if (!gate.ok) {
+      return {
+        kind: "BLOCKED_POLICY",
+        message: gate.reason ?? `${character.name} cannot join under your current path.`,
+      };
+    }
+
+    const resolvedMembership = gate.membership ?? RecruitmentModelService.defaultMembership(run, membership);
+
+    if (!this.isCoreFull(run)) {
+      const member = CharacterService.acceptRecruitment(run, characterId, role, resolvedMembership);
+      if (!member) {
+        return {
+          kind: "BLOCKED_POLICY",
+          message: "Recruitment failed.",
+        };
+      }
+      return {
+        kind: "JOINED_CORE",
+        message: `${character.name} joins your ${partyNoun(run)} (${this.membershipLabel(member.membership)}).`,
+        member,
+      };
+    }
+
+    if (!this.isFleetUnlocked(run)) {
+      const needed = this.bountyNeededForFleet(run);
+      return {
+        kind: "BLOCKED_FLEET_BOUNTY",
+        message: `${character.name} would follow — but you are not yet infamous enough to gather a fleet under your banner. Reach ฿${FLEET_UNLOCK_BOUNTY.toLocaleString()} bounty (฿${needed.toLocaleString()} more).`,
+      };
+    }
+
+    const fleetEntry = FleetService.offerFleetCaptain(run, character);
+    if (!fleetEntry) {
+      return {
+        kind: "ALREADY_FLEET",
+        message: this.alreadyOnTeamMessage(run, characterId),
+      };
+    }
+    return {
+      kind: "JOINED_FLEET",
+      message: `${character.name} cannot squeeze into your core ${partyNoun(run)}, so they sail under your wider banner as Fleet Captain of the ${fleetEntry.shipName}.`,
+      fleetEntry,
+    };
   },
 
   list(run: RunState): CrewOverviewEntry[] {
@@ -86,26 +286,21 @@ export const CrewService = {
     }
   },
 
-  /** Recruit to core crew or fleet captain when roster is full. */
+  /** Recruit to core crew or fleet captain when roster is full (bounty-gated). */
   recruitOrFleet(
     run: RunState,
     characterId: string,
     role: CrewRole = "FIGHTER",
     membership: CrewMember["membership"] = "ALLY",
-  ): { kind: "CORE" | "FLEET"; member?: CrewMember } | null {
-    const character = CharacterService.getCharacter(run, characterId);
-    if (!character) {
-      return null;
+  ): { kind: "CORE" | "FLEET" | "BLOCKED"; member?: CrewMember; message: string } {
+    const result = this.resolveRecruitment(run, characterId, role, membership);
+    if (result.kind === "JOINED_CORE" || result.kind === "ALREADY_CREW") {
+      return { kind: "CORE", member: result.member, message: result.message };
     }
-    if (run.crew.some((entry) => entry.characterId === characterId)) {
-      return { kind: "CORE", member: run.crew.find((entry) => entry.characterId === characterId) };
+    if (result.kind === "JOINED_FLEET" || result.kind === "ALREADY_FLEET") {
+      return { kind: "FLEET", message: result.message };
     }
-    if (this.isCoreFull(run)) {
-      FleetService.offerFleetCaptain(run, character);
-      return { kind: "FLEET" };
-    }
-    const member = RecruitmentModelService.recruit(run, characterId, role, membership).member;
-    return member ? { kind: "CORE", member } : null;
+    return { kind: "BLOCKED", message: result.message };
   },
 
   recruitTestCrew(run: RunState): WorldCharacter {
@@ -125,7 +320,7 @@ export const CrewService = {
       joinInterest: 100,
       crewStats: { strength: 7, defense: 5, speed: 6, willpower: 4, charisma: 3, intelligence: 4 },
     });
-    CharacterService.acceptRecruitment(run, mika.id, "FIGHTER", "PERMANENT");
+    this.resolveRecruitment(run, mika.id, "FIGHTER", "PERMANENT");
     const ren = CharacterService.getOrCreateCharacter(run, {
       id: "npc_ren_traps",
       name: "Ren",
@@ -142,7 +337,7 @@ export const CrewService = {
       joinInterest: 100,
       crewStats: { strength: 5, defense: 4, speed: 8, willpower: 5, charisma: 3, intelligence: 6 },
     });
-    CharacterService.acceptRecruitment(run, ren.id, "NAVIGATOR", "PERMANENT");
+    this.resolveRecruitment(run, ren.id, "NAVIGATOR", "PERMANENT");
     for (const member of run.crew.filter((entry) => [mika.id, ren.id].includes(entry.characterId))) {
       member.personalGoal = member.characterId === mika.id ? "Break every lock" : "Map hidden paths";
       member.status = "Ready";

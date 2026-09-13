@@ -14,6 +14,7 @@ import type {
   TimeCostId,
   TimeOfDay,
 } from "../models/types";
+import { MpService } from "../services/MpService";
 import { STAT_LABELS } from "./text";
 
 const STAT_HINT: Record<StatName, string> = {
@@ -207,6 +208,16 @@ const CHOICE_ICON_ALIASES: Record<string, string> = {
   "gain-willpower": "gain-willpower",
   gain_charisma: "gain-charisma",
   "gain-charisma": "gain-charisma",
+  gain_intelligence: "gain_intelligence",
+  "gain-intelligence": "gain_intelligence",
+  devil_fruit: "Devil_Fruit",
+  "devil-fruit": "Devil_Fruit",
+  find_devil_fruit: "Devil_Fruit",
+  "find-devil-fruit": "Devil_Fruit",
+  gain_devil_fruit: "Devil_Fruit",
+  "gain-devil-fruit": "Devil_Fruit",
+  bad_devil_fruit: "Bad_Devil_Fruit",
+  "bad-devil-fruit": "Bad_Devil_Fruit",
   training_skip: "rest",
   "training-skip": "rest",
   "not-today": "rest",
@@ -670,6 +681,15 @@ export function choiceMechanicSummary(
     });
   }
 
+  const mp = MpService.effectiveOutcomeMpChange(outcome);
+  if (mp) {
+    facts.push({
+      kind: "hp",
+      label: signedAmount(mp, "MP "),
+      tone: mp > 0 ? "gain" : "loss",
+    });
+  }
+
   const bounty = outcome.bountyChange ?? 0;
   if (bounty) {
     const abs = Math.abs(bounty).toLocaleString();
@@ -754,6 +774,9 @@ function choiceHasMechanicalPrimary(choice: EncounterChoice): boolean {
   if ((outcome.hpChange ?? 0) > 0) {
     return true;
   }
+  if (MpService.effectiveOutcomeMpChange(outcome) > 0) {
+    return true;
+  }
   if ((outcome.berriesChange ?? 0) > 0) {
     return true;
   }
@@ -769,6 +792,16 @@ function choiceHasMechanicalPrimary(choice: EncounterChoice): boolean {
   return false;
 }
 
+function recoverPrimaryLabel(hp: number, mp: number): string {
+  if (hp > 0 && mp > 0) {
+    return `RECOVER ${hp} HP · ${mp} MP`;
+  }
+  if (hp > 0) {
+    return `RECOVER ${hp} HP`;
+  }
+  return `RECOVER ${mp} MP`;
+}
+
 export function choicePrimaryResult(choice: EncounterChoice): ChoicePrimaryDisplay | null {
   if (!choiceHasMechanicalPrimary(choice)) {
     return null;
@@ -778,6 +811,7 @@ export function choicePrimaryResult(choice: EncounterChoice): ChoicePrimaryDispl
   const gainStats = choiceGainStats(choice);
   const loseStats = choiceLoseStats(choice);
   const hp = choice.outcome.hpChange ?? 0;
+  const mp = MpService.effectiveOutcomeMpChange(choice.outcome);
   const berries = choice.outcome.berriesChange ?? 0;
 
   if (custom) {
@@ -794,8 +828,8 @@ export function choicePrimaryResult(choice: EncounterChoice): ChoicePrimaryDispl
   if (loseStats.length > 0) {
     return { kind: "lose-stat", verb: "LOSE", stats: loseStats };
   }
-  if (hp > 0) {
-    return { kind: "label", text: `RECOVER ${hp} HP`, tone: "gain" };
+  if (hp > 0 || mp > 0) {
+    return { kind: "label", text: recoverPrimaryLabel(hp, mp), tone: "gain" };
   }
   if (berries > 0) {
     return { kind: "label", text: `GAIN ฿${berries.toLocaleString()}`, tone: "gain" };

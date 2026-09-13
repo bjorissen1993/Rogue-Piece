@@ -97,7 +97,7 @@ export function PlayerHud({ run, onInventory, onCrew }: PlayerHudProps) {
               style={{ "--tip": `"${tip}"` } as CSSProperties}
               title={tip}
             >
-              <StatIcon showTooltip={false} size={36} stat={stat} />
+              <StatIcon showTooltip={false} size={28} stat={stat} />
               <span className="stat-label">{STAT_LABELS[stat]}</span>
               <span className="stat-orb">{player.stats[stat]}</span>
             </li>

@@ -22,7 +22,12 @@ export function SkillBadgeIcon({ badge, size = 28 }: SkillBadgeIconProps) {
       className={`skill-badge skill-badge--${badge.id.toLowerCase()}`}
       style={{ "--badge-size": `${size}px` } as CSSProperties}
     >
-      <HudArt className="skill-badge-art" size={size} src={def.art} />
+      <HudArt
+        className="skill-badge-art"
+        fallbackSrc={badge.id === "DEVIL_FRUIT" ? "/icons/Devil_Fruit.png" : undefined}
+        size={size}
+        src={def.art}
+      />
       {badge.count != null ? <span className="skill-badge-count">×{badge.count}</span> : null}
       <span className="skill-badge-sr">{skillBadgeLabel(badge)}</span>
     </span>

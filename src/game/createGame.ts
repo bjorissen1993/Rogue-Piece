@@ -24,6 +24,9 @@ import { AffiliationService } from "../services/AffiliationService";
 import { IdentityService } from "../services/IdentityService";
 import { defaultAuthority, defaultStandingOrders } from "../services/AuthorityService";
 import { CrewService } from "../services/CrewService";
+import { MedicalRecoveryService } from "../services/MedicalRecoveryService";
+import { RunEndResolutionService } from "../services/RunEndResolutionService";
+import { LegacyService } from "../services/LegacyService";
 
 export { createEmptyProfile, emptyStatistics } from "./profileFactory";
 
@@ -182,6 +185,9 @@ export function createRunState(
     run,
     `${run.player.name} has set sail from ${location.name}.`,
   );
+  LegacyService.ensure(profile);
+  LegacyService.injectIntoRun(profile, run);
+  MedicalRecoveryService.injectPersistentCharacters(profile, run);
   ItemService.grant(run, "dried_meat", 1, profile);
   CollectionService.discoverItem(profile, "dried_meat");
   EncounterEngine.selectEncounter(run, rng);
@@ -193,6 +199,10 @@ export function startRun(
   options: { name: string; raceId: string; originId: string; locationId: string },
 ): ProfileSave {
   const next = structuredClone(profile);
+  LegacyService.ensure(next);
+  if (next.statistics.runsStarted > 0 || (next.legacy?.characters.length ?? 0) > 0) {
+    LegacyService.onNewRun(next);
+  }
   next.activeRun = createRunState(next, options);
   next.statistics.runsStarted += 1;
   if (options.raceId !== "HUMAN") {
@@ -206,6 +216,13 @@ export function startRun(
 
 export function endRun(profile: ProfileSave): ProfileSave {
   const next = structuredClone(profile);
+  if (next.activeRun?.gameOver) {
+    RunEndResolutionService.resolve(next);
+    LegacyService.harvestRunEnd(next);
+  } else if (next.activeRun) {
+    // Abandoned / ended without death — still promote notable crew lightly
+    LegacyService.harvestRunEnd(next);
+  }
   next.activeRun = null;
   return next;
 }

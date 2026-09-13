@@ -51,8 +51,8 @@ export function EncounterChoiceCard({
   const accent = choiceAccentColor(choice);
   const accentStat = choiceAccentStat(choice);
   const primary = choicePrimaryResult(choice);
-  const costs = choiceCostItems(choice, encounter, timeOfDay, isDev);
   const primaryTip = primaryResultTooltip(choice, player, run);
+  const costs = choiceCostItems(choice, encounter, timeOfDay, isDev);
   const needsParticipants = Boolean(run && choiceNeedsParticipants(choice));
   const { min } = participantBounds(choice);
   const participantsReady = !needsParticipants || participantIds.length >= min;
@@ -105,17 +105,11 @@ export function EncounterChoiceCard({
         <h3 className="choice-title font-display">{choiceLabel(choice)}</h3>
         <div className="choice-body">
           {primary ? (
-            primaryTip ? (
-              <EffectTooltip tip={primaryTip}>
-                <div className="choice-primary-wrap">
-                  <ChoicePrimaryResult result={primary} />
-                </div>
-              </EffectTooltip>
-            ) : (
+            <EffectTooltip className="choice-primary-tip" tip={primaryTip ?? ""}>
               <div className="choice-primary-wrap">
                 <ChoicePrimaryResult result={primary} />
               </div>
-            )
+            </EffectTooltip>
           ) : null}
           {choice.flavour ? <p className="choice-flavour">{choice.flavour}</p> : null}
           {selected && needsParticipants && !participantsReady ? (

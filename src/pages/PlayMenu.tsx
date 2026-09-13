@@ -23,8 +23,8 @@ export function PlayMenu() {
       <div className="menu-screen-bg" aria-hidden="true" />
       <div className="menu-screen-content">
         <p className="hud-kicker">Play</p>
-        <h1 className="font-display mt-4 text-6xl text-gold">The Sea</h1>
-        <p className="mx-auto mt-5 max-w-md text-lg text-parchment-dim">
+        <h1 className="font-display menu-title text-gold">The Sea</h1>
+        <p className="menu-subtitle text-parchment-dim">
           {active
             ? `${active.player.name} is still out there. Continue, or end that life for a new one.`
             : "No active run. Begin a new journey."}

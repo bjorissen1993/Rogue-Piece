@@ -12,9 +12,11 @@ type RunBarProps = {
   isDev: boolean;
   onMenu: () => void;
   onOpenTime?: () => void;
+  /** Compact phone chrome: menu + day/time + location only. */
+  compact?: boolean;
 };
 
-export function RunBar({ run, isDev, onMenu, onOpenTime }: RunBarProps) {
+export function RunBar({ run, isDev, onMenu, onOpenTime, compact }: RunBarProps) {
   const location = getLocation(run.currentLocationId);
   const region = location ? getRegionName(location.regionId) : "Unknown seas";
   const place = location?.name ?? "Unknown waters";
@@ -28,10 +30,10 @@ export function RunBar({ run, isDev, onMenu, onOpenTime }: RunBarProps) {
     metric.kind === "BOUNTY" || metric.kind === "NOTORIETY" ? BOUNTY_ART : TITLE_ART;
 
   return (
-    <header className="run-bar">
+    <header className={`run-bar ${compact ? "is-compact" : ""}`}>
       <div className="run-bar-left">
         <div className="run-cluster run-cluster-nav">
-          <button className="run-btn" onClick={onMenu} type="button">
+          <button aria-label="Menu" className="run-btn" onClick={onMenu} type="button">
             <HudIcon name="menu" size={18} />
             <span>Menu</span>
           </button>
@@ -55,10 +57,13 @@ export function RunBar({ run, isDev, onMenu, onOpenTime }: RunBarProps) {
         </p>
       </div>
 
-      <div className="run-emblem-well" aria-hidden="true">
-        <CrestEmblem size={112} />
-      </div>
+      {compact ? null : (
+        <div className="run-emblem-well" aria-hidden="true">
+          <CrestEmblem size={112} />
+        </div>
+      )}
 
+      {compact ? null : (
       <div className="run-bar-right">
         <p className="run-place run-place-region">
           <HudIcon className="run-glyph" name="compass" size={18} />
@@ -83,6 +88,7 @@ export function RunBar({ run, isDev, onMenu, onOpenTime }: RunBarProps) {
           </p>
         </div>
       </div>
+      )}
     </header>
   );
 }

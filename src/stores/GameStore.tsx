@@ -13,6 +13,8 @@ import type {
   RelationFactionId,
   SavePreview,
   TimeOfDay,
+  WeaponShopTheme,
+  ZoanFormId,
 } from "../models/types";
 import { AchievementService } from "../services/AchievementService";
 import { AffiliationService } from "../services/AffiliationService";
@@ -21,6 +23,7 @@ import { CharacterService } from "../services/CharacterService";
 import { CombatEngine } from "../services/CombatEngine";
 import { AuthorityService } from "../services/AuthorityService";
 import { CrewCombatService } from "../services/CrewCombatService";
+import { DevilFruitCombatService } from "../services/DevilFruitCombatService";
 import { DevilFruitService } from "../services/DevilFruitService";
 import { FleetService } from "../services/FleetService";
 import { CombatPreviewService } from "../services/CombatPreviewService";
@@ -34,8 +37,15 @@ import { ItemService } from "../services/ItemService";
 import { RaceService } from "../services/RaceService";
 import { createRng } from "../services/RandomService";
 import { SaveService } from "../services/SaveService";
+import { CloudSync } from "../services/cloud/CloudSyncService";
+import { canAccessDevelopmentProfile } from "../services/DevAccess";
 import { StoryThreadService } from "../services/StoryThreadService";
 import { WeaponService } from "../services/WeaponService";
+import { WeaponShopService } from "../services/WeaponShopService";
+import { SparringService } from "../services/SparringService";
+import { WorldCombatProgressionService } from "../services/WorldCombatProgressionService";
+import { BATTLE_FORMATS } from "../services/EncounterCompositionService";
+import { LegacyService } from "../services/LegacyService";
 import { ProgressionService } from "../services/ProgressionService";
 import { CharacterScheduleService } from "../services/CharacterScheduleService";
 import { TrainingService } from "../services/TrainingService";
@@ -43,7 +53,6 @@ import { WorldService } from "../services/WorldService";
 import { KnowledgeService } from "../services/KnowledgeService";
 import { LootDispositionService } from "../services/LootDispositionService";
 import { PartyCombatService } from "../services/PartyCombatService";
-import { WorldCombatProgressionService } from "../services/WorldCombatProgressionService";
 import { createSeed } from "../utils/ids";
 import { DEVIL_FRUITS } from "../data/devilFruits";
 import type { StatName } from "../models/types";
@@ -57,6 +66,7 @@ export type Overlay =
   | "crew"
   | "debug"
   | "gameMenu"
+  | "settings"
   | "time"
   | null;
 export type NewRunStep = "race" | "origin" | "location" | "name";
@@ -99,12 +109,23 @@ type GameStoreValue = {
   dismissAssignmentResults: () => void;
   dismissBattleResult: () => void;
   finishCombatPresentation: () => void;
+  syncCombatVitals: () => void;
+  ensureWeaponShop: () => void;
+  buyWeaponShopListing: (
+    listingId: string,
+    options?: { equip?: boolean; tradeInInstanceId?: string },
+  ) => void;
+  sellWeaponShopOwned: (instanceId: string) => void;
+  refreshWeaponShop: (theme?: WeaponShopTheme) => void;
+  confirmBattleSetup: (participantIds: string[], wager: import("../models/types").SparWager | null) => void;
+  cancelBattleSetup: () => void;
   combatAction: (action: CombatAction) => void;
   resolveEnemyTurn: () => void;
   useCombatItem: (itemId: string) => void;
   useInventoryItem: (itemId: string) => void;
-  equipWeapon: (instanceId: string) => void;
+  equipWeapon: (instanceId: string, slot?: "primary" | "secondary") => void;
   unequipWeapon: (instanceId: string) => void;
+  setZoanForm: (formId: ZoanFormId) => void;
   confirmLevelUp: (stat: StatName) => boolean;
   selectTechnique: (techniqueId: string) => void;
   skipTechniqueChoice: () => void;
@@ -141,6 +162,8 @@ type GameStoreValue = {
   debugGiveDriedMeat: () => void;
   debugGiveMedicine: () => void;
   debugOpenFoodShop: () => void;
+  debugOpenWeaponShop: () => void;
+  debugRefreshWeaponShop: () => void;
   debugOpenClinic: () => void;
   debugGenerateSupplySearch: () => void;
   debugGenerateTraining: () => void;
@@ -162,6 +185,17 @@ type GameStoreValue = {
   debugSpawnFourEnemyFight: () => void;
   debugSpawnBossFight: () => void;
   debugSpawnBossAddsFight: () => void;
+  debugSpawnSeaKing: () => void;
+  debugSpawnDuel: () => void;
+  debugSpawnSkirmish: () => void;
+  debugSpawnFriendlySpar: () => void;
+  debugLegacyAdvanceYear: () => void;
+  debugLegacyAdvanceDecade: () => void;
+  debugLegacyPromoteCrew: () => void;
+  debugLegacyGenerateChild: () => void;
+  debugLegacyGenerateApprentice: () => void;
+  debugLegacyInspect: () => void;
+  debugLegacyForceEncounter: () => void;
   debugSetDay: (day: number) => void;
   debugShowDifficulty: () => void;
   debugShowInitiative: () => void;
@@ -231,9 +265,12 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       const saved = SaveService.persist(next);
       setProfile(saved);
       bump();
+      if (selectedSlot != null) {
+        CloudSync.scheduleUpload(selectedSlot, saved);
+      }
       return saved;
     },
-    [bump],
+    [bump, selectedSlot],
   );
 
   const goProfileSelect = useCallback(() => {
@@ -247,6 +284,9 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
 
   const openProfile = useCallback(
     (slot: ProfileSlot) => {
+      if (slot === "dev" && !canAccessDevelopmentProfile(CloudSync.getUser())) {
+        return;
+      }
       const loaded = SaveService.getOrCreateProfile(slot);
       setSelectedSlot(slot);
       setProfile(loaded);
@@ -395,6 +435,94 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     persist(EncounterEngine.finishCombatPresentation(profile));
   }, [profile, persist]);
 
+  const syncCombatVitals = useCallback(() => {
+    if (!profile?.activeRun?.combat || profile.activeRun.combat.finished) {
+      return;
+    }
+    const next = EncounterEngine.syncCombatVitals(profile);
+    if (next !== profile) {
+      persist(next);
+    }
+  }, [profile, persist]);
+
+  const ensureWeaponShop = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const run = profile.activeRun;
+    const island = IslandService.getCurrentIsland(run);
+    if (island?.weaponShopTheme) {
+      const existing = WeaponShopService.getStock(
+        run,
+        WeaponShopService.shopKey(island.id, island.weaponShopTheme),
+      );
+      if (existing && run.day < existing.refreshOnDay) {
+        return;
+      }
+    } else if (run.weaponShops) {
+      const open = Object.values(run.weaponShops).find((entry) => run.day < entry.refreshOnDay);
+      if (open) {
+        return;
+      }
+    }
+    const next = structuredClone(profile);
+    const nextRun = next.activeRun!;
+    const rng = createRng(`${nextRun.seed}_wshop_${nextRun.currentIslandId ?? "sea"}_${nextRun.day}`);
+    WeaponShopService.ensureStock(nextRun, rng);
+    persist(next);
+  }, [profile, persist]);
+
+  const buyWeaponShopListing = useCallback(
+    (listingId: string, options?: { equip?: boolean; tradeInInstanceId?: string }) => {
+      if (!profile?.activeRun) return;
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const rng = createRng(`${run.seed}_wshop_${run.currentIslandId ?? "sea"}_${run.day}`);
+      const stock = WeaponShopService.ensureStock(run, rng);
+      const result = WeaponShopService.purchase(run, stock.shopKey, listingId, options);
+      run.lastFeedback = result.reason;
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const sellWeaponShopOwned = useCallback(
+    (instanceId: string) => {
+      if (!profile?.activeRun) return;
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const result = WeaponShopService.sellOwned(run, instanceId);
+      run.lastFeedback = result.reason;
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const refreshWeaponShop = useCallback(
+    (theme?: WeaponShopTheme) => {
+      if (!profile?.activeRun) return;
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const rng = createRng(`${run.seed}_wshop_refresh_${Date.now()}`);
+      WeaponShopService.ensureStock(run, rng, { theme, forceRefresh: true });
+      run.lastFeedback = "Weapon shop stock refreshed.";
+      persist(next);
+      setDebugFeedback("Weapon shop stock refreshed.");
+    },
+    [profile, persist],
+  );
+
+  const confirmBattleSetup = useCallback(
+    (participantIds: string[], wager: import("../models/types").SparWager | null) => {
+      if (!profile?.activeRun?.pendingBattleSetup) return;
+      persist(EncounterEngine.confirmBattleSetup(profile, participantIds, wager));
+    },
+    [profile, persist],
+  );
+
+  const cancelBattleSetup = useCallback(() => {
+    if (!profile?.activeRun?.pendingBattleSetup) return;
+    persist(EncounterEngine.cancelBattleSetup(profile));
+  }, [profile, persist]);
+
   const combatAction = useCallback(
     (action: CombatAction) => {
       if (!profile?.activeRun?.combat) {
@@ -433,14 +561,34 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   );
 
   const equipWeapon = useCallback(
-    (instanceId: string) => {
+    (instanceId: string, slot: "primary" | "secondary" = "primary") => {
       if (!profile?.activeRun) return;
       const next = structuredClone(profile);
       const run = next.activeRun!;
-      if (WeaponService.equipInstance(run, instanceId)) {
-        run.lastFeedback = "Weapon equipped. Previous weapon returned to backpack if any.";
+      if (WeaponService.equipInstance(run, instanceId, run.player.id, slot)) {
+        run.lastFeedback =
+          slot === "secondary"
+            ? "Secondary weapon equipped."
+            : "Primary weapon equipped. Previous weapon returned to backpack if any.";
+        persist(next);
+      } else if (run.lastFeedback) {
         persist(next);
       }
+    },
+    [profile, persist],
+  );
+
+  const setZoanForm = useCallback(
+    (formId: ZoanFormId) => {
+      if (!profile?.activeRun) return;
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const result = DevilFruitCombatService.setForm(run, formId);
+      run.lastFeedback = result.reason;
+      if (result.ok && run.combat) {
+        CombatEngine.syncCaptainVitals(run.combat, run.player, run);
+      }
+      persist(next);
     },
     [profile, persist],
   );
@@ -961,6 +1109,26 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     loadDebugEncounter("food_stall", "Food Stall");
   }, [loadDebugEncounter]);
 
+  const debugOpenWeaponShop = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    const rng = createRng(`${run.seed}_wshop_debug_${Date.now()}`);
+    WeaponShopService.ensureStock(run, rng, { forceRefresh: true });
+    run.currentEncounterId = "weapon_smith";
+    run.awaitingAdvance = false;
+    run.lastResultText = null;
+    run.combat = null;
+    setDebugFeedback("Loaded Weapon Shop with fresh stock.");
+    persist(next);
+    setOverlay(null);
+    setScreen("game");
+  }, [profile, persist]);
+
+  const debugRefreshWeaponShop = useCallback(() => {
+    refreshWeaponShop();
+  }, [refreshWeaponShop]);
+
   const debugOpenClinic = useCallback(() => {
     loadDebugEncounter("clinic_shop", "Island Clinic");
   }, [loadDebugEncounter]);
@@ -1080,28 +1248,42 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   );
 
   const spawnDebugFight = useCallback(
-    (enemyStrength: number, enemyName: string, label: string, extras?: CombatRequest["extraEnemies"], enemyCount?: number, combatKind?: CombatRequest["combatKind"]) => {
+    (
+      enemyStrength: number,
+      enemyName: string,
+      label: string,
+      extras?: CombatRequest["extraEnemies"],
+      enemyCount?: number,
+      combatKind?: CombatRequest["combatKind"],
+      overrides?: Partial<CombatRequest>,
+    ) => {
       if (!profile?.activeRun) return;
       const next = structuredClone(profile);
       const run = next.activeRun!;
       const rng = createRng(`${run.seed}_dbg_${Date.now()}`);
-      run.combat = CombatEngine.createFromRequest(
-        run.player,
-        {
-          enemyName,
-          enemyStrength,
-          combatKind: combatKind ?? "NORMAL",
-          canEscape: true,
-          enemyCount,
-          extraEnemies: extras,
-          win: { text: `You defeat the ${enemyName}.` },
-          lose: { text: "You are beaten back.", hpChange: -8 },
-          escape: { text: "You break away." },
-        },
-        rng,
-        run,
+      const request: CombatRequest = {
+        enemyName,
+        enemyStrength,
+        combatKind: combatKind ?? "NORMAL",
+        canEscape: true,
+        enemyCount,
+        extraEnemies: extras,
+        win: { text: `You defeat the ${enemyName}.` },
+        lose: { text: "You are beaten back.", hpChange: -8 },
+        escape: { text: "You break away." },
+        ...overrides,
+      };
+      if (request.requireSetup || request.battleFormat?.playerChoosesParticipants) {
+        run.pendingBattleSetup = SparringService.createSetup(run, request);
+        run.combat = null;
+      } else {
+        run.pendingBattleSetup = null;
+        run.combat = CombatEngine.createFromRequest(run.player, request, rng, run);
+      }
+      const reason = WorldCombatProgressionService.lastCompositionReason(request);
+      setDebugFeedback(
+        `Spawned ${label} fight (${enemyName}, str ${enemyStrength}).${reason ? `\n${reason}` : ""}`,
       );
-      setDebugFeedback(`Spawned ${label} fight (${enemyName}, str ${enemyStrength}).`);
       persist(next);
       setOverlay(null);
       setScreen("game");
@@ -1130,7 +1312,10 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   }, [spawnDebugFight]);
 
   const debugSpawnBossFight = useCallback(() => {
-    spawnDebugFight(16, "Captain Redjaw", "Boss", undefined, 1, "BOSS");
+    spawnDebugFight(16, "Captain Redjaw", "Boss", undefined, 1, "BOSS", {
+      enemyRole: "BOSS",
+      enemyFamily: "PIRATE",
+    });
   }, [spawnDebugFight]);
 
   const debugSpawnBossAddsFight = useCallback(() => {
@@ -1139,13 +1324,193 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       "Vice Admiral",
       "Boss+adds",
       [
-        { name: "Elite Marine", strength: 8, hp: 28, formation: "FRONT" },
-        { name: "Marine Medic", strength: 6, hp: 22, formation: "BACK" },
+        { name: "Elite Marine", strength: 8, hp: 28, formation: "FRONT", enemyFamily: "MARINE", enemyRole: "ELITE" },
+        { name: "Marine Medic", strength: 6, hp: 22, formation: "BACK", enemyFamily: "MARINE", enemyRole: "SUPPORT" },
       ],
       undefined,
       "BOSS",
+      { enemyRole: "BOSS", enemyFamily: "MARINE", compositionTemplateId: "MARINE_PATROL" },
     );
   }, [spawnDebugFight]);
+
+  const debugSpawnSeaKing = useCallback(() => {
+    spawnDebugFight(11, "Sea King", "Sea King Boss", undefined, 1, "BOSS", {
+      enemyHp: 160,
+      enemyRole: "BOSS",
+      enemyFamily: "SEA_BEAST",
+      compositionTemplateId: "SEA_BEAST",
+    });
+  }, [spawnDebugFight]);
+
+  const debugSpawnDuel = useCallback(() => {
+    spawnDebugFight(9, "Rival Swordsman", "1v1 Duel", undefined, 1, "DUEL", {
+      battleFormat: BATTLE_FORMATS.DUEL_1V1,
+      requireSetup: true,
+      enemyRole: "ELITE",
+      enemyFamily: "PIRATE",
+    });
+  }, [spawnDebugFight]);
+
+  const debugSpawnSkirmish = useCallback(() => {
+    spawnDebugFight(8, "Pirate Pair Lead", "2v2 Skirmish", undefined, 2, "SKIRMISH", {
+      battleFormat: BATTLE_FORMATS.SKIRMISH_2V2,
+      requireSetup: true,
+      enemyFamily: "PIRATE",
+      compositionTemplateId: "PIRATE_CREW",
+    });
+  }, [spawnDebugFight]);
+
+  const debugSpawnFriendlySpar = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    const request = SparringService.buildFriendlyRequest({
+      enemyName: "Friendly Rival",
+      enemyStrength: 7,
+      format: {
+        ...BATTLE_FORMATS.DUEL_1V1,
+        isFriendly: true,
+        stakesAllowed: true,
+        label: "Friendly Match",
+        playerChoosesParticipants: true,
+      },
+      wager: { type: "BERRIES", berries: 200, label: "฿200 on the winner." },
+      requireSetup: true,
+    });
+    run.pendingBattleSetup = SparringService.createSetup(run, request);
+    run.combat = null;
+    setDebugFeedback("Friendly 1v1 spar ready — pick a fighter.");
+    persist(next);
+    setOverlay(null);
+    setScreen("game");
+  }, [profile, persist]);
+
+  const debugLegacyAdvanceYear = useCallback(() => {
+    if (!profile) return;
+    const next = structuredClone(profile);
+    const lines = LegacyService.advanceYears(next, 1);
+    setDebugFeedback(lines.join("\n") || LegacyService.summarize(next));
+    persist(next);
+  }, [profile, persist]);
+
+  const debugLegacyAdvanceDecade = useCallback(() => {
+    if (!profile) return;
+    const next = structuredClone(profile);
+    const lines = LegacyService.advanceYears(next, 10);
+    setDebugFeedback(lines.join("\n") || LegacyService.summarize(next));
+    persist(next);
+  }, [profile, persist]);
+
+  const debugLegacyPromoteCrew = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    LegacyService.harvestRunEnd(next);
+    setDebugFeedback(`Promoted crew to Legacy.\n${LegacyService.summarize(next)}`);
+    persist(next);
+  }, [profile, persist]);
+
+  const debugLegacyGenerateChild = useCallback(() => {
+    if (!profile) return;
+    const next = structuredClone(profile);
+    LegacyService.ensure(next);
+    const parent =
+      LegacyService.livingEncounterCandidates(next)[0] ??
+      (next.activeRun?.crew[0]
+        ? (() => {
+            const id = next.activeRun!.crew[0]!.characterId;
+            const ch = CharacterService.getCharacter(next.activeRun!, id);
+            return ch
+              ? LegacyService.promote(next, ch, {
+                  captainName: next.activeRun!.player.name,
+                  locationId: next.activeRun!.currentLocationId,
+                })
+              : null;
+          })()
+        : null);
+    if (!parent) {
+      setDebugFeedback("No Legacy parent available — promote crew first.");
+      return;
+    }
+    const child = LegacyService.generateChild(next, parent.characterId);
+    setDebugFeedback(
+      child
+        ? `Child created: ${child.character.name} (parent ${parent.character.name})`
+        : "Could not generate child.",
+    );
+    persist(next);
+  }, [profile, persist]);
+
+  const debugLegacyGenerateApprentice = useCallback(() => {
+    if (!profile) return;
+    const next = structuredClone(profile);
+    LegacyService.ensure(next);
+    let mentor = LegacyService.livingEncounterCandidates(next)[0];
+    if (!mentor && next.activeRun?.crew[0]) {
+      const id = next.activeRun.crew[0]!.characterId;
+      const ch = CharacterService.getCharacter(next.activeRun, id);
+      if (ch) {
+        mentor = LegacyService.promote(next, ch, {
+          captainName: next.activeRun.player.name,
+          locationId: next.activeRun.currentLocationId,
+        });
+      }
+    }
+    if (!mentor) {
+      setDebugFeedback("No mentor available — promote crew first.");
+      return;
+    }
+    const apprentice = LegacyService.generateApprentice(next, mentor.characterId);
+    setDebugFeedback(
+      apprentice
+        ? `Apprentice: ${apprentice.character.name} under ${mentor.character.name}`
+        : "Could not generate apprentice.",
+    );
+    persist(next);
+  }, [profile, persist]);
+
+  const debugLegacyInspect = useCallback(() => {
+    if (!profile) return;
+    const next = structuredClone(profile);
+    LegacyService.ensure(next);
+    const lines = [LegacyService.summarize(next)];
+    for (const rec of next.legacy?.characters.slice(0, 8) ?? []) {
+      lines.push(
+        `- ${rec.character.name} [${rec.tier}/${rec.status}] age~${LegacyService.ageOf(next, rec.characterId)}`,
+      );
+      const hints = LegacyService.dialogueHints(next, rec.characterId).slice(0, 2);
+      if (hints.length) lines.push(`  ${hints.join(" · ")}`);
+    }
+    setDebugFeedback(lines.join("\n"));
+  }, [profile]);
+
+  const debugLegacyForceEncounter = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    LegacyService.ensure(next);
+    LegacyService.injectIntoRun(next, run);
+    const candidate = LegacyService.livingEncounterCandidates(next)[0];
+    if (!candidate) {
+      setDebugFeedback("No living Legacy NPCs — promote crew or generate child/apprentice.");
+      persist(next);
+      return;
+    }
+    const encounter = LegacyService.buildMeetingEncounter(next, candidate.characterId);
+    if (!encounter) {
+      setDebugFeedback("Failed to build Legacy encounter.");
+      return;
+    }
+    run.dynamicEncounter = encounter;
+    run.currentEncounterId = encounter.id;
+    run.currentBoundNpcId = candidate.characterId;
+    run.awaitingAdvance = false;
+    run.lastResultText = null;
+    run.combat = null;
+    setDebugFeedback(`Legacy meeting: ${candidate.character.name}`);
+    persist(next);
+    setOverlay(null);
+    setScreen("game");
+  }, [profile, persist]);
 
   const debugSetDay = useCallback(
     (day: number) => {
@@ -1626,12 +1991,20 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     dismissAssignmentResults,
     dismissBattleResult,
     finishCombatPresentation,
+    syncCombatVitals,
+    ensureWeaponShop,
+    buyWeaponShopListing,
+    sellWeaponShopOwned,
+    refreshWeaponShop,
+    confirmBattleSetup,
+    cancelBattleSetup,
     combatAction,
     resolveEnemyTurn,
     useCombatItem,
     useInventoryItem,
     equipWeapon,
     unequipWeapon,
+    setZoanForm,
     confirmLevelUp,
     selectTechnique,
     skipTechniqueChoice,
@@ -1668,6 +2041,8 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     debugGiveDriedMeat,
     debugGiveMedicine,
     debugOpenFoodShop,
+    debugOpenWeaponShop,
+    debugRefreshWeaponShop,
     debugOpenClinic,
     debugGenerateSupplySearch,
     debugGenerateTraining,
@@ -1689,6 +2064,17 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     debugSpawnFourEnemyFight,
     debugSpawnBossFight,
     debugSpawnBossAddsFight,
+    debugSpawnSeaKing,
+    debugSpawnDuel,
+    debugSpawnSkirmish,
+    debugSpawnFriendlySpar,
+    debugLegacyAdvanceYear,
+    debugLegacyAdvanceDecade,
+    debugLegacyPromoteCrew,
+    debugLegacyGenerateChild,
+    debugLegacyGenerateApprentice,
+    debugLegacyInspect,
+    debugLegacyForceEncounter,
     debugSetDay,
     debugShowDifficulty,
     debugShowInitiative,

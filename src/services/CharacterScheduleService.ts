@@ -39,6 +39,8 @@ function statusFromAssignment(type: AssignmentType): CrewStatus {
       return "Training";
     case "RECOVERING":
       return "Injured";
+    case "HOSPITALIZED":
+      return "Hospitalized";
     case "RESTING":
       return "Resting";
     case "ON_MISSION":
@@ -90,14 +92,17 @@ export const CharacterScheduleService = {
     if (!member) {
       return false;
     }
-    if (member.status === "Injured" || member.status === "Captured" || member.status === "Missing") {
+    if (member.status === "Injured" || member.status === "Hospitalized" || member.status === "Captured" || member.status === "Missing") {
       return false;
     }
     return !this.getAssignment(run, characterId);
   },
 
   availableCharacterIds(run: RunState): string[] {
-    const ids = ["player"];
+    const ids: string[] = [];
+    if (this.isAvailable(run, "player")) {
+      ids.push("player");
+    }
     for (const member of run.crew) {
       if (this.isAvailable(run, member.characterId)) {
         ids.push(member.characterId);
@@ -264,6 +269,16 @@ export const CharacterScheduleService = {
       summary = `${name} finishes ${assignment.label}.`;
     }
 
+    if (assignment.type === "RECOVERING" || assignment.type === "HOSPITALIZED") {
+      summary = `${name} is back on their feet after ${assignment.label.toLowerCase()}.`;
+      if (assignment.characterId !== "player") {
+        CharacterService.addMemory(run, assignment.characterId, "WAS_KNOCKED_OUT", 1, "Recovered");
+      }
+      if (assignment.characterId === "player") {
+        run.player.hp = Math.max(run.player.hp, Math.round(run.player.maxHp * 0.6));
+      }
+    }
+
     return {
       characterId: assignment.characterId,
       label: assignment.label,
@@ -326,7 +341,9 @@ export const CharacterScheduleService = {
       member.status === "OnMission" ||
       member.status === "PersonalActivity" ||
       member.status === "Unavailable" ||
-      member.status === "Resting"
+      member.status === "Resting" ||
+      member.status === "Injured" ||
+      member.status === "Hospitalized"
     ) {
       member.status = "Ready";
     }

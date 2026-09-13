@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { getDevilFruit } from "../data/devilFruits";
 import { getItemDefinition } from "../data/items";
-import { getWeapon } from "../data/weapons";
 import type { InventoryCategory, InventoryItem, RunState } from "../models/types";
 import {
   carriedCollectibleStacks,
@@ -24,6 +23,8 @@ type InventoryOverlayProps = {
   onClose: () => void;
   onUse: (itemId: string) => void;
   onFruitAction?: (action: "EAT" | "SELL" | "KEEP", fruitId: string) => void;
+  onEquipWeapon?: (instanceId: string, slot: "primary" | "secondary") => void;
+  onUnequipWeapon?: (instanceId: string) => void;
 };
 
 function itemKey(item: InventoryItem): string {
@@ -44,6 +45,8 @@ export function InventoryOverlay({
   onClose,
   onUse,
   onFruitAction,
+  onEquipWeapon,
+  onUnequipWeapon,
 }: InventoryOverlayProps) {
   const [category, setCategory] = useState<InventoryCategory>("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
@@ -64,7 +67,7 @@ export function InventoryOverlay({
     null;
 
   const def = selected && selected.type !== "WEAPON" ? getItemDefinition(selected.itemId || selected.id) : undefined;
-  const weapon = selected?.weaponDefinitionId ? getWeapon(selected.weaponDefinitionId) : undefined;
+  const weapon = selected ? WeaponService.resolveWeaponView(selected) : undefined;
   const detailNote = selected ? ItemService.detailNote(selected, inCombat) : null;
   const isFruit = selected?.type === "DEVIL_FRUIT" || Boolean(selected?.fruitId);
   const showUseButton = selected ? ItemService.canUseFromPack(selected, inCombat) : false;
@@ -207,12 +210,62 @@ export function InventoryOverlay({
                           <p className="detail-value">{weapon.speed}</p>
                         </section>
                         <section className="detail-section">
+                          <p className="detail-label">Accuracy / Reach</p>
+                          <p className="detail-value">
+                            {weapon.accuracy} / {weapon.reach}
+                          </p>
+                        </section>
+                        {weapon.special ? (
+                          <section className="detail-section">
+                            <p className="detail-label">Special</p>
+                            <p className="detail-value">{weapon.special}</p>
+                          </section>
+                        ) : null}
+                        <section className="detail-section">
+                          <p className="detail-label">Grip</p>
+                          <p className="detail-value">{weapon.grip === "TWO_HAND" ? "Two-handed" : "One-handed"}</p>
+                        </section>
+                        <section className="detail-section">
                           <p className="detail-label">Status</p>
                           <p className="detail-value text-gold">{WeaponService.weaponOwnerLabel(run, selected)}</p>
                         </section>
-                        <p className="text-sm text-parchment-dim">
-                          Reassign weapons from the {AffiliationService.getCrewLabel(run)} screen.
-                        </p>
+                        {onEquipWeapon && !inCombat ? (
+                          <div className="grid gap-2 mt-2">
+                            <button
+                              className="gold-btn"
+                              onClick={() => onEquipWeapon(selected.id, "primary")}
+                              type="button"
+                            >
+                              Equip primary
+                            </button>
+                            <button
+                              className="ghost-btn"
+                              disabled={weapon.grip === "TWO_HAND"}
+                              onClick={() => onEquipWeapon(selected.id, "secondary")}
+                              title={
+                                weapon.grip === "TWO_HAND"
+                                  ? "Two-handed weapons must be primary."
+                                  : "Equip as off-hand (dual wield)."
+                              }
+                              type="button"
+                            >
+                              Equip secondary
+                            </button>
+                            {selected.equipped ? (
+                              <button
+                                className="ghost-btn"
+                                onClick={() => onUnequipWeapon?.(selected.id)}
+                                type="button"
+                              >
+                                Unequip
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-parchment-dim">
+                            Reassign weapons from the {AffiliationService.getCrewLabel(run)} screen.
+                          </p>
+                        )}
                       </>
                     ) : null}
                     {def?.effects.some((effect) => effect.type === "HEAL" || effect.type === "RESTORE_MP") ? (

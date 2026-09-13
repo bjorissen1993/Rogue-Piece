@@ -1,11 +1,17 @@
 import { useGameStore } from "../stores/GameStore";
+import { AccountPanel } from "../components/account/AccountPanel";
+import { useAuthUser } from "../hooks/useAuthUser";
+import { canAccessDevelopmentProfile } from "../services/DevAccess";
 import { formatBounty } from "../utils/text";
 
 export function SaveSelect() {
   const { saves, devPreview, openProfile } = useGameStore();
+  const user = useAuthUser();
+  const showDev = canAccessDevelopmentProfile(user);
 
   return (
     <div className="screen-shell screen-select">
+      <AccountPanel />
       <p className="hud-kicker text-center">Save Files</p>
       <h1 className="font-display mt-2 text-center text-5xl text-gold">Rogue Piece</h1>
       <p className="mx-auto mt-3 max-w-xl text-center text-parchment-dim">
@@ -32,15 +38,17 @@ export function SaveSelect() {
             )}
           </button>
         ))}
-        <button className="panel select-card w-full p-5" onClick={() => openProfile("dev")} type="button">
-          <p className="text-sm text-gold">Sandbox</p>
-          <p className="font-display text-2xl">Development Profile</p>
-          <p className="text-sm text-parchment-dim">
-            {devPreview.empty
-              ? "Separate file. Never writes to normal saves."
-              : `${devPreview.runsStarted ?? 0} runs · fully separate storage`}
-          </p>
-        </button>
+        {showDev ? (
+          <button className="panel select-card w-full p-5" onClick={() => openProfile("dev")} type="button">
+            <p className="text-sm text-gold">Sandbox</p>
+            <p className="font-display text-2xl">Development Profile</p>
+            <p className="text-sm text-parchment-dim">
+              {devPreview.empty
+                ? "Separate file. Never writes to normal saves."
+                : `${devPreview.runsStarted ?? 0} runs · fully separate storage`}
+            </p>
+          </button>
+        ) : null}
       </div>
     </div>
   );

@@ -39,6 +39,7 @@ export function techniqueToAbility(tech: Technique): Ability {
     badges: tech.badges,
     effects: tech.effects,
     applyEffect: tech.applyEffect,
+    requiredWeaponTypes: tech.requiredWeaponTypes ?? (tech.weaponType ? [tech.weaponType] : undefined),
     animationType: tags.includes("AOE")
       ? "AOE"
       : tags.includes("HEAL")

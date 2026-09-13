@@ -1,5 +1,11 @@
 import type { CombatKind, CombatRequest, RunState } from "../models/types";
 import { MAX_ACTIVE_FIGHTERS } from "../game/constants";
+import {
+  composeSupportEnemies,
+  formatForKind,
+  inferEnemyFamily,
+  inferEnemyRole,
+} from "./EncounterCompositionService";
 import type { RandomService } from "./RandomService";
 
 export type WorldThreatTier = 1 | 2 | 3 | 4 | 5 | 6;
@@ -9,6 +15,8 @@ export type ExtraEnemySpec = {
   strength: number;
   hp: number;
   formation: "FRONT" | "BACK";
+  enemyRole?: import("../models/types").EnemyRole;
+  enemyFamily?: import("../models/types").EnemyFamily;
 };
 
 const BANDS: Array<{ maxDay: number; tier: WorldThreatTier; label: string }> = [
@@ -19,15 +27,6 @@ const BANDS: Array<{ maxDay: number; tier: WorldThreatTier; label: string }> = [
   { maxDay: 120, tier: 5, label: "Powerful world actors" },
   { maxDay: Number.POSITIVE_INFINITY, tier: 6, label: "Legendary threats" },
 ];
-
-const SUPPORT_ARCHETYPES: Record<WorldThreatTier, string[]> = {
-  1: ["Marine Recruit", "Bandit", "Rookie Pirate", "Bounty Thug"],
-  2: ["Marine Rifleman", "Harbor Thug", "Veteran Deckhand", "Local Hunter"],
-  3: ["Marine Medic", "Elite Bounty Hunter", "Pirate Officer", "Special Agent"],
-  4: ["Marine Captain", "Veteran Pirate", "Cipher Pol Scout", "Famous Mercenary"],
-  5: ["Elite Marine", "Notorious Captain", "Government Assassin", "Revolutionary Cell"],
-  6: ["Vice Admiral Guard", "Emperor Crew Elite", "CP0 Shadow", "Warlord Retainer"],
-};
 
 function activePartySize(run: RunState): number {
   const fighters = run.activeParty?.activeFighterIds.filter(Boolean).length ?? 0;
@@ -86,10 +85,16 @@ export const WorldCombatProgressionService = {
   },
 
   shouldAddMinions(kind: CombatKind | undefined): boolean {
-    return kind !== "BOSS" && kind !== "DUEL";
+    return kind !== "BOSS" && kind !== "DUEL" && kind !== "SPARRING" && kind !== "ELITE";
   },
 
   desiredEnemyCount(run: RunState, request: CombatRequest): number {
+    if (request.battleFormat) {
+      return Math.max(
+        request.battleFormat.minEnemies,
+        Math.min(request.battleFormat.maxEnemies, request.enemyCount ?? request.battleFormat.minEnemies),
+      );
+    }
     if (request.enemyCount) {
       return Math.max(1, Math.min(4, request.enemyCount));
     }
@@ -111,36 +116,43 @@ export const WorldCombatProgressionService = {
     if (request.combatKind === "HIGH_RISK" && count < 2) {
       count = 2;
     }
+    if (request.combatKind === "SKIRMISH") {
+      count = 2;
+    }
     return Math.min(4, count);
   },
 
+  /**
+   * Compose support enemies from coherent templates — never Sea King + Harbor Thug.
+   */
   additionalEnemies(run: RunState, request: CombatRequest, rng: RandomService): ExtraEnemySpec[] {
-    if (request.extraEnemies?.length) {
-      return request.extraEnemies.slice(0, 3).map((entry, index) => ({
-        name: entry.name,
-        strength: entry.strength,
-        hp: entry.hp ?? Math.max(10, Math.round((request.enemyHp ?? 22 + request.enemyStrength * 5) * 0.55)),
-        formation: entry.formation ?? (index === 0 ? "FRONT" : "BACK"),
-      }));
-    }
+    const family = request.enemyFamily ?? inferEnemyFamily(request.enemyName);
+    const role = inferEnemyRole(request.enemyName, request.combatKind, request.enemyRole);
     const desired = this.desiredEnemyCount(run, request);
-    const extras = desired - 1;
-    if (extras <= 0) {
-      return [];
-    }
-    const tier = this.worldThreatTier(run);
-    const pool = SUPPORT_ARCHETYPES[tier];
-    const result: ExtraEnemySpec[] = [];
-    for (let i = 0; i < extras; i += 1) {
-      const name = pool[rng.nextInt(0, pool.length - 1)] ?? "Marine Recruit";
-      const strength = Math.max(2, Math.round(request.enemyStrength * (0.45 + i * 0.08)));
-      result.push({
-        name,
-        strength,
-        hp: Math.max(10, Math.round((request.enemyHp ?? 22 + request.enemyStrength * 5) * 0.55)),
-        formation: i === 0 ? "FRONT" : "BACK",
-      });
-    }
-    return result;
+    const composed = composeSupportEnemies({
+      primaryName: request.enemyName,
+      primaryStrength: request.enemyStrength,
+      primaryHp: request.enemyHp,
+      primaryFamily: family,
+      primaryRole: role,
+      kind: request.combatKind,
+      templateId: request.compositionTemplateId,
+      desiredTotal: this.shouldAddMinions(request.combatKind) || request.extraEnemies?.length ? desired : 1,
+      explicitExtras: request.extraEnemies,
+      rng,
+    });
+
+    // Attach debug reason on request via return; callers can log.
+    (request as CombatRequest & { _compositionReason?: string })._compositionReason = composed.reason;
+
+    return composed.extras;
+  },
+
+  resolveBattleFormat(request: CombatRequest) {
+    return request.battleFormat ?? formatForKind(request.combatKind, request.isFriendly);
+  },
+
+  lastCompositionReason(request: CombatRequest): string | null {
+    return (request as CombatRequest & { _compositionReason?: string })._compositionReason ?? null;
   },
 };

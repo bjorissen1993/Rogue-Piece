@@ -45,6 +45,8 @@ type DebugOverlayProps = {
   onGiveDriedMeat?: () => void;
   onGiveMedicineItem?: () => void;
   onOpenFoodShop?: () => void;
+  onOpenWeaponShop?: () => void;
+  onRefreshWeaponShop?: () => void;
   onOpenClinic?: () => void;
   onGenerateSupplySearch?: () => void;
   onGenerateTraining?: () => void;
@@ -66,6 +68,17 @@ type DebugOverlayProps = {
   onSpawnFourEnemyFight?: () => void;
   onSpawnBossFight?: () => void;
   onSpawnBossAddsFight?: () => void;
+  onSpawnSeaKing?: () => void;
+  onSpawnDuel?: () => void;
+  onSpawnSkirmish?: () => void;
+  onSpawnFriendlySpar?: () => void;
+  onLegacyAdvanceYear?: () => void;
+  onLegacyAdvanceDecade?: () => void;
+  onLegacyPromoteCrew?: () => void;
+  onLegacyGenerateChild?: () => void;
+  onLegacyGenerateApprentice?: () => void;
+  onLegacyInspect?: () => void;
+  onLegacyForceEncounter?: () => void;
   onSetDay?: (day: number) => void;
   onShowDifficulty?: () => void;
   onShowInitiative?: () => void;
@@ -134,6 +147,8 @@ export function DebugOverlay({
   onGiveDriedMeat,
   onGiveMedicineItem,
   onOpenFoodShop,
+  onOpenWeaponShop,
+  onRefreshWeaponShop,
   onOpenClinic,
   onGenerateSupplySearch,
   onGenerateTraining,
@@ -155,6 +170,17 @@ export function DebugOverlay({
   onSpawnFourEnemyFight,
   onSpawnBossFight,
   onSpawnBossAddsFight,
+  onSpawnSeaKing,
+  onSpawnDuel,
+  onSpawnSkirmish,
+  onSpawnFriendlySpar,
+  onLegacyAdvanceYear,
+  onLegacyAdvanceDecade,
+  onLegacyPromoteCrew,
+  onLegacyGenerateChild,
+  onLegacyGenerateApprentice,
+  onLegacyInspect,
+  onLegacyForceEncounter,
   onSetDay,
   onShowDifficulty,
   onShowInitiative,
@@ -377,6 +403,16 @@ export function DebugOverlay({
             Open Food Shop
           </button>
         ) : null}
+        {onOpenWeaponShop ? (
+          <button className="choice-btn" disabled={!run} onClick={onOpenWeaponShop} type="button">
+            Open Weapon Shop
+          </button>
+        ) : null}
+        {onRefreshWeaponShop ? (
+          <button className="choice-btn" disabled={!run} onClick={onRefreshWeaponShop} type="button">
+            Refresh Weapon Shop Stock
+          </button>
+        ) : null}
         {onOpenClinic ? (
           <button className="choice-btn" disabled={!run} onClick={onOpenClinic} type="button">
             Open Clinic
@@ -520,6 +556,61 @@ export function DebugOverlay({
         {onSpawnBossAddsFight ? (
           <button className="choice-btn" disabled={!run} onClick={onSpawnBossAddsFight} type="button">
             Generate Boss + Adds
+          </button>
+        ) : null}
+        {onSpawnSeaKing ? (
+          <button className="choice-btn" disabled={!run} onClick={onSpawnSeaKing} type="button">
+            Generate Sea King Boss
+          </button>
+        ) : null}
+        {onSpawnDuel ? (
+          <button className="choice-btn" disabled={!run} onClick={onSpawnDuel} type="button">
+            Generate 1v1 Duel Setup
+          </button>
+        ) : null}
+        {onSpawnSkirmish ? (
+          <button className="choice-btn" disabled={!run} onClick={onSpawnSkirmish} type="button">
+            Generate 2v2 Skirmish Setup
+          </button>
+        ) : null}
+        {onSpawnFriendlySpar ? (
+          <button className="choice-btn" disabled={!run} onClick={onSpawnFriendlySpar} type="button">
+            Generate Friendly Spar
+          </button>
+        ) : null}
+        {onLegacyInspect ? (
+          <button className="choice-btn" onClick={onLegacyInspect} type="button">
+            Inspect Legacy World
+          </button>
+        ) : null}
+        {onLegacyAdvanceYear ? (
+          <button className="choice-btn" onClick={onLegacyAdvanceYear} type="button">
+            Advance World 1 Year
+          </button>
+        ) : null}
+        {onLegacyAdvanceDecade ? (
+          <button className="choice-btn" onClick={onLegacyAdvanceDecade} type="button">
+            Advance World 10 Years
+          </button>
+        ) : null}
+        {onLegacyPromoteCrew ? (
+          <button className="choice-btn" disabled={!run} onClick={onLegacyPromoteCrew} type="button">
+            Promote Crew to Legacy
+          </button>
+        ) : null}
+        {onLegacyGenerateChild ? (
+          <button className="choice-btn" onClick={onLegacyGenerateChild} type="button">
+            Generate Legacy Child
+          </button>
+        ) : null}
+        {onLegacyGenerateApprentice ? (
+          <button className="choice-btn" onClick={onLegacyGenerateApprentice} type="button">
+            Generate Legacy Apprentice
+          </button>
+        ) : null}
+        {onLegacyForceEncounter ? (
+          <button className="choice-btn" disabled={!run} onClick={onLegacyForceEncounter} type="button">
+            Force Legacy NPC Encounter
           </button>
         ) : null}
         {onSetDay ? (

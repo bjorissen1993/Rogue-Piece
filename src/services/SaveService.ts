@@ -30,6 +30,7 @@ import { FactionService } from "./FactionService";
 import { WeaponService } from "./WeaponService";
 import { MpService } from "./MpService";
 import { ProgressionService } from "./ProgressionService";
+import { LegacyService } from "./LegacyService";
 import { ensurePlayerStats } from "../utils/stats";
 import { nowIso } from "../utils/ids";
 
@@ -236,7 +237,7 @@ function ensureProfileShapeContinue(
   unlocked: string[],
   pity: RaceOfferPity[],
 ): ProfileSave {
-  return {
+  const next: ProfileSave = {
     ...profile,
     version: SAVE_VERSION,
     progression: {
@@ -249,7 +250,12 @@ function ensureProfileShapeContinue(
     achievements,
     raceOfferPity: pity,
     activeRun,
+    persistentCharacters: profile.persistentCharacters,
+    runEndHistory: profile.runEndHistory,
+    legacy: profile.legacy,
   };
+  LegacyService.ensure(next);
+  return next;
 }
 
 function migrateRunState(run: RunState): RunState {
@@ -280,6 +286,8 @@ function migrateRunState(run: RunState): RunState {
     pendingParticipantIds: run.pendingParticipantIds ?? [],
     trainingToday: run.trainingToday ?? {},
     runKnowledge: run.runKnowledge ?? [],
+    weaponShops: run.weaponShops ?? {},
+    recentShopWeaponKeys: run.recentShopWeaponKeys ?? [],
     factionMissions: run.factionMissions ?? [],
     factionOrders: run.factionOrders ?? [],
     activeParty: run.activeParty ?? CrewService.defaultActiveParty(),

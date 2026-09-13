@@ -1,3 +1,8 @@
+import { AffiliationService } from "./AffiliationService";
+import { RaceService } from "./RaceService";
+import { CORE_CREW_CAP } from "../game/constants";
+import { createId } from "../utils/ids";
+import { clamp } from "../utils/stats";
 import type {
   CharacterMemory,
   CharacterMemoryType,
@@ -7,12 +12,6 @@ import type {
   RunState,
   WorldCharacter,
 } from "../models/types";
-import { CORE_CREW_CAP } from "../game/constants";
-import { createId } from "../utils/ids";
-import { clamp } from "../utils/stats";
-import { AffiliationService } from "./AffiliationService";
-import { FleetService } from "./FleetService";
-import { RaceService } from "./RaceService";
 
 function findCharacter(run: RunState, characterId: string): WorldCharacter | undefined {
   return run.world.characters.find((character) => character.id === characterId);
@@ -189,6 +188,34 @@ export const CharacterService = {
         return `${name} nods — you've bled together before.`;
       case "SHARED_SECRET":
         return `${name} lowers their voice. Shared secrets still bind you.`;
+      case "CREW_DIED_WHILE_I_RECOVERED":
+      case "PRIOR_CREW_WIPED":
+      case "LOST_ENTIRE_CREW":
+      case "LOST_OLD_CREW":
+      case "SURVIVED_RUN_COLLAPSE":
+        return `${name}: "Last crew I sailed with disappeared while I was recovering. I don't plan on making that mistake twice."`;
+      case "SURVIVED_RUN_LOSS":
+      case "WAS_LEFT_RECOVERING":
+        return `${name} looks at you longer than strangers usually do — they survived a crew that didn't.`;
+      case "FORMER_CREWMATE":
+        return `${name} studies your face — not recognition of you, but of a life once spent aboard a crew.`;
+      case "IS_DESCENDANT_OF":
+        return recent.note
+          ? `${name} carries something of ${recent.note} in their stance.`
+          : `${name} carries an old name in their blood.`;
+      case "TRAINED_BY_MASTER":
+      case "IS_APPRENTICE_OF":
+        return recent.note
+          ? `${name} moves like someone taught by ${recent.note}.`
+          : `${name} shows a practiced school of motion.`;
+      case "TAUGHT_APPRENTICE":
+        return `${name} speaks like a teacher who has already sent someone into the world.`;
+      case "RETIRED_AFTER_BATTLE":
+        return `${name} has the calm of someone who stepped off the voyage path.`;
+      case "WAS_HOSPITALIZED":
+        return `${name} rubs an old scar. Hospitals and unfinished voyages leave marks.`;
+      case "WAS_KNOCKED_OUT":
+        return `${name} remembers going down hard — and waking up afterward.`;
       default:
         return `${name} recognizes you from day ${recent.day}.`;
     }
@@ -204,6 +231,8 @@ export const CharacterService = {
     if (!character) {
       return null;
     }
+    // Duplicate / capacity / fleet routing belongs to CrewService.resolveRecruitment.
+    // This writer only adds a new core member when the roster still has room.
     if (run.crew.some((member) => member.characterId === characterId)) {
       return run.crew.find((member) => member.characterId === characterId) ?? null;
     }
@@ -211,7 +240,6 @@ export const CharacterService = {
       return null;
     }
     if (1 + run.crew.length >= CORE_CREW_CAP) {
-      FleetService.offerFleetCaptain(run, character);
       return null;
     }
     const member: CrewMember = {

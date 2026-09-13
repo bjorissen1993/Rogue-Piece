@@ -146,9 +146,17 @@ export const SKILL_BADGE_CATALOG: Record<SkillBadgeId, SkillBadgeDefinition> = {
     defaultTip: "Exposes or weakens defenses.",
     art: "/icons/Badge_Vulnerability-Exposed-Weakened.png",
   },
+  DEVIL_FRUIT: {
+    id: "DEVIL_FRUIT",
+    label: "Devil Fruit",
+    shortLabel: "DF",
+    defaultTip: "Power drawn from a Devil Fruit.",
+    art: "/icons/Badge_Devil_Fruit.png",
+  },
 };
 
 const BADGE_PRIORITY: SkillBadgeId[] = [
+  "DEVIL_FRUIT",
   "SELF",
   "SINGLE_TARGET",
   "MULTI_TARGET",
@@ -304,10 +312,13 @@ function deriveFromEffect(map: Map<SkillBadgeId, SkillBadgeRef>, effect: Techniq
 
 function deriveFromTagsAndEffects(
   map: Map<SkillBadgeId, SkillBadgeRef>,
-  source: Pick<Ability, "tags" | "effects" | "applyEffect" | "animationType">,
+  source: Pick<Ability, "tags" | "effects" | "applyEffect" | "animationType" | "devilFruitSkill">,
 ): void {
   const tags = source.tags ?? [];
   const effectText = (source.effects ?? []).join(" ").toLowerCase();
+  if (source.devilFruitSkill) {
+    pushBadge(map, "DEVIL_FRUIT");
+  }
   if (tags.includes("HEAL") || source.animationType === "HEAL") {
     pushBadge(map, "HEAL");
   }
@@ -392,6 +403,7 @@ export function resolveSkillBadges(
     effects: source.effects,
     applyEffect: source.applyEffect,
     animationType: "animationType" in source ? source.animationType : undefined,
+    devilFruitSkill: "devilFruitSkill" in source ? source.devilFruitSkill : undefined,
   });
 
   return finalize(map);

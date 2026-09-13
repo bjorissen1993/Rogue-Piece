@@ -1,9 +1,15 @@
-export const SAVE_VERSION = 15;
+export const SAVE_VERSION = 17;
 
 /** Core roster cap including the player character. */
 export const CORE_CREW_CAP = 10;
 export const MAX_ACTIVE_FIGHTERS = 3;
 export const MAX_SUPPORT_SLOTS = 3;
+
+/**
+ * Minimum player bounty required before overflow recruits can join the fleet.
+ * Below this, a full core crew simply cannot take more joiners.
+ */
+export const FLEET_UNLOCK_BOUNTY = 50_000;
 
 /** XP required to reach `level` from previous level: BASE_XP * level^XP_EXPONENT */
 export const XP_BASE = 50;

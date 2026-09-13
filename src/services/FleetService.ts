@@ -29,6 +29,13 @@ export const FleetService = {
     shipName?: string,
   ): NamedFleetCharacter | null {
     this.ensure(run);
+    if (run.crew.some((entry) => entry.characterId === character.id)) {
+      return null;
+    }
+    const existing = run.fleet!.find((entry) => entry.characterId === character.id);
+    if (existing) {
+      return existing;
+    }
     const entry: NamedFleetCharacter = {
       characterId: character.id,
       shipName: shipName ?? `${character.name}'s Ship`,

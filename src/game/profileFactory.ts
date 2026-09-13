@@ -91,5 +91,6 @@ export function createEmptyProfile(id: string, profileType: ProfileType): Profil
     achievements: emptyAchievements(),
     raceOfferPity: emptyPity(),
     activeRun: null,
+    legacy: undefined,
   };
 }

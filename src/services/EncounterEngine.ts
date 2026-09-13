@@ -1,5 +1,5 @@
+import { getAbilitiesForPlayer } from "../data/abilities";
 import { ENCOUNTERS, getEncounterById } from "../data/encounters";
-import { techniquesForFruit } from "../data/collectionLore";
 import { getItemDefinition } from "../data/items";
 import { getLocation } from "../data/locations";
 import { getWeapon } from "../data/weapons";
@@ -12,6 +12,7 @@ import type {
   ProfileSave,
   ResolveResult,
   RunState,
+  SparWager,
 } from "../models/types";
 import { interpolate } from "../utils/text";
 import { addUnique, applyStatChanges, clamp, ensurePlayerStats, removeValues } from "../utils/stats";
@@ -20,6 +21,7 @@ import { CharacterService } from "./CharacterService";
 import { CollectionService } from "./CollectionService";
 import { CombatEngine } from "./CombatEngine";
 import { BattleResultService } from "./BattleResultService";
+import { DevilFruitCombatService } from "./DevilFruitCombatService";
 import { DevilFruitService } from "./DevilFruitService";
 import { EncounterHistoryService } from "./EncounterHistoryService";
 import { FactionService } from "./FactionService";
@@ -35,11 +37,14 @@ import { IslandService } from "./IslandService";
 import { ProgressionService } from "./ProgressionService";
 import { AffiliationService } from "./AffiliationService";
 import { IdentityService } from "./IdentityService";
-import { RecruitmentModelService } from "./RecruitmentModelService";
 import { CrewService } from "./CrewService";
 import { FactionMissionService } from "./FactionMissionService";
 import { CharacterScheduleService } from "./CharacterScheduleService";
 import { KnowledgeService } from "./KnowledgeService";
+import { SparringService, needsBattleSetup } from "./SparringService";
+import { MedicalRecoveryService } from "./MedicalRecoveryService";
+import { RunEndResolutionService } from "./RunEndResolutionService";
+import { MpService } from "./MpService";
 import {
   choiceNeedsParticipants,
   participantBounds,
@@ -58,10 +63,6 @@ function shopLabel(shopId: string): string {
     weapon_smith: "smithy",
   };
   return labels[shopId] ?? shopId.replaceAll("_", " ");
-}
-
-function firstTechniqueId(fruitId: string): string {
-  return techniquesForFruit(fruitId)[0]?.id ?? "intro";
 }
 
 function cloneProfile(profile: ProfileSave): ProfileSave {
@@ -456,6 +457,15 @@ function applyHp(run: RunState, change: number | undefined): void {
   run.player.hp = clamp(run.player.hp + amount, 0, run.player.maxHp);
 }
 
+function applyMp(run: RunState, change: number | undefined): void {
+  if (!change) {
+    return;
+  }
+  MpService.ensurePlayer(run.player);
+  const maxMp = run.player.maxMp ?? MpService.maxMpFor(run.player);
+  run.player.mp = clamp((run.player.mp ?? 0) + change, 0, maxMp);
+}
+
 function syncCombatResources(run: RunState): void {
   if (run.combat) {
     run.player.hp = run.combat.playerCombatant.hp;
@@ -553,11 +563,15 @@ function applyStoryAndCharacterOutcomes(run: RunState, outcome: EncounterOutcome
   if (outcome.offerRecruitment) {
     const offerId = resolveCharacterId(run, outcome.offerRecruitment.characterId);
     if (offerId) {
-      CharacterService.modifyJoinInterest(run, offerId, 25);
-      const character = CharacterService.getCharacter(run, offerId);
-      if (character) {
-        const party = AffiliationService.getCrewLabel(run).toLowerCase();
-        lines.push(`${character.name} is considering joining your ${party}.`);
+      if (!CrewService.canOfferRecruitment(run, offerId)) {
+        lines.push(CrewService.alreadyOnTeamMessage(run, offerId));
+      } else {
+        CharacterService.modifyJoinInterest(run, offerId, 25);
+        const character = CharacterService.getCharacter(run, offerId);
+        if (character) {
+          const party = AffiliationService.getCrewLabel(run).toLowerCase();
+          lines.push(`${character.name} is considering joining your ${party}.`);
+        }
       }
     }
   }
@@ -565,20 +579,13 @@ function applyStoryAndCharacterOutcomes(run: RunState, outcome: EncounterOutcome
   const recruitId = resolveCharacterId(run, outcome.acceptRecruitment?.characterId);
   if (outcome.acceptRecruitment && recruitId) {
     ensureRecruitNpc(run, recruitId);
-    const { member, reason } = RecruitmentModelService.recruit(
+    const result = CrewService.resolveRecruitment(
       run,
       recruitId,
       outcome.acceptRecruitment.role ?? "FIGHTER",
       outcome.acceptRecruitment.membership,
     );
-    if (member) {
-      const character = CharacterService.getCharacter(run, recruitId);
-      const party = AffiliationService.getCrewLabel(run).toLowerCase();
-      const membershipLabel = CrewService.membershipLabel(member.membership);
-      lines.push(`${character?.name ?? "A new ally"} joins your ${party} (${membershipLabel}).`);
-    } else if (reason) {
-      lines.push(reason);
-    }
+    lines.push(result.message);
   }
 
   if (outcome.offerFactionRecruitment) {
@@ -752,11 +759,19 @@ function applyOutcome(
 
   if (outcome.combat) {
     normalizeCombatRequest(run, outcome);
-    run.combat = CombatEngine.createFromRequest(run.player, outcome.combat, rng, run);
+    const request = outcome.combat;
+    if (needsBattleSetup(request)) {
+      run.pendingBattleSetup = SparringService.createSetup(run, request);
+      run.combat = null;
+      return;
+    }
+    run.pendingBattleSetup = null;
+    run.combat = CombatEngine.createFromRequest(run.player, request, rng, run);
     return;
   }
 
   applyHp(run, outcome.hpChange);
+  applyMp(run, MpService.effectiveOutcomeMpChange(outcome));
   if (outcome.berriesChange) {
     run.player.berries = Math.max(0, run.player.berries + outcome.berriesChange);
   }
@@ -966,10 +981,30 @@ function concludeCombat(profile: ProfileSave, rng: RandomService): ResolveResult
     return { profile, text: run.lastResultText ?? "", gameOver: run.gameOver };
   }
   const lines: string[] = [];
+  if (combat.isFriendly) {
+    SparringService.softenFriendlyDefeat(run, combat);
+  }
   syncCombatResources(run);
   const pending = combat.pendingOutcome;
   if (combat.result === "WIN") {
     profile.statistics.combatWins += 1;
+    if (combat.isFriendly) {
+      const med = MedicalRecoveryService.resolveAfterBattle(run, combat);
+      lines.push(...med);
+      const sparLines = SparringService.applyFriendlyRewards(run, combat, true);
+      lines.push(...sparLines);
+      if (pending?.win) {
+        applyOutcome(profile, pending.win, rng, lines);
+      }
+      run.combat = null;
+      run.lastResultText = lines.filter(Boolean).join("\n\n");
+      run.awaitingAdvance = true;
+      refreshStats(profile);
+      return { profile, text: run.lastResultText ?? "", gameOver: run.gameOver };
+    }
+    const medLines = MedicalRecoveryService.resolveAfterBattle(run, combat);
+    lines.push(...medLines);
+    lines.push(...MedicalRecoveryService.buildPostBattleDialogue(run, combat));
     WeaponService.onCombatWin(run);
     const narrativeLines: string[] = [];
     if (combat.party) {
@@ -986,7 +1021,7 @@ function concludeCombat(profile: ProfileSave, rng: RandomService): ResolveResult
     }
     if (run.pendingBattleResult) {
       // Keep finished combat mounted under the victory overlay until dismiss.
-      run.lastResultText = narrativeLines.filter(Boolean).join("\n\n") || null;
+      run.lastResultText = [...lines, ...narrativeLines].filter(Boolean).join("\n\n") || null;
       run.awaitingAdvance = false;
     } else {
       run.combat = null;
@@ -998,24 +1033,77 @@ function concludeCombat(profile: ProfileSave, rng: RandomService): ResolveResult
     return { profile, text: run.lastResultText ?? "", gameOver: run.gameOver };
   } else if (combat.result === "LOSE") {
     profile.statistics.combatLosses += 1;
-    if (run.player.hp <= 0) {
-      markDeath(run, `Defeated by ${combat.enemies[0]?.name ?? "a stronger foe"}`);
+    if (combat.isFriendly) {
+      SparringService.softenFriendlyDefeat(run, combat);
+      const med = MedicalRecoveryService.resolveAfterBattle(run, combat);
+      lines.push(...med);
+      const sparLines = SparringService.applyFriendlyRewards(run, combat, false);
+      lines.push(...sparLines);
+      if (pending?.lose) {
+        // Friendly loses should not apply lethal hpChange from authored outcomes.
+        const soft = { ...pending.lose, hpChange: Math.max(pending.lose.hpChange ?? 0, -4) };
+        applyOutcome(profile, soft, rng, lines);
+      }
+      if (run.player.hp <= 0) {
+        run.player.hp = 1;
+      }
+      run.combat = null;
+      run.lastResultText = lines.filter(Boolean).join("\n\n");
+      run.awaitingAdvance = true;
+      refreshStats(profile);
+      return { profile, text: run.lastResultText ?? "", gameOver: false };
     }
-    if (pending?.lose) {
+    // Hostile wipe of participating fighters → recovery, then check usable team.
+    const medLines = MedicalRecoveryService.resolveAfterBattle(run, combat);
+    lines.push(...medLines);
+    const ended = RunEndResolutionService.ensureUsableTeamOrEnd(
+      run,
+      `Defeated by ${combat.enemies[0]?.name ?? "a stronger foe"}`,
+    );
+    if (ended) {
+      lines.push("No one left to carry the run forward.");
+    } else {
+      lines.push("The fight is lost — but someone still standing can keep the voyage going.");
+      MedicalRecoveryService.stabilizeCaptainIfCrewRemains(run);
+    }
+    if (pending?.lose && !ended) {
+      const softLose = { ...pending.lose };
+      // Avoid authored deathCause wiping a recoverable crew.
+      delete softLose.deathCause;
+      if ((softLose.hpChange ?? 0) < -15) {
+        softLose.hpChange = -8;
+      }
+      applyOutcome(profile, softLose, rng, lines);
+      MedicalRecoveryService.stabilizeCaptainIfCrewRemains(run);
+      if (MedicalRecoveryService.shouldEndRunAfterWipe(run)) {
+        markDeath(run, run.deathCause ?? `Defeated by ${combat.enemies[0]?.name ?? "a stronger foe"}`);
+      }
+    } else if (pending?.lose && ended) {
       applyOutcome(profile, pending.lose, rng, lines);
-    }
-    if (run.player.hp <= 0) {
+      markDeath(run, run.deathCause ?? `Defeated by ${combat.enemies[0]?.name ?? "a stronger foe"}`);
+    } else if (ended) {
       markDeath(run, run.deathCause ?? `Defeated by ${combat.enemies[0]?.name ?? "a stronger foe"}`);
     }
   } else if (combat.result === "SURRENDER") {
+    const medLines = MedicalRecoveryService.resolveAfterBattle(run, combat);
+    lines.push(...medLines);
     if (pending?.surrender) {
       applyOutcome(profile, pending.surrender, rng, lines);
     } else {
       applyOutcome(profile, defaultSurrenderOutcome(run), rng, lines);
     }
+    MedicalRecoveryService.stabilizeCaptainIfCrewRemains(run);
   } else if (pending?.escape) {
+    // Escaping with KO'd allies: assume the crew retrieves them when possible.
+    const medLines = MedicalRecoveryService.resolveAfterBattle(run, combat);
+    lines.push(...medLines);
+    if (medLines.some((line) => /knocked|recovering|hospital/i.test(line))) {
+      lines.push("You haul the fallen with you as you break away.");
+    }
     applyOutcome(profile, pending.escape, rng, lines);
   } else {
+    const medLines = MedicalRecoveryService.resolveAfterBattle(run, combat);
+    lines.push(...medLines);
     lines.push("You leave the fight behind.");
   }
   run.combat = null;
@@ -1062,6 +1150,9 @@ export const EncounterEngine = {
   },
 
   getCurrentEncounter(run: RunState): Encounter | null {
+    if (run.dynamicEncounter && run.currentEncounterId === run.dynamicEncounter.id) {
+      return run.dynamicEncounter;
+    }
     if (!run.currentEncounterId) {
       return null;
     }
@@ -1171,11 +1262,17 @@ export const EncounterEngine = {
     if (!run.combat || run.combat.finished) {
       return next;
     }
+    CombatEngine.syncCaptainVitals(run.combat, run.player, run);
     run.combat = CombatEngine.performAction(run.combat, action, rng, run);
     applyCombatHpFeedback(run);
-    if (action.type === "TECHNIQUE" && run.player.devilFruitId && action.abilityId === "fruit_burst") {
-      const fruitId = run.player.devilFruitId;
-      CollectionService.discoverTechnique(next, fruitId, firstTechniqueId(fruitId));
+    if (action.type === "TECHNIQUE" && run.player.devilFruitId && action.abilityId) {
+      const unlockLine = DevilFruitCombatService.recordTechniqueUse(next, run, action.abilityId);
+      if (unlockLine) {
+        run.lastFeedback = unlockLine;
+      }
+      // Refresh abilities mid-fight when a new fruit skill unlocks / form-gated list changes.
+      run.combat.playerCombatant.abilities = getAbilitiesForPlayer(run.player);
+      run.combat.playerCombatant.stats = DevilFruitCombatService.effectiveStats(run.player);
     }
     syncCombatResources(run);
     // Leave finished combat mounted so the UI can play hit/defeat presentation first.
@@ -1192,6 +1289,7 @@ export const EncounterEngine = {
     if (!run.combat || run.combat.finished || run.combat.activeSide !== "ENEMY") {
       return next;
     }
+    CombatEngine.syncCaptainVitals(run.combat, run.player, run);
     run.combat = CombatEngine.resolveEnemyTurn(run.combat, rng, run);
     applyCombatHpFeedback(run);
     syncCombatResources(run);
@@ -1209,6 +1307,7 @@ export const EncounterEngine = {
     if (!run.combat || run.combat.finished) {
       return next;
     }
+    CombatEngine.syncCaptainVitals(run.combat, run.player, run);
     const item = run.player.inventory.find(
       (entry) => entry.id === itemId || entry.itemId === itemId,
     );
@@ -1230,6 +1329,49 @@ export const EncounterEngine = {
     return next;
   },
 
+  /** Confirm fighters (and optional wager) from pending battle setup, then start combat. */
+  confirmBattleSetup(
+    profile: ProfileSave,
+    participantIds: string[],
+    wager?: SparWager | null,
+    rng = createRng(requireRun(profile).seed),
+  ): ProfileSave {
+    const next = cloneProfile(profile);
+    const run = requireRun(next);
+    const setup = run.pendingBattleSetup;
+    if (!setup) {
+      return next;
+    }
+    const request = {
+      ...setup.request,
+      participantIds,
+      forcedParticipantIds: setup.forcedParticipantIds,
+      lockParticipants: true,
+      wager: wager ?? setup.wager ?? setup.request.wager ?? null,
+      requireSetup: false,
+    };
+    if (request.isFriendly && request.sparKey) {
+      const rematch = SparringService.canRematch(run, request.sparKey);
+      if (!rematch.ok) {
+        run.lastFeedback = rematch.reason;
+        return next;
+      }
+    }
+    run.pendingBattleSetup = null;
+    run.combat = CombatEngine.createFromRequest(run.player, request, rng, run);
+    refreshStats(next);
+    return next;
+  },
+
+  cancelBattleSetup(profile: ProfileSave): ProfileSave {
+    const next = cloneProfile(profile);
+    const run = requireRun(next);
+    run.pendingBattleSetup = null;
+    run.lastResultText = "You back away from the challenge.";
+    run.awaitingAdvance = true;
+    return next;
+  },
+
   /** Called after combat UI finishes hit/defeat presentation. */
   finishCombatPresentation(
     profile: ProfileSave,
@@ -1242,6 +1384,21 @@ export const EncounterEngine = {
     }
     concludeCombat(next, rng);
     refreshStats(next);
+    return next;
+  },
+
+  /** Repair captain max HP/MP if an older combat snapshot used current HP as max. */
+  syncCombatVitals(profile: ProfileSave): ProfileSave {
+    const next = cloneProfile(profile);
+    const run = next.activeRun;
+    if (!run?.combat || run.combat.finished) {
+      return next;
+    }
+    const before = run.combat.playerCombatant.maxHp;
+    CombatEngine.syncCaptainVitals(run.combat, run.player, run);
+    if (run.combat.playerCombatant.maxHp === before) {
+      return profile;
+    }
     return next;
   },
 

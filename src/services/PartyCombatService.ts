@@ -12,7 +12,15 @@ function livingEnemies(state: CombatState): CombatantState[] {
 }
 
 function applyDamage(target: CombatantState, amount: number): void {
-  target.hp = clamp(target.hp - amount, 0, target.maxHp);
+  const raw = target.hp - amount;
+  if (raw < 0) {
+    target.overkillDamage = (target.overkillDamage ?? 0) + Math.abs(raw);
+  }
+  target.hp = clamp(raw, 0, target.maxHp);
+  if (target.hp <= 0) {
+    target.condition = "KNOCKED_OUT";
+    target.defending = false;
+  }
 }
 
 function recordHit(
@@ -178,7 +186,10 @@ function tickStatusEffects(combatant: CombatantState): void {
 
 export const PartyCombatService = {
   allAllies(state: CombatState): CombatantState[] {
-    const allies = [state.playerCombatant];
+    const allies: CombatantState[] = [];
+    if (state.playerCombatant.participating !== false) {
+      allies.push(state.playerCombatant);
+    }
     if (state.party?.allyCombatants.length) {
       allies.push(...state.party.allyCombatants);
     }
@@ -186,7 +197,9 @@ export const PartyCombatService = {
   },
 
   livingAllies(state: CombatState): CombatantState[] {
-    return this.allAllies(state).filter((ally) => ally.hp > 0);
+    return this.allAllies(state).filter(
+      (ally) => ally.hp > 0 && ally.condition !== "KNOCKED_OUT",
+    );
   },
 
   anyAllyAlive(state: CombatState): boolean {

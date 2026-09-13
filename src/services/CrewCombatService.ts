@@ -131,28 +131,83 @@ export const CrewCombatService = {
     this.ensurePartyConfig(run);
   },
 
-  initCombatParty(run: RunState, combat: CombatState): CombatPartyState {
+  initCombatParty(
+    run: RunState,
+    combat: CombatState,
+    options?: {
+      participantIds?: string[];
+      forcedParticipantIds?: string[];
+      lockParticipants?: boolean;
+      maxAllies?: number;
+      maxPlayerFighters?: number;
+      allowCaptainSitOut?: boolean;
+    },
+  ): CombatPartyState {
     const config = this.ensurePartyConfig(run);
     const readyCrew = run.crew.filter((member) =>
       CharacterScheduleService.isAvailable(run, member.characterId),
     );
-    // Keep configured fighters who are still available; fill gaps from ready crew.
-    config.activeFighterIds = config.activeFighterIds
-      .filter((id) => readyCrew.some((member) => member.characterId === id))
-      .slice(0, MAX_ACTIVE_FIGHTERS);
-    for (const member of readyCrew) {
-      if (config.activeFighterIds.length >= MAX_ACTIVE_FIGHTERS) {
-        break;
+    const maxPlayerFighters = options?.maxPlayerFighters ?? (options?.maxAllies !== undefined ? options.maxAllies + 1 : 1 + MAX_ACTIVE_FIGHTERS);
+    const playerId = run.player.id;
+    const forced = options?.forcedParticipantIds ?? [];
+    const chosen = options?.participantIds ?? [];
+
+    let fighterIds: string[] = [];
+    let includeCaptain = true;
+
+    if (forced.length || chosen.length || options?.lockParticipants) {
+      const selected = [...new Set([...forced, ...chosen])];
+      includeCaptain = selected.includes(playerId);
+      if (!options?.allowCaptainSitOut && selected.length === 0) {
+        includeCaptain = true;
       }
-      if (!config.activeFighterIds.includes(member.characterId)) {
-        config.activeFighterIds.push(member.characterId);
+      if (selected.length === 0 && options?.lockParticipants) {
+        includeCaptain = true;
       }
+      const crewLimit = Math.max(0, includeCaptain ? maxPlayerFighters - 1 : maxPlayerFighters);
+      fighterIds = selected
+        .filter((id) => id !== playerId)
+        .filter((id) => readyCrew.some((member) => member.characterId === id) || forced.includes(id))
+        .slice(0, crewLimit);
+      if (!options?.lockParticipants) {
+        for (const member of readyCrew) {
+          if (fighterIds.length >= crewLimit) break;
+          if (!fighterIds.includes(member.characterId)) {
+            fighterIds.push(member.characterId);
+          }
+        }
+      }
+    } else {
+      const crewLimit = Math.max(0, maxPlayerFighters - 1);
+      config.activeFighterIds = config.activeFighterIds
+        .filter((id) => readyCrew.some((member) => member.characterId === id))
+        .slice(0, crewLimit);
+      for (const member of readyCrew) {
+        if (config.activeFighterIds.length >= crewLimit) {
+          break;
+        }
+        if (!config.activeFighterIds.includes(member.characterId)) {
+          config.activeFighterIds.push(member.characterId);
+        }
+      }
+      fighterIds = [...config.activeFighterIds];
+      includeCaptain = true;
     }
-    config.supportSlotIds = config.supportSlotIds.filter((id) =>
-      readyCrew.some((member) => member.characterId === id) &&
-      !config.activeFighterIds.includes(id),
-    );
-    if (config.supportSlotIds.length < MAX_SUPPORT_SLOTS) {
+
+    combat.playerCombatant.participating = includeCaptain;
+    if (!includeCaptain && combat.activeCombatantId === playerId) {
+      combat.activeCombatantId = fighterIds[0] ?? playerId;
+    }
+
+    config.activeFighterIds = fighterIds;
+    config.supportSlotIds = options?.lockParticipants
+      ? []
+      : config.supportSlotIds.filter(
+          (id) =>
+            readyCrew.some((member) => member.characterId === id) && !config.activeFighterIds.includes(id),
+        );
+
+    if (!options?.lockParticipants && config.supportSlotIds.length < MAX_SUPPORT_SLOTS) {
       const reserve = readyCrew
         .filter((member) => !config.activeFighterIds.includes(member.characterId))
         .map((member) => member.characterId);
@@ -165,10 +220,11 @@ export const CrewCombatService = {
         }
       }
     }
+
     this.ensurePartyConfig(run);
     const party: CombatPartyState = {
       activeFighterIds: [...config.activeFighterIds],
-      supportSlotIds: [...config.supportSlotIds],
+      supportSlotIds: options?.lockParticipants ? [] : [...config.supportSlotIds],
       allyCombatants: [],
       supportInterventionUsed: false,
       contributions: [
@@ -180,7 +236,7 @@ export const CrewCombatService = {
           damageTaken: 0,
           healingDone: 0,
           xpEarned: 0,
-          participation: "ACTIVE",
+          participation: includeCaptain ? "ACTIVE" : "CORE",
         },
       ],
     };
@@ -215,25 +271,27 @@ export const CrewCombatService = {
         statusEffects: [],
         abilities,
         level: member.progression?.level ?? 1,
+        participating: true,
       });
       contributionFor(party, characterId, character.name, "PLAYER", "ACTIVE");
     }
 
-    for (const characterId of config.supportSlotIds) {
-      const character = CharacterService.getCharacter(run, characterId);
-      if (character) {
-        contributionFor(party, characterId, character.name, "PLAYER", "SUPPORT");
-      }
-    }
-
-    for (const member of run.crew) {
-      if (
-        !config.activeFighterIds.includes(member.characterId) &&
-        !config.supportSlotIds.includes(member.characterId)
-      ) {
-        const character = CharacterService.getCharacter(run, member.characterId);
+    if (!options?.lockParticipants) {
+      for (const characterId of config.supportSlotIds) {
+        const character = CharacterService.getCharacter(run, characterId);
         if (character) {
-          contributionFor(party, member.characterId, character.name, "PLAYER", "CORE");
+          contributionFor(party, characterId, character.name, "PLAYER", "SUPPORT");
+        }
+      }
+      for (const member of run.crew) {
+        if (
+          !config.activeFighterIds.includes(member.characterId) &&
+          !config.supportSlotIds.includes(member.characterId)
+        ) {
+          const character = CharacterService.getCharacter(run, member.characterId);
+          if (character) {
+            contributionFor(party, member.characterId, character.name, "PLAYER", "CORE");
+          }
         }
       }
     }
@@ -391,7 +449,9 @@ export const CrewCombatService = {
   distributeXp(run: RunState, combat: CombatState, combatKind?: string): string {
     const party = combat.party;
     const base =
-      combatKind === "BOSS" || combatKind === "HIGH_RISK" ? XP_REWARDS.COMBAT_BOSS : XP_REWARDS.COMBAT_WIN;
+      combatKind === "BOSS" || combatKind === "HIGH_RISK" || combatKind === "ELITE"
+        ? XP_REWARDS.COMBAT_BOSS
+        : XP_REWARDS.COMBAT_WIN;
     if (!party) {
       return ProgressionService.grantCombatXp(run, combatKind);
     }

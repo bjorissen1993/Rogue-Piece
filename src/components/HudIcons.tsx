@@ -180,6 +180,7 @@ export const HUD_ART: Partial<Record<HudIconName, string>> = {
   pin: "/icons/region.png",
   coin: "/icons/money.png",
   pouch: "/icons/item.png",
+  fruit: "/icons/Devil_Fruit.png",
 };
 
 export const FACTION_ART: Record<RelationFactionId, string> = {
@@ -198,10 +199,12 @@ export function HudArt({
   src,
   size = 18,
   className = "",
+  fallbackSrc,
 }: {
   src: string;
   size?: number;
   className?: string;
+  fallbackSrc?: string;
 }) {
   return (
     <img
@@ -210,6 +213,13 @@ export function HudArt({
       className={["hud-art", "hud-icon", className].filter(Boolean).join(" ")}
       draggable={false}
       height={size}
+      onError={(event) => {
+        if (!fallbackSrc || event.currentTarget.dataset.fallbackApplied === "1") {
+          return;
+        }
+        event.currentTarget.dataset.fallbackApplied = "1";
+        event.currentTarget.src = fallbackSrc;
+      }}
       src={src}
       width={size}
     />

@@ -11,15 +11,27 @@ import { PlayerHud } from "../components/PlayerHud";
 import { RunBar } from "../components/RunBar";
 import { TimeDetailOverlay } from "../components/TimeDetailOverlay";
 import { WorldNewsStrip } from "../components/WorldNewsStrip";
+import { BattleSetupOverlay } from "../components/BattleSetupOverlay";
+import { WeaponShopOverlay } from "../components/WeaponShopOverlay";
+import { WeaponShopService } from "../services/WeaponShopService";
 import { LevelUpOverlay } from "../components/LevelUpOverlay";
 import { LootDispositionModal, peekLootDisposition } from "../components/LootDispositionModal";
 import { TechniqueOpportunityOverlay } from "../components/TechniqueOpportunityOverlay";
+import { BottomSheet } from "../components/mobile/BottomSheet";
+import { MobileBottomNav, type MobileNavId } from "../components/mobile/MobileBottomNav";
+import { MobileVitalsStrip } from "../components/mobile/MobileVitalsStrip";
+import { OverlayFrame } from "../components/OverlayFrame";
 import { ProgressionService } from "../services/ProgressionService";
 import { IslandService } from "../services/IslandService";
 import { EncounterEngine } from "../services/EncounterEngine";
 import { AffiliationService } from "../services/AffiliationService";
+import { DevilFruitCombatService } from "../services/DevilFruitCombatService";
 import { interpolate } from "../utils/text";
 import { useGameStore } from "../stores/GameStore";
+import { useIsMobile } from "../hooks/useMediaQuery";
+import type { ZoanFormId } from "../models/types";
+import { relativeDayLabel } from "../utils/presentation";
+import { HudArt, HudIcon, newsArtSrc, newsGlyphName } from "../components/HudIcons";
 
 export function GamePage() {
   const {
@@ -32,6 +44,13 @@ export function GamePage() {
     dismissAssignmentResults,
     dismissBattleResult,
     finishCombatPresentation,
+    syncCombatVitals,
+    ensureWeaponShop,
+    buyWeaponShopListing,
+    sellWeaponShopOwned,
+    refreshWeaponShop,
+    confirmBattleSetup,
+    cancelBattleSetup,
     combatAction,
     resolveEnemyTurn,
     useCombatItem,
@@ -43,6 +62,9 @@ export function GamePage() {
     resolveLootAssign,
     assignStashWeapon,
     assignStashFruit,
+    equipWeapon,
+    unequipWeapon,
+    setZoanForm,
     dismissFeedback,
     returnToProfileMenu,
     requestResetDev,
@@ -69,6 +91,8 @@ export function GamePage() {
     debugGiveDriedMeat,
     debugGiveMedicine,
     debugOpenFoodShop,
+    debugOpenWeaponShop,
+    debugRefreshWeaponShop,
     debugOpenClinic,
     debugGenerateSupplySearch,
     debugGenerateTraining,
@@ -90,6 +114,17 @@ export function GamePage() {
     debugSpawnFourEnemyFight,
     debugSpawnBossFight,
     debugSpawnBossAddsFight,
+    debugSpawnSeaKing,
+    debugSpawnDuel,
+    debugSpawnSkirmish,
+    debugSpawnFriendlySpar,
+    debugLegacyAdvanceYear,
+    debugLegacyAdvanceDecade,
+    debugLegacyPromoteCrew,
+    debugLegacyGenerateChild,
+    debugLegacyGenerateApprentice,
+    debugLegacyInspect,
+    debugLegacyForceEncounter,
     debugSetDay,
     debugShowDifficulty,
     debugShowInitiative,
@@ -133,6 +168,12 @@ export function GamePage() {
   } = useGameStore();
   const [inventoryFocusId, setInventoryFocusId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [mobileNav, setMobileNav] = useState<MobileNavId>("game");
+  const [characterSheetOpen, setCharacterSheetOpen] = useState(false);
+  const [factionsSheetOpen, setFactionsSheetOpen] = useState(false);
+  const [newsArchiveOpen, setNewsArchiveOpen] = useState(false);
+  const [moreSheetOpen, setMoreSheetOpen] = useState(false);
+  const isMobile = useIsMobile();
   const run = profile?.activeRun;
   const lastFeedback = run?.lastFeedback ?? null;
   const lastHpChange = run?.lastHpChange ?? null;
@@ -150,6 +191,22 @@ export function GamePage() {
       window.clearTimeout(clear);
     };
   }, [dismissFeedback, lastFeedback, lastHpChange, playerHp]);
+
+  useEffect(() => {
+    if (!run?.combat || run.combat.finished) {
+      return;
+    }
+    if (run.combat.playerCombatant.maxHp === run.player.maxHp) {
+      return;
+    }
+    syncCombatVitals();
+  }, [run?.combat, run?.player.maxHp, run?.player.hp, syncCombatVitals]);
+
+  useEffect(() => {
+    if (run?.currentEncounterId === "weapon_smith" && !run.awaitingAdvance) {
+      ensureWeaponShop();
+    }
+  }, [run?.currentEncounterId, run?.awaitingAdvance, run?.currentIslandId, run?.day, ensureWeaponShop]);
 
   if (!profile || !run) {
     return null;
@@ -180,59 +237,285 @@ export function GamePage() {
   const standaloneQueueIndex =
     standaloneQueueTotal > 1 ? standaloneQueueTotal - pendingLevelUpCount + 1 : undefined;
 
+  const weaponShopStock = (() => {
+    if (encounter?.id !== "weapon_smith" || resultText) return null;
+    const theme = island?.weaponShopTheme;
+    if (theme) {
+      return WeaponShopService.getStock(run, WeaponShopService.shopKey(run.currentIslandId, theme));
+    }
+    const shops = Object.values(run.weaponShops ?? {});
+    return shops.find((entry) => run.day < entry.refreshOnDay) ?? shops[0] ?? null;
+  })();
+
   return (
-    <div className="game-shell">
-      <RunBar
-        isDev={isDev}
-        onMenu={() => openOverlay("gameMenu")}
-        onOpenTime={() => openOverlay("time")}
-        run={run}
-      />
-      <PlayerHud
-        onCrew={() => openOverlay("crew")}
-        onInventory={(itemId) => {
-          setInventoryFocusId(itemId ?? null);
-          openOverlay("inventory");
-        }}
-        run={run}
-      />
-      <main className="game-main">
-        {run.combat ? (
-          <CombatView
-            combat={run.combat}
-            items={run.player.inventory}
-            onAction={(type, abilityId, targetId, targetIds) => combatAction({ type, abilityId, targetId, targetIds })}
-            onFinishPresentation={finishCombatPresentation}
-            onResolveEnemyTurn={resolveEnemyTurn}
-            onUseItem={useCombatItem}
+    <div className={`game-shell ${isMobile ? "is-mobile" : ""}`}>
+        <RunBar
+          compact={isMobile}
+          isDev={isDev}
+          onMenu={() => openOverlay("gameMenu")}
+          onOpenTime={() => openOverlay("time")}
+          run={run}
+        />
+        {isMobile ? (
+          <MobileVitalsStrip
+            onOpenCharacter={() => {
+              setMobileNav("game");
+              setCharacterSheetOpen(true);
+            }}
+            run={run}
           />
         ) : (
-          <EncounterView
-            backgroundContext={{
-              timeOfDay: run.timeOfDay,
-              weather: run.currentWeather ?? "CLEAR",
-              islandType: island?.archetype,
-              biome: island?.biome,
-              dangerLevel: island?.dangerLevel,
+          <PlayerHud
+            onCrew={() => openOverlay("crew")}
+            onInventory={(itemId) => {
+              setInventoryFocusId(itemId ?? null);
+              openOverlay("inventory");
             }}
-            choices={choices}
-            description={description}
-            encounter={encounter}
-            gameOver={run.gameOver}
-            isDev={isDev}
-            lockReasons={lockReasons}
-            onChoose={choose}
-            onContinue={continueResult}
-            player={run.player}
-            resultText={resultText}
             run={run}
-            timeOfDay={run.timeOfDay}
           />
         )}
-      </main>
-      <FactionTubes run={run} />
-      <WorldNewsStrip run={run} />
-      {toast ? <p className="feedback-toast">{toast}</p> : null}
+        <main className="game-main">
+          {run.combat ? (
+            <CombatView
+              combat={run.combat}
+              currentZoanForm={run.player.zoanForm ?? "HUMAN"}
+              items={run.player.inventory}
+              onAction={(type, abilityId, targetId, targetIds) =>
+                combatAction({ type, abilityId, targetId, targetIds })
+              }
+              onFinishPresentation={finishCombatPresentation}
+              onResolveEnemyTurn={resolveEnemyTurn}
+              onSetZoanForm={(formId) => setZoanForm(formId as ZoanFormId)}
+              onUseItem={useCombatItem}
+              zoanForms={
+                DevilFruitCombatService.isZoan(run.player.devilFruitId)
+                  ? DevilFruitCombatService.availableForms(run.player.devilFruitId).map((form) => ({
+                      id: form.id,
+                      label: form.label,
+                      description: form.description,
+                    }))
+                  : undefined
+              }
+            />
+          ) : run.pendingBattleSetup ? (
+            <BattleSetupOverlay
+              onCancel={cancelBattleSetup}
+              onConfirm={confirmBattleSetup}
+              run={run}
+              setup={run.pendingBattleSetup}
+            />
+          ) : (
+            <EncounterView
+              backgroundContext={{
+                timeOfDay: run.timeOfDay,
+                weather: run.currentWeather ?? "CLEAR",
+                islandType: island?.archetype,
+                biome: island?.biome,
+                dangerLevel: island?.dangerLevel,
+              }}
+              choices={choices}
+              description={description}
+              encounter={encounter}
+              gameOver={run.gameOver}
+              isDev={isDev}
+              lockReasons={lockReasons}
+              onChoose={choose}
+              onContinue={continueResult}
+              player={run.player}
+              resultText={resultText}
+              run={run}
+              timeOfDay={run.timeOfDay}
+            />
+          )}
+        </main>
+        {!isMobile ? <FactionTubes run={run} /> : null}
+        {!isMobile ? <WorldNewsStrip run={run} /> : null}
+        {isMobile ? (
+          <MobileBottomNav
+            active={mobileNav}
+            hidden={Boolean(run.combat)}
+            onSelect={(id) => {
+              setMobileNav(id);
+              setCharacterSheetOpen(false);
+              setFactionsSheetOpen(false);
+              setMoreSheetOpen(false);
+              if (id === "game") {
+                return;
+              }
+              if (id === "crew") {
+                openOverlay("crew");
+                return;
+              }
+              if (id === "bag") {
+                setInventoryFocusId(null);
+                openOverlay("inventory");
+                return;
+              }
+              if (id === "factions") {
+                setFactionsSheetOpen(true);
+                return;
+              }
+              if (id === "more") {
+                setMoreSheetOpen(true);
+              }
+            }}
+          />
+        ) : null}
+        {toast ? <p className="feedback-toast">{toast}</p> : null}
+
+      {isMobile ? (
+        <BottomSheet
+          eyebrow="CAPTAIN"
+          onClose={() => setCharacterSheetOpen(false)}
+          open={characterSheetOpen}
+          size="tall"
+          title={run.player.name}
+        >
+          <PlayerHud
+            onCrew={() => {
+              setCharacterSheetOpen(false);
+              openOverlay("crew");
+            }}
+            onInventory={(itemId) => {
+              setCharacterSheetOpen(false);
+              setInventoryFocusId(itemId ?? null);
+              openOverlay("inventory");
+            }}
+            run={run}
+          />
+        </BottomSheet>
+      ) : null}
+
+      {isMobile ? (
+        <BottomSheet
+          eyebrow="STANDING"
+          onClose={() => {
+            setFactionsSheetOpen(false);
+            setMobileNav("game");
+          }}
+          open={factionsSheetOpen}
+          size="tall"
+          title="Factions"
+        >
+          <FactionTubes run={run} />
+        </BottomSheet>
+      ) : null}
+
+      {isMobile ? (
+        <BottomSheet
+          eyebrow="SHIP"
+          onClose={() => {
+            setMoreSheetOpen(false);
+            setMobileNav("game");
+          }}
+          open={moreSheetOpen}
+          title="More"
+        >
+          <div className="mobile-more-list">
+            <button
+              className="choice-btn"
+              onClick={() => {
+                setMoreSheetOpen(false);
+                openOverlay("time");
+              }}
+              type="button"
+            >
+              Day &amp; Schedule
+            </button>
+            <button
+              className="choice-btn"
+              onClick={() => {
+                setMoreSheetOpen(false);
+                setNewsArchiveOpen(true);
+              }}
+              type="button"
+            >
+              World News
+            </button>
+            <button
+              className="choice-btn"
+              onClick={() => {
+                setMoreSheetOpen(false);
+                setCharacterSheetOpen(true);
+              }}
+              type="button"
+            >
+              Character Sheet
+            </button>
+            <button
+              className="choice-btn"
+              onClick={() => {
+                setMoreSheetOpen(false);
+                openOverlay("gameMenu");
+              }}
+              type="button"
+            >
+              Menu
+            </button>
+            {isDev ? (
+              <button
+                className="ghost-btn"
+                onClick={() => {
+                  setMoreSheetOpen(false);
+                  openOverlay("debug");
+                }}
+                type="button"
+              >
+                Dev Tools
+              </button>
+            ) : null}
+          </div>
+        </BottomSheet>
+      ) : null}
+
+      {isMobile && newsArchiveOpen ? (
+        <OverlayFrame eyebrow="TIDINGS" onClose={() => setNewsArchiveOpen(false)} title="World News">
+          <div className="overlay-scroll news-archive">
+            {[...run.world.history].reverse().length === 0 ? (
+              <p className="text-parchment-dim">The sea has not written anything yet.</p>
+            ) : (
+              <ul>
+                {[...run.world.history].reverse().map((event) => {
+                  const art = newsArtSrc(event.text);
+                  return (
+                    <li key={event.id}>
+                      {art ? (
+                        <HudArt size={18} src={art} />
+                      ) : (
+                        <HudIcon name={newsGlyphName(event.text)} size={18} />
+                      )}
+                      <div>
+                        <p>{event.text}</p>
+                        <time>{relativeDayLabel(event.day, run.day)}</time>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </OverlayFrame>
+      ) : null}
+
+      {encounter?.id === "weapon_smith" && !resultText ? (
+        weaponShopStock ? (
+          <WeaponShopOverlay
+            isDev={isDev}
+            onBuy={buyWeaponShopListing}
+            onLeave={() => choose("leave")}
+            onRefresh={() => refreshWeaponShop()}
+            onSell={sellWeaponShopOwned}
+            run={run}
+            stock={weaponShopStock}
+          />
+        ) : (
+          <div className="overlay-scrim">
+            <section className="overlay-panel overlay-panel-narrow">
+              <p className="weapon-shop-empty">The shopkeep is still setting out the racks…</p>
+            </section>
+          </div>
+        )
+      ) : null}
 
       {run.pendingBattleResult ? (
         <BattleResultFlow
@@ -264,6 +547,9 @@ export function GamePage() {
               </button>
               <button className="choice-btn" onClick={() => openOverlay("statistics")} type="button">
                 Statistics
+              </button>
+              <button className="choice-btn" onClick={() => openOverlay("settings")} type="button">
+                Settings
               </button>
               {isDev ? (
                 <>
@@ -298,7 +584,9 @@ export function GamePage() {
           initialSelectedId={inventoryFocusId}
           key={inventoryFocusId ?? "backpack"}
           onClose={closeOverlay}
+          onEquipWeapon={equipWeapon}
           onFruitAction={fruitInventoryAction}
+          onUnequipWeapon={unequipWeapon}
           onUse={(itemId) => {
             useInventoryItem(itemId);
           }}
@@ -392,6 +680,8 @@ export function GamePage() {
           onGiveDriedMeat={debugGiveDriedMeat}
           onGiveMedicineItem={debugGiveMedicine}
           onOpenFoodShop={debugOpenFoodShop}
+          onOpenWeaponShop={debugOpenWeaponShop}
+          onRefreshWeaponShop={debugRefreshWeaponShop}
           onOpenClinic={debugOpenClinic}
           onGenerateSupplySearch={debugGenerateSupplySearch}
           onGenerateTraining={debugGenerateTraining}
@@ -413,6 +703,17 @@ export function GamePage() {
           onSpawnFourEnemyFight={debugSpawnFourEnemyFight}
           onSpawnBossFight={debugSpawnBossFight}
           onSpawnBossAddsFight={debugSpawnBossAddsFight}
+          onSpawnSeaKing={debugSpawnSeaKing}
+          onSpawnDuel={debugSpawnDuel}
+          onSpawnSkirmish={debugSpawnSkirmish}
+          onSpawnFriendlySpar={debugSpawnFriendlySpar}
+          onLegacyAdvanceYear={debugLegacyAdvanceYear}
+          onLegacyAdvanceDecade={debugLegacyAdvanceDecade}
+          onLegacyPromoteCrew={debugLegacyPromoteCrew}
+          onLegacyGenerateChild={debugLegacyGenerateChild}
+          onLegacyGenerateApprentice={debugLegacyGenerateApprentice}
+          onLegacyInspect={debugLegacyInspect}
+          onLegacyForceEncounter={debugLegacyForceEncounter}
           onSetDay={debugSetDay}
           onShowDifficulty={debugShowDifficulty}
           onShowInitiative={debugShowInitiative}

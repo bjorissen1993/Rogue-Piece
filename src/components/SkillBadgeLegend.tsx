@@ -3,6 +3,7 @@ import type { SkillBadgeId } from "../models/types";
 import { SkillBadgeIcon } from "./SkillBadgeRow";
 
 const LEGEND_ORDER: SkillBadgeId[] = [
+  "DEVIL_FRUIT",
   "SINGLE_TARGET",
   "MULTI_TARGET",
   "ALL_TARGETS",

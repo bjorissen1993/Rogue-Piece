@@ -3,6 +3,7 @@ import type { DevilFruit, DevilFruitAction, DevilFruitWorldState, RunState } fro
 import { createId } from "../utils/ids";
 import { applyStatChanges } from "../utils/stats";
 import type { RandomService } from "./RandomService";
+import { DevilFruitCombatService } from "./DevilFruitCombatService";
 import { LootDispositionService } from "./LootDispositionService";
 
 function fruitState(state: RunState, fruitId: string): DevilFruitWorldState | undefined {
@@ -95,6 +96,7 @@ export const DevilFruitService = {
         return stats;
       }, {}),
     );
+    DevilFruitCombatService.grantStarters(state.player, fruitId);
     state.player.inventory = state.player.inventory.filter((item) => item.fruitId !== fruitId);
     entry.status = "PLAYER_USED";
     entry.ownerCharacterId = state.player.id;

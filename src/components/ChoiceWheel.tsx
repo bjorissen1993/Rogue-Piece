@@ -5,7 +5,14 @@ import { SkillBadgeRow } from "./SkillBadgeRow";
 export const CHOICE_WHEEL_ICON_SIZE = 200;
 const WHEEL_STEP_REM = 8.5;
 const WHEEL_SIDE_SCALE = 0.74;
-const WHEEL_ANIM_MS = 240;
+/** Arc radius for the combat side wheel (rem). */
+const WHEEL_ARC_RADIUS_REM = 7.6;
+/** Radians between focus and a side slot on the arc. */
+const WHEEL_ARC_SPREAD = 1.18;
+/** Shift the whole arc toward the right wall (rem). */
+const WHEEL_ARC_WALL_NUDGE = 4.6;
+const WHEEL_VERTICAL_SIDE_SCALE = 0.7;
+const WHEEL_ANIM_MS = 280;
 
 export type ChoiceWheelOption = {
   id: string;
@@ -26,11 +33,23 @@ function wrapIndex(index: number, length: number): number {
   return ((index % length) + length) % length;
 }
 
-function bridgeOffsets(count: number): number[] {
+function bridgeOffsets(count: number, vertical: boolean): number[] {
   if (count <= 1) {
     return [0];
   }
+  // Vertical combat wheel: exactly 3 visible slots (prev / focus / next).
+  if (vertical) {
+    return [-1, 0, 1];
+  }
   return [-2, -1, 0, 1, 2];
+}
+
+function arcPoint(visual: number): { x: number; y: number } {
+  const angle = Math.PI + visual * WHEEL_ARC_SPREAD;
+  return {
+    x: Math.cos(angle) * WHEEL_ARC_RADIUS_REM + WHEEL_ARC_WALL_NUDGE,
+    y: -Math.sin(angle) * WHEEL_ARC_RADIUS_REM,
+  };
 }
 
 type ChoiceWheelProps = {
@@ -39,8 +58,12 @@ type ChoiceWheelProps = {
   onFocusChange: (option: ChoiceWheelOption | null) => void;
   disabled?: boolean;
   className?: string;
-  /** Horizontal spacing between wheel slots (rem). */
+  /** Spacing between wheel slots (rem). */
   stepRem?: number;
+  /** Horizontal = left/right carousel. Vertical = top/bottom (combat side rail). */
+  orientation?: "horizontal" | "vertical";
+  /** When false, badges are rendered by the parent (e.g. above skill text). */
+  showBadges?: boolean;
 };
 
 export function ChoiceWheel({
@@ -49,7 +72,9 @@ export function ChoiceWheel({
   onFocusChange,
   disabled,
   className = "",
-  stepRem = WHEEL_STEP_REM,
+  stepRem,
+  orientation = "horizontal",
+  showBadges = true,
 }: ChoiceWheelProps) {
   const [focus, setFocus] = useState(0);
   const [motion, setMotion] = useState(0);
@@ -57,6 +82,8 @@ export function ChoiceWheel({
   const locked = useRef(false);
   const wheelLock = useRef(0);
   const multi = options.length > 1;
+  const vertical = orientation === "vertical";
+  const slotStep = stepRem ?? WHEEL_STEP_REM;
 
   useEffect(() => {
     setFocus(0);
@@ -87,15 +114,14 @@ export function ChoiceWheel({
     const dir = delta > 0 ? 1 : -1;
     setMotion(dir);
     window.setTimeout(() => {
+      // Snap without transition so the focus slot does not animate back to center.
       setInstant(true);
       setFocus((current) => wrapIndex(current + dir, options.length));
       setMotion(0);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setInstant(false);
-          locked.current = false;
-        });
-      });
+      window.setTimeout(() => {
+        setInstant(false);
+        locked.current = false;
+      }, 40);
     }, WHEEL_ANIM_MS);
   };
 
@@ -105,21 +131,37 @@ export function ChoiceWheel({
       return;
     }
     const now = Date.now();
-    if (now - wheelLock.current < WHEEL_ANIM_MS) {
+    if (now - wheelLock.current < WHEEL_ANIM_MS + 40) {
       return;
     }
     wheelLock.current = now;
     rotate(event.deltaY > 0 ? 1 : -1);
   };
 
-  const offsets = bridgeOffsets(options.length);
+  const offsets = bridgeOffsets(options.length, vertical);
+  const focusedOption = options[wrapIndex(focus, options.length)];
+  const pocket = arcPoint(0);
+  // Fixed pocket: confirm stays left of the active slot and does not travel with the arc.
+  const selectPos = { x: pocket.x - 5.85, y: pocket.y };
 
   return (
     <div
-      className={`combat-choice-wheel-wrap ${multi ? "has-arrows" : "is-single"} ${className}`.trim()}
+      className={`combat-choice-wheel-wrap ${multi ? "has-arrows" : "is-single"} ${vertical ? "is-vertical" : "is-horizontal"} ${className}`.trim()}
     >
+      {showBadges ? (
+        focusedOption?.badges?.length ? (
+          <SkillBadgeRow
+            badges={focusedOption.badges}
+            className="combat-wheel-badges"
+            layout="row"
+            size={52}
+          />
+        ) : (
+          <div aria-hidden="true" className="combat-wheel-badges is-spacer" />
+        )
+      ) : null}
       <div className="combat-choice-wheel-row">
-        {multi ? (
+        {multi && !vertical ? (
           <button
             aria-label="Previous choice"
             className="combat-wheel-arrow"
@@ -131,17 +173,104 @@ export function ChoiceWheel({
           </button>
         ) : null}
         <div className="combat-choice-wheel" onWheel={onWheel}>
+          {vertical && multi ? (
+            <button
+              aria-label="Previous choice"
+              className="combat-wheel-arrow combat-wheel-arrow-prev"
+              disabled={disabled || locked.current}
+              onClick={() => rotate(-1)}
+              type="button"
+            >
+              ▴
+            </button>
+          ) : null}
+          {vertical ? (
+            <button
+              aria-label="Confirm choice"
+              className={`combat-wheel-select-btn ${instant || motion !== 0 ? "is-busy" : ""}`}
+              disabled={disabled || !focusedOption || focusedOption.disabled || motion !== 0}
+              onClick={() => {
+                if (focusedOption && !focusedOption.disabled) {
+                  focusedOption.onConfirm();
+                }
+              }}
+              style={{
+                transform: `translate(${selectPos.x}rem, ${selectPos.y}rem) translate(-50%, -50%)`,
+              }}
+              type="button"
+            >
+              ‹
+            </button>
+          ) : null}
           {offsets.map((offset) => {
             const option = options[wrapIndex(focus + offset, options.length)];
             const visual = offset - motion;
             const isFocus = Math.abs(visual) < 0.01;
             const absVisual = Math.abs(visual);
-            const scale = isFocus ? 1 : absVisual >= 1.5 ? 0.62 : WHEEL_SIDE_SCALE;
-            const opacity = isFocus ? 1 : absVisual >= 1.5 ? 0.4 : 0.78;
-            const y = isFocus ? 0.45 : 0.95;
+            const scale = vertical
+              ? isFocus
+                ? 1
+                : WHEEL_VERTICAL_SIDE_SCALE
+              : isFocus
+                ? 1
+                : absVisual >= 1.5
+                  ? 0.62
+                  : WHEEL_SIDE_SCALE;
+            const opacity = vertical
+              ? absVisual >= 1.35
+                ? 0
+                : Math.max(0.28, 1 - absVisual * 0.32)
+              : isFocus
+                ? 1
+                : absVisual >= 1.5
+                  ? 0.4
+                  : 0.78;
+            const drift = vertical ? 0 : isFocus ? 0.45 : 0.95;
+            const point = arcPoint(visual);
+            const transform = vertical
+              ? `translate(${point.x}rem, ${point.y}rem) translate(-50%, -50%) scale(${scale})`
+              : `translateX(${visual * slotStep}rem) translateY(${drift}rem) scale(${scale})`;
+            const optionClass = `combat-wheel-option ${isFocus ? "is-focus" : ""} ${instant ? "is-instant" : ""} ${option.disabled ? "is-disabled" : ""} ${option.selected ? "is-picked" : ""} ${vertical && !isFocus ? "is-side-only" : ""}`;
+            const optionStyle = {
+              transform,
+              opacity,
+              zIndex: isFocus ? 12 : Math.max(1, 8 - Math.round(absVisual)),
+              cursor: "pointer" as const,
+            };
+
+            if (vertical) {
+              return (
+                <div className={optionClass} key={`slot-${offset}`} style={optionStyle}>
+                  <button
+                    className="combat-wheel-hit"
+                    disabled={disabled}
+                    onClick={() => {
+                      if (!isFocus) {
+                        rotate(visual < 0 ? -1 : 1);
+                        return;
+                      }
+                      if (!option.disabled) {
+                        option.onConfirm();
+                      }
+                    }}
+                    tabIndex={isFocus ? 0 : -1}
+                    type="button"
+                  >
+                    <span className="combat-wheel-icon">{option.icon}</span>
+                    {isFocus ? (
+                      <span className="combat-wheel-meta">
+                        <span className="combat-wheel-label">{option.title}</span>
+                        <span className="combat-wheel-cost">{option.costLabel}</span>
+                      </span>
+                    ) : null}
+                  </button>
+                </div>
+              );
+            }
+
             return (
               <button
-                className={`combat-wheel-option ${isFocus ? "is-focus" : ""} ${instant ? "is-instant" : ""} ${option.disabled ? "is-disabled" : ""} ${option.selected ? "is-picked" : ""}`}
+                className={optionClass}
                 disabled={disabled}
                 key={`slot-${offset}`}
                 onClick={() => {
@@ -153,33 +282,29 @@ export function ChoiceWheel({
                     option.onConfirm();
                   }
                 }}
-                style={{
-                  transform: `translateX(${visual * stepRem}rem) translateY(${y}rem) scale(${scale})`,
-                  opacity,
-                  zIndex: isFocus ? 12 : Math.max(1, 8 - Math.round(absVisual)),
-                  cursor: "pointer",
-                }}
+                style={optionStyle}
                 tabIndex={isFocus ? 0 : -1}
                 type="button"
               >
-                <span className="combat-wheel-icon">
-                  {option.icon}
-                </span>
+                <span className="combat-wheel-icon">{option.icon}</span>
                 <span className="combat-wheel-label">{option.title}</span>
                 {isFocus ? <span className="combat-wheel-cost">{option.costLabel}</span> : null}
-                {isFocus && option.badges?.length ? (
-                  <SkillBadgeRow
-                    badges={option.badges}
-                    className="combat-wheel-badges"
-                    layout="column"
-                    size={60}
-                  />
-                ) : null}
               </button>
             );
           })}
+          {vertical && multi ? (
+            <button
+              aria-label="Next choice"
+              className="combat-wheel-arrow combat-wheel-arrow-next"
+              disabled={disabled || locked.current}
+              onClick={() => rotate(1)}
+              type="button"
+            >
+              ▾
+            </button>
+          ) : null}
         </div>
-        {multi ? (
+        {multi && !vertical ? (
           <button
             aria-label="Next choice"
             className="combat-wheel-arrow"

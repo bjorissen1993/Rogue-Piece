@@ -291,7 +291,9 @@ export const ProgressionService = {
 
   grantCombatXp(run: RunState, combatKind?: string): string {
     const amount =
-      combatKind === "BOSS" || combatKind === "HIGH_RISK" ? XP_REWARDS.COMBAT_BOSS : XP_REWARDS.COMBAT_WIN;
+      combatKind === "BOSS" || combatKind === "HIGH_RISK" || combatKind === "ELITE"
+        ? XP_REWARDS.COMBAT_BOSS
+        : XP_REWARDS.COMBAT_WIN;
     const result = this.grantExperience(run, "player", amount, "combat victory");
     for (const member of run.crew) {
       this.grantExperience(run, member.characterId, Math.round(amount * 0.6), "combat victory");

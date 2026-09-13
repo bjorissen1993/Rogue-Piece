@@ -1,4 +1,5 @@
 import type { Ability, Player, RunState } from "../models/types";
+import { DevilFruitCombatService } from "../services/DevilFruitCombatService";
 import { WeaponService } from "../services/WeaponService";
 import { getRace } from "./races";
 
@@ -12,6 +13,7 @@ export const ABILITIES: Ability[] = [
     scalingStat: "strength",
     accuracyMod: -2,
     tags: ["MELEE", "SINGLE"],
+    requiredWeaponTypes: ["SWORD", "SPEAR", "CLUB", "FISTS", "KICKS"],
   },
   {
     id: "fishman_karate",
@@ -52,6 +54,8 @@ export const ABILITIES: Ability[] = [
     accuracyMod: -4,
     mpCost: 8,
     tags: ["MELEE", "AOE"],
+    devilFruitSkill: true,
+    badges: [{ id: "DEVIL_FRUIT", tip: "Devil Fruit technique." }],
   },
 ];
 
@@ -61,9 +65,11 @@ export function getAbility(id: string): Ability | undefined {
 
 export function getAbilitiesForPlayer(player: Player): Ability[] {
   const list: Ability[] = [];
-  const focused = getAbility("focused_strike");
-  if (focused) {
-    list.push(focused);
+  if (WeaponService.canUseBasicMelee(player)) {
+    const focused = getAbility("focused_strike");
+    if (focused) {
+      list.push(focused);
+    }
   }
   for (const weaponAbility of WeaponService.techniquesForPlayer(player)) {
     if (!list.some((entry) => entry.id === weaponAbility.id)) {
@@ -77,9 +83,15 @@ export function getAbilitiesForPlayer(player: Player): Ability[] {
       list.push(ability);
     }
   }
+  for (const fruitAbility of DevilFruitCombatService.abilitiesForPlayer(player)) {
+    if (!list.some((entry) => entry.id === fruitAbility.id)) {
+      list.push(fruitAbility);
+    }
+  }
+  // Keep a generic burst as a last-resort DF option once the fruit is eaten.
   if (player.devilFruitId) {
     const burst = getAbility("fruit_burst");
-    if (burst) {
+    if (burst && !list.some((entry) => entry.id === burst.id)) {
       list.push(burst);
     }
   }
@@ -88,9 +100,11 @@ export function getAbilitiesForPlayer(player: Player): Ability[] {
 
 export function getAbilitiesForCrewmember(run: RunState, characterId: string): Ability[] {
   const list: Ability[] = [];
-  const focused = getAbility("focused_strike");
-  if (focused) {
-    list.push(focused);
+  if (WeaponService.canUseBasicMeleeForCharacter(run, characterId)) {
+    const focused = getAbility("focused_strike");
+    if (focused) {
+      list.push(focused);
+    }
   }
   for (const weaponAbility of WeaponService.techniquesForCharacter(run, characterId)) {
     if (!list.some((entry) => entry.id === weaponAbility.id)) {

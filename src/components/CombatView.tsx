@@ -10,6 +10,7 @@ import { CombatPreviewService } from "../services/CombatPreviewService";
 import { ItemService } from "../services/ItemService";
 import { MpService } from "../services/MpService";
 import { PartyCombatService } from "../services/PartyCombatService";
+import { battleFormatLabel } from "../services/EncounterCompositionService";
 import {
   TargetResolutionService,
   abilityNeedsManualTarget,
@@ -21,6 +22,7 @@ import { HpBar } from "./HpBar";
 import { ResourceBar } from "./ResourceBar";
 import { ActionIcon } from "./StatIcon";
 import { ChoiceWheel, CHOICE_WHEEL_ICON_SIZE, type ChoiceWheelOption } from "./ChoiceWheel";
+import { SkillBadgeRow } from "./SkillBadgeRow";
 import { resolveSkillBadges, skillBadgeTip, SKILL_BADGE_CATALOG } from "../game/skillBadges";
 
 const ACTION_ICON_SIZE = 190;
@@ -43,6 +45,9 @@ type CombatViewProps = {
   onUseItem: (itemId: string) => void;
   onResolveEnemyTurn: () => void;
   onFinishPresentation: () => void;
+  zoanForms?: Array<{ id: string; label: string; description: string }>;
+  currentZoanForm?: string | null;
+  onSetZoanForm?: (formId: string) => void;
 };
 
 type Floater = CombatHit & { key: string };
@@ -76,6 +81,7 @@ function CombatantCard({
   combatant,
   floaters,
   beatFlash,
+  fallPending = false,
   isActive,
   isCaptain,
   position,
@@ -90,6 +96,8 @@ function CombatantCard({
   combatant: CombatantState;
   floaters: Floater[];
   beatFlash?: "HIT" | "MISS" | "HEAL" | "BLOCK" | "DEFEAT" | null;
+  /** True while a fall beat is still queued/playing — keep upright until then. */
+  fallPending?: boolean;
   isActive: boolean;
   isCaptain?: boolean;
   position?: number;
@@ -112,6 +120,8 @@ function CombatantCard({
   const defeatFlash = beatFlash === "DEFEAT";
   const blockFlash = beatFlash === "BLOCK";
   const isDown = combatant.hp <= 0;
+  // Hit → fall anim → persistent KO. Don't gray/tilt until the fall has played.
+  const showDown = isDown && !defeatFlash && !fallPending;
   const isEnemy = combatant.side === "ENEMY";
   const roleClass = isEnemy ? "is-enemy" : isCaptain ? "is-captain" : "is-crewmate";
 
@@ -174,11 +184,13 @@ function CombatantCard({
       }}
     >
       <button
-        className={`battler-card panel combat-party-card is-compact combat-unit ${isActive ? "is-active-turn" : ""} ${roleClass} ${isDown ? "is-down" : ""} ${hit ? "is-hit" : ""} ${heal ? "is-heal" : ""} ${miss ? "is-dodge" : ""} ${blockFlash ? "is-block" : ""} ${defeatFlash ? "is-defeat" : ""} ${facing === "down" ? "faces-down" : "faces-up"} ${selectable ? "is-selectable" : ""} ${selected ? "is-targeted" : ""} ${previewed ? "is-preview-target" : ""}`}
+        className={`battler-card panel combat-party-card is-compact combat-unit ${isActive ? "is-active-turn" : ""} ${roleClass} ${showDown ? "is-down" : ""} ${hit ? "is-hit" : ""} ${heal ? "is-heal" : ""} ${miss ? "is-dodge" : ""} ${blockFlash ? "is-block" : ""} ${defeatFlash ? "is-defeat" : ""} ${facing === "down" ? "faces-down" : "faces-up"} ${selectable ? "is-selectable" : ""} ${selected ? "is-targeted" : ""} ${previewed ? "is-preview-target" : ""} ${combatant.enemyRole === "BOSS" ? "is-boss" : ""} ${combatant.enemyRole === "ELITE" ? "is-elite" : ""}`}
         onClick={selectable ? onSelect : undefined}
         type="button"
       >
-        {position && !isActive ? (
+        {combatant.enemyRole === "BOSS" ? <span className="combat-boss-badge">BOSS</span> : null}
+        {combatant.enemyRole === "ELITE" ? <span className="combat-elite-badge">ELITE</span> : null}
+        {position && !isActive && !isDown ? (
           <EffectTooltip className="combat-turn-badge-wrap" tip={initiativeTip(combatant, position)}>
             <span className="combat-turn-badge">#{position}</span>
           </EffectTooltip>
@@ -228,6 +240,9 @@ export function CombatView({
   onUseItem,
   onResolveEnemyTurn,
   onFinishPresentation,
+  zoanForms,
+  currentZoanForm,
+  onSetZoanForm,
 }: CombatViewProps) {
   const [actionMenu, setActionMenu] = useState<ActionMenu | null>(null);
   const [choicePhase, setChoicePhase] = useState<"open" | "closing" | null>(null);
@@ -246,6 +261,7 @@ export function CombatView({
   const closeMenuTimer = useRef<number | null>(null);
   const finishPresentedRef = useRef(false);
   const finaleQueuedRef = useRef(false);
+  const defeatedAnimPlayedRef = useRef<Set<string>>(new Set());
 
   const allies = PartyCombatService.allAllies(combat).slice(0, 4);
   const enemies = combat.enemies.slice(0, 4);
@@ -262,6 +278,22 @@ export function CombatView({
   const logTailId = combat.log.at(-1)?.id ?? "";
   const logLength = combat.log.length;
   const flashTargets = useMemo(() => new Set(currentBeat?.targetIds ?? []), [currentBeat]);
+  const fallPendingIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!presenting) {
+      return ids;
+    }
+    for (let index = beatIndex; index < beats.length; index += 1) {
+      const beat = beats[index];
+      if (beat?.animation !== "DEFEAT") {
+        continue;
+      }
+      for (const id of beat.targetIds ?? []) {
+        ids.add(id);
+      }
+    }
+    return ids;
+  }, [presenting, beatIndex, beats]);
   const beatFlashFor = (combatantId: string): "HIT" | "MISS" | "HEAL" | "BLOCK" | "DEFEAT" | null => {
     if (!currentBeat || !flashTargets.has(combatantId)) {
       return null;
@@ -514,6 +546,20 @@ export function CombatView({
   useEffect(() => {
     if (!startedRef.current) {
       startedRef.current = true;
+      // Remount mid-victory / after refresh: keep KO pose, skip intros + defeat replays.
+      if (combat.finished) {
+        const roster = [...PartyCombatService.allAllies(combat), ...combat.enemies];
+        for (const entry of roster) {
+          if (entry.hp <= 0) {
+            defeatedAnimPlayedRef.current.add(entry.id);
+          }
+        }
+        finaleQueuedRef.current = true;
+        finishPresentedRef.current = true;
+        seenLogId.current = combat.log.at(-1)?.id ?? "done";
+        lastRound.current = combat.round;
+        return;
+      }
       const names = combat.enemies.map((entry) => entry.name.toUpperCase()).join(" · ");
       setBeats([
         { headline: names || "ENCOUNTER", kind: "start" },
@@ -544,10 +590,18 @@ export function CombatView({
     const fresh = idx >= 0 ? combat.log.slice(idx + 1) : combat.log.slice(-6);
     seenLogId.current = combat.log.at(-1)?.id ?? lastId;
     nextBeats.push(...beatsFromLogAndHits(fresh, hits));
+    const roster = [...PartyCombatService.allAllies(combat), ...combat.enemies];
+    const fallBeats = defeatBeats(roster, hits).filter((beat) => {
+      const id = beat.targetIds?.[0];
+      if (!id || defeatedAnimPlayedRef.current.has(id)) {
+        return false;
+      }
+      defeatedAnimPlayedRef.current.add(id);
+      return true;
+    });
+    nextBeats.push(...fallBeats);
     if (combat.finished) {
       finaleQueuedRef.current = true;
-      const roster = [...PartyCombatService.allAllies(combat), ...combat.enemies];
-      nextBeats.push(...defeatBeats(roster, hits));
       if (combat.result === "WIN") {
         nextBeats.push({
           headline: "VICTORY",
@@ -828,7 +882,7 @@ export function CombatView({
     if (actionMenu) {
       return null;
     }
-    return "Choose an action.";
+    return null;
   })();
 
   const actionsLocked = waiting || presenting || enemyThinking;
@@ -837,7 +891,40 @@ export function CombatView({
   const choiceInfoActive = Boolean(actionMenu && !choiceClosing && actionHint);
 
   return (
-    <section className="combat-stage combat-battlefield">
+    <section className={`combat-stage combat-battlefield ${menuOpen ? "has-side-wheel" : ""}`}>
+      {combat.battleFormat ? (
+        <p className="combat-format-banner">
+          {battleFormatLabel(
+            combat.battleFormat,
+            allies.filter((entry) => entry.participating !== false).length,
+            enemies.length,
+          )}
+          {combat.isFriendly ? " · Friendly" : ""}
+        </p>
+      ) : null}
+      {zoanForms && zoanForms.length > 0 && onSetZoanForm ? (
+        <div className="combat-zoan-forms" role="group" aria-label="Zoan forms">
+          {zoanForms.map((form) => (
+            <button
+              className={`ghost-btn combat-zoan-form-btn ${currentZoanForm === form.id ? "is-selected" : ""}`}
+              disabled={actionsLocked}
+              key={form.id}
+              onClick={() => onSetZoanForm(form.id)}
+              title={form.description}
+              type="button"
+            >
+              {form.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {!presenting && !logOpen ? (
+        <button className="ghost-btn combat-log-open" onClick={() => setLogOpen(true)} type="button">
+          Combat log
+        </button>
+      ) : null}
+
       <div className="combat-field-row combat-enemies">
         <div className="combat-unit-row">
           {enemies.map((enemy) => {
@@ -854,6 +941,7 @@ export function CombatView({
                 beatFlash={beatFlashFor(enemy.id)}
                 combatant={enemy}
                 facing="down"
+                fallPending={fallPendingIds.has(enemy.id)}
                 floaters={floaters}
                 isActive={enemy.id === activeCombatant.id}
                 key={enemy.id}
@@ -875,103 +963,131 @@ export function CombatView({
         </div>
       </div>
 
-      <div className={`combat-center-stage ${logOpen ? "is-log-open" : ""}`}>
-        {presenting ? (
-          <button className="combat-stage-present" onClick={advancePresentation} type="button">
-            <div className={`combat-stage-fx ${currentBeat?.animation ? `is-${currentBeat.animation.toLowerCase()}` : ""}`}>
-              <p className="combat-stage-kicker">
-                {currentBeat?.kind === "round"
-                  ? "New round"
-                  : currentBeat?.kind === "defeat"
+      <div className="combat-mid-row">
+        <div className={`combat-center-stage ${logOpen ? "is-log-open" : ""}`}>
+          {presenting ? (
+            <button className="combat-stage-present" onClick={advancePresentation} type="button">
+              <div className={`combat-stage-fx ${currentBeat?.animation ? `is-${currentBeat.animation.toLowerCase()}` : ""}`}>
+                <p className="combat-stage-kicker">
+                  {currentBeat?.animation === "DEFEAT"
                     ? "Fallen"
-                    : "Combat"}
-              </p>
-              <h2 className="combat-stage-headline font-display">{currentBeat?.headline}</h2>
-              {currentBeat?.subline ? <p className="combat-stage-sub">{currentBeat.subline}</p> : null}
-              <p className="combat-stage-skip">Click to skip</p>
-            </div>
-          </button>
-        ) : logOpen ? (
-          <div className="combat-log-modal">
-            <div className="combat-log-modal-head">
-              <h3 className="font-display text-gold">Combat Log</h3>
-              <button className="combat-log-close" onClick={() => setLogOpen(false)} type="button">
-                Close
-              </button>
-            </div>
-            <div className="combat-log-modal-body">
-              {combat.log.slice(-40).map((entry) => (
-                <p key={entry.id}>
-                  {entry.text}
-                  {entry.detail ? <span className="combat-log-detail"> — {entry.detail}</span> : null}
+                    : currentBeat?.kind === "round"
+                      ? "New round"
+                      : currentBeat?.headline === "VICTORY"
+                        ? "Victory"
+                        : currentBeat?.headline === "DEFEAT"
+                          ? "Defeat"
+                          : "Combat"}
                 </p>
-              ))}
+                <h2 className="combat-stage-headline font-display">{currentBeat?.headline}</h2>
+                {currentBeat?.subline ? <p className="combat-stage-sub">{currentBeat.subline}</p> : null}
+                <p className="combat-stage-skip">Click to skip</p>
+              </div>
+            </button>
+          ) : logOpen ? (
+            <div className="combat-log-modal">
+              <div className="combat-log-modal-head">
+                <h3 className="font-display text-gold">Combat Log</h3>
+                <button className="combat-log-close" onClick={() => setLogOpen(false)} type="button">
+                  Close
+                </button>
+              </div>
+              <div className="combat-log-modal-body">
+                {combat.log.slice(-40).map((entry) => (
+                  <p key={entry.id}>
+                    {entry.text}
+                    {entry.detail ? <span className="combat-log-detail"> — {entry.detail}</span> : null}
+                  </p>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="combat-stage-idle">
-            <div className="combat-stage-idle-top">
-              <button className="ghost-btn combat-log-open" onClick={() => setLogOpen(true)} type="button">
-                Combat log
-              </button>
-            </div>
-            <div className="combat-stage-copy">
-              {showTurnBanner && !enemyThinking && !combat.finished ? (
-                <h2 className="combat-stage-headline font-display combat-turn-banner-anim" key={activeCombatant.id}>
-                  {idleHeadline}
-                </h2>
-              ) : (
-                <>
-                  {enemyThinking || combat.finished ? (
-                    <h2 className="combat-stage-headline font-display">{idleHeadline}</h2>
-                  ) : null}
-                  {choiceInfoActive ? (
-                    <p className="combat-stage-sub combat-stage-hint combat-info-fade" key={actionHint ?? "info"}>
-                      {actionHint}
-                    </p>
-                  ) : centerSub ? (
-                    <p
-                      className={`combat-stage-sub combat-stage-hint ${
-                        !enemyThinking && !combat.finished ? "combat-stage-choose" : ""
-                      }`}
-                    >
-                      {centerSub}
-                    </p>
-                  ) : null}
-                  {preview && targeting ? (
-                    <p className="combat-stage-preview combat-info-fade">
-                      Hit {preview.hitChance}% · {preview.damageMin}–{preview.damageMax} dmg · {preview.costLabel}
-                    </p>
-                  ) : null}
-                  {targeting ? (
-                    <div className="combat-target-confirm-row combat-target-confirm-inline">
-                      {manualTargeting && (manualExact == null || manualExact > 1 || (manualMax ?? 1) > 1) ? (
+          ) : (
+            <div className="combat-stage-idle">
+              <div className="combat-stage-copy">
+                {showTurnBanner && !enemyThinking && !combat.finished ? (
+                  <h2 className="combat-stage-headline font-display combat-turn-banner-anim" key={activeCombatant.id}>
+                    {idleHeadline}
+                  </h2>
+                ) : (
+                  <>
+                    {choiceInfoActive ? (
+                      <div className="combat-skill-readout combat-info-fade" key={focusedOption?.id ?? actionHint ?? "info"}>
+                        {focusedOption?.badges?.length ? (
+                          <SkillBadgeRow
+                            badges={focusedOption.badges}
+                            className="combat-skill-readout-badges"
+                            layout="row"
+                            size={48}
+                          />
+                        ) : null}
+                        <p className="combat-stage-sub combat-stage-hint">{actionHint}</p>
+                      </div>
+                    ) : enemyThinking || combat.finished ? (
+                      <h2 className="combat-stage-headline font-display">{idleHeadline}</h2>
+                    ) : null}
+                    {choiceInfoActive ? null : centerSub ? (
+                      <p
+                        className={`combat-stage-sub combat-stage-hint ${
+                          !enemyThinking && !combat.finished ? "combat-stage-choose" : ""
+                        }`}
+                      >
+                        {centerSub}
+                      </p>
+                    ) : null}
+                    {preview && targeting ? (
+                      <p className="combat-stage-preview combat-info-fade">
+                        Hit {preview.hitChance}% · {preview.damageMin}–{preview.damageMax} dmg · {preview.costLabel}
+                      </p>
+                    ) : null}
+                    {targeting ? (
+                      <div className="combat-target-confirm-row combat-target-confirm-inline">
+                        {manualTargeting && (manualExact == null || manualExact > 1 || (manualMax ?? 1) > 1) ? (
+                          <button
+                            className="gold-btn"
+                            disabled={!canConfirmManual}
+                            onClick={() => fireTargetedAction(targeting.selectedIds)}
+                            type="button"
+                          >
+                            Confirm Targets ({selectedCount}/{manualExact ?? manualMax})
+                          </button>
+                        ) : null}
                         <button
-                          className="gold-btn"
-                          disabled={!canConfirmManual}
-                          onClick={() => fireTargetedAction(targeting.selectedIds)}
+                          className="ghost-btn combat-cancel-target"
+                          onClick={() => {
+                            setTargeting(null);
+                            setActionHint(null);
+                          }}
                           type="button"
                         >
-                          Confirm Targets ({selectedCount}/{manualExact ?? manualMax})
+                          Cancel targeting
                         </button>
-                      ) : null}
-                      <button
-                        className="ghost-btn combat-cancel-target"
-                        onClick={() => {
-                          setTargeting(null);
-                          setActionHint(null);
-                        }}
-                        type="button"
-                      >
-                        Cancel targeting
-                      </button>
-                    </div>
-                  ) : null}
-                </>
-              )}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+
+        <div className={`combat-choice-rail ${menuOpen ? "is-open" : ""}`}>
+          {menuOpen ? (
+            <div
+              className={`combat-choice-overlay ${choicePhase === "closing" ? "is-putting-in" : "is-pulling-out"}`}
+              role="dialog"
+              aria-label="Action choices"
+            >
+              <ChoiceWheel
+                disabled={actionsLocked || choiceClosing}
+                onFocusChange={setFocusedOption}
+                onHoverHint={setActionHint}
+                options={menuOptions}
+                orientation="vertical"
+                showBadges={false}
+              />
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className={`combat-field-row combat-allies ${menuOpen ? "is-choosing" : ""}`}>
@@ -991,6 +1107,7 @@ export function CombatView({
                 beatFlash={beatFlashFor(ally.id)}
                 combatant={ally}
                 facing="up"
+                fallPending={fallPendingIds.has(ally.id)}
                 floaters={floaters}
                 isActive={ally.id === activeCombatant.id && !waiting}
                 isCaptain={ally.id === captainId}
@@ -1009,35 +1126,6 @@ export function CombatView({
             );
           })}
         </div>
-      </div>
-
-      <div className={`combat-choice-rail ${menuOpen ? "is-open" : ""}`}>
-        {menuOpen ? (
-          <div
-            className={`combat-choice-overlay ${choicePhase === "closing" ? "is-putting-in" : "is-pulling-out"}`}
-            role="dialog"
-            aria-label="Action choices"
-          >
-            <ChoiceWheel
-              disabled={actionsLocked || choiceClosing}
-              onFocusChange={setFocusedOption}
-              onHoverHint={setActionHint}
-              options={menuOptions}
-            />
-            <button
-              className="gold-btn combat-wheel-confirm"
-              disabled={actionsLocked || choiceClosing || !focusedOption || focusedOption.disabled}
-              onClick={() => {
-                if (focusedOption && !focusedOption.disabled) {
-                  focusedOption.onConfirm();
-                }
-              }}
-              type="button"
-            >
-              Confirm
-            </button>
-          </div>
-        ) : null}
       </div>
 
       {combat.finished ? null : (

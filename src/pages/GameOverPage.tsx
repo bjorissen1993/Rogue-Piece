@@ -3,6 +3,7 @@ import { getRace } from "../data/races";
 import { ORIGIN_LABELS } from "../data/origins";
 import { formatBerries, formatBounty } from "../utils/text";
 import { useGameStore } from "../stores/GameStore";
+import { RunEndResolutionService } from "../services/RunEndResolutionService";
 
 export function GameOverPage() {
   const { profile, acknowledgeGameOver } = useGameStore();
@@ -15,6 +16,7 @@ export function GameOverPage() {
     ? getDevilFruit(run.player.devilFruitId)
     : run.player.inventory.find((item) => item.type === "DEVIL_FRUIT");
   const race = getRace(run.player.raceId);
+  const hospitalized = RunEndResolutionService.hospitalizedSurvivors(run);
 
   return (
     <div className="menu-screen game-over-screen">
@@ -28,6 +30,12 @@ export function GameOverPage() {
         <p className="mt-2 text-parchment-dim">
           {run.player.name}, {race?.name ?? "Human"}
         </p>
+        {hospitalized.length ? (
+          <p className="mt-4 text-sm text-parchment">
+            {hospitalized.length} crewmate{hospitalized.length === 1 ? "" : "s"} may have survived in
+            hospital — their story can continue in a later run.
+          </p>
+        ) : null}
         <div className="game-over-grid">
           <p>
             <span className="text-gold">Origin</span>
@@ -61,7 +69,8 @@ export function GameOverPage() {
           </p>
         </div>
         <p className="mt-6 text-sm text-parchment-dim">
-          The run ends. Collection, races, and achievements stay with this profile.
+          The run ends. Collection, races, achievements, and surviving characters stay with this
+          profile.
         </p>
         <button className="gold-btn mt-8 min-w-56" onClick={acknowledgeGameOver} type="button">
           Return to Profile

@@ -1,4 +1,5 @@
-import { getAbilitiesForPlayer } from "../data/abilities";
+import { getAbilitiesForCrewmember, getAbilitiesForPlayer } from "../data/abilities";
+import { DevilFruitCombatService } from "./DevilFruitCombatService";
 import { MpService } from "./MpService";
 import type {
   Ability,
@@ -27,6 +28,7 @@ import {
 import { CrewCombatService } from "./CrewCombatService";
 import { PartyCombatService } from "./PartyCombatService";
 import { WorldCombatProgressionService } from "./WorldCombatProgressionService";
+import { inferEnemyFamily, inferEnemyRole } from "./EncounterCompositionService";
 import {
   TargetResolutionService,
   abilityTechniqueEffects,
@@ -80,7 +82,16 @@ function resolveActionTarget(state: CombatState, action: CombatAction): Combatan
 }
 
 function applyDamage(target: CombatantState, amount: number): void {
-  target.hp = clamp(target.hp - amount, 0, target.maxHp);
+  const before = target.hp;
+  const raw = before - amount;
+  if (raw < 0) {
+    target.overkillDamage = (target.overkillDamage ?? 0) + Math.abs(raw);
+  }
+  target.hp = clamp(raw, 0, target.maxHp);
+  if (target.hp <= 0) {
+    target.condition = "KNOCKED_OUT";
+    target.defending = false;
+  }
 }
 
 function recordHit(
@@ -172,6 +183,13 @@ function resolveAttack(
   let damage = calc.damage;
   applyDamage(defender, damage);
   recordHit(state, defender, damage, "HIT");
+  if (defender.hp <= 0 && defender.condition === "KNOCKED_OUT") {
+    const label =
+      defender.side === "PLAYER"
+        ? `${defender.name} is knocked out!`
+        : `${defender.name} goes down!`;
+    log(state, label);
+  }
 
   if (attacker.side === "PLAYER" && state.party) {
     const contrib = state.party.contributions.find((entry) => entry.combatantId === attacker.id);
@@ -268,19 +286,24 @@ function createCombatant(options: {
   name: string;
   side: CombatantState["side"];
   hp: number;
+  maxHp?: number;
   stats: CombatantState["stats"];
   abilities: Ability[];
   mp?: number;
   maxMp?: number;
   formation?: CombatantState["formation"];
   level?: number;
+  participating?: boolean;
+  enemyRole?: CombatantState["enemyRole"];
+  enemyFamily?: CombatantState["enemyFamily"];
 }): CombatantState {
+  const maxHp = Math.max(1, options.maxHp ?? options.hp);
   return {
     id: options.id,
     name: options.name,
     side: options.side,
-    hp: options.hp,
-    maxHp: options.hp,
+    hp: clamp(options.hp, 0, maxHp),
+    maxHp,
     mp: options.mp ?? 0,
     maxMp: options.maxMp ?? 0,
     stats: cloneStats(options.stats),
@@ -296,6 +319,11 @@ function createCombatant(options: {
     abilities: options.abilities,
     formation: options.formation,
     level: options.level ?? 1,
+    participating: options.participating,
+    condition: "ACTIVE",
+    overkillDamage: 0,
+    enemyRole: options.enemyRole,
+    enemyFamily: options.enemyFamily,
   };
 }
 
@@ -304,12 +332,39 @@ export const CombatEngine = {
     return statValue + rng.roll(6) >= difficulty;
   },
 
+  /** Keep captain combat HP pool aligned with the run player (max HP can rise via levels/items). */
+  syncCaptainVitals(combat: CombatState, player: Player, run?: RunState): void {
+    const captain = combat.playerCombatant;
+    const maxHp = Math.max(1, player.maxHp);
+    if (captain.maxHp !== maxHp) {
+      captain.maxHp = maxHp;
+      captain.hp = clamp(captain.hp, 0, maxHp);
+    }
+    const maxMp = MpService.maxMpFor(player);
+    if (captain.maxMp !== maxMp) {
+      captain.maxMp = maxMp;
+      captain.mp = clamp(captain.mp ?? 0, 0, maxMp);
+    }
+    captain.stats = DevilFruitCombatService.effectiveStats(player);
+    captain.abilities = getAbilitiesForPlayer(player);
+
+    // Refresh crew technique lists mid-fight (weapon gating / loadout).
+    if (run && combat.party?.allyCombatants) {
+      for (const ally of combat.party.allyCombatants) {
+        ally.abilities = getAbilitiesForCrewmember(run, ally.id);
+      }
+    }
+  },
+
   createFromRequest(
     player: Player,
     request: CombatRequest,
     rng: RandomService,
     run?: RunState,
   ): CombatState {
+    const battleFormat = WorldCombatProgressionService.resolveBattleFormat(request);
+    const enemyFamily = request.enemyFamily ?? inferEnemyFamily(request.enemyName);
+    const enemyRole = inferEnemyRole(request.enemyName, request.combatKind, request.enemyRole);
     const enemyStats = statsFromStrength(request.enemyStrength);
     const enemyHp = request.enemyHp ?? 22 + request.enemyStrength * 5;
     const enemy = createCombatant({
@@ -320,11 +375,22 @@ export const CombatEngine = {
       stats: enemyStats,
       abilities: [],
       level: Math.max(1, Math.round(request.enemyStrength / 2)),
+      enemyRole,
+      enemyFamily,
     });
     pickEnemyIntent(enemy, rng);
     enemy.nextActionHint = hintFor(enemy.intendedAction);
 
-    const extras = run ? WorldCombatProgressionService.additionalEnemies(run, request, rng) : request.extraEnemies ?? [];
+    const extras = run
+      ? WorldCombatProgressionService.additionalEnemies(run, request, rng)
+      : (request.extraEnemies ?? []).map((entry, index) => ({
+          name: entry.name,
+          strength: entry.strength,
+          hp: entry.hp ?? Math.max(10, Math.round(enemyHp * 0.55)),
+          formation: entry.formation ?? (index === 0 ? "FRONT" : ("BACK" as const)),
+          enemyRole: entry.enemyRole ?? ("SUPPORT" as const),
+          enemyFamily: entry.enemyFamily ?? enemyFamily,
+        }));
     const extraCombatants = extras.slice(0, 3).map((spec, index) => {
       const strength = "strength" in spec ? spec.strength : request.enemyStrength;
       const hp = spec.hp ?? Math.max(10, Math.round(enemyHp * 0.55));
@@ -337,6 +403,8 @@ export const CombatEngine = {
         abilities: [],
         formation: spec.formation ?? (index === 0 ? "FRONT" : "BACK"),
         level: Math.max(1, Math.round(strength / 2)),
+        enemyRole: spec.enemyRole ?? "SUPPORT",
+        enemyFamily: spec.enemyFamily ?? enemyFamily,
       });
       pickEnemyIntent(extra, rng);
       extra.nextActionHint = hintFor(extra.intendedAction);
@@ -346,11 +414,15 @@ export const CombatEngine = {
 
     const combatKind = request.combatKind ?? "NORMAL";
     const unescapable = isUnescapableRequest(request);
-    const canEscape = unescapable ? false : request.canEscape !== false;
+    const canEscape = request.isFriendly ? false : unescapable ? false : request.canEscape !== false;
     const threatLevel = threatLevelFor(player, request);
-    const canSurrender =
-      request.canSurrender ??
-      (combatKind !== "BOSS" && combatKind !== "DUEL" && (threatLevel === "DANGEROUS" || threatLevel === "DEADLY"));
+    const canSurrender = request.isFriendly
+      ? false
+      : (request.canSurrender ??
+        (combatKind !== "BOSS" &&
+          combatKind !== "DUEL" &&
+          combatKind !== "SPARRING" &&
+          (threatLevel === "DANGEROUS" || threatLevel === "DEADLY")));
 
     const playerMaxMp = MpService.maxMpFor(player);
     MpService.ensurePlayer(player);
@@ -362,11 +434,13 @@ export const CombatEngine = {
         name: player.name,
         side: "PLAYER",
         hp: player.hp,
-        stats: player.stats,
+        maxHp: player.maxHp,
+        stats: DevilFruitCombatService.effectiveStats(player),
         abilities: getAbilitiesForPlayer(player),
         mp: player.mp ?? playerMaxMp,
         maxMp: playerMaxMp,
         level: player.progression?.level ?? 1,
+        participating: true,
       }),
       enemies: [enemy, ...extraCombatants],
       activeSide: "PLAYER",
@@ -392,17 +466,31 @@ export const CombatEngine = {
         escape: request.escape,
         surrender: request.surrender,
       },
+      battleFormat,
+      isFriendly: Boolean(request.isFriendly || combatKind === "SPARRING"),
+      wager: request.wager ?? null,
+      opponentCharacterId: request.opponentCharacterId ?? null,
+      sparKey: request.sparKey ?? null,
     };
 
     if (run) {
-      const party = CrewCombatService.initCombatParty(run, state);
+      const party = CrewCombatService.initCombatParty(run, state, {
+        participantIds: request.participantIds,
+        forcedParticipantIds: request.forcedParticipantIds,
+        lockParticipants: request.lockParticipants ?? battleFormat.playerChoosesParticipants,
+        maxPlayerFighters: battleFormat.maxPlayerFighters,
+        allowCaptainSitOut: battleFormat.allowCaptainSitOut,
+      });
       const supportLines = CrewCombatService.triggerSupportAbilities(state, run, "COMBAT_START", rng);
       for (const line of supportLines) {
         log(state, line);
       }
-      if (party.allyCombatants.length) {
-        const names = [state.playerCombatant.name, ...party.allyCombatants.map((entry) => entry.name)].join(", ");
-        log(state, `Active party: ${names}.`);
+      const activeNames = [
+        state.playerCombatant.participating === false ? null : state.playerCombatant.name,
+        ...party.allyCombatants.map((entry) => entry.name),
+      ].filter(Boolean);
+      if (activeNames.length) {
+        log(state, `Active party: ${activeNames.join(", ")}.`);
       }
       PartyCombatService.initTurnOrder(state, run, rng);
     } else {
@@ -410,9 +498,20 @@ export const CombatEngine = {
     }
 
     const names = [enemy, ...extraCombatants].map((entry) => entry.name).join(", ");
-    log(state, `${names} block your path.`);
-    if (!canEscape) {
+    if (enemyRole === "BOSS") {
+      log(state, `BOSS ENCOUNTER — ${enemy.name} dominates the field.`);
+    } else {
+      log(state, `${names} block your path.`);
+    }
+    log(state, battleFormat.label);
+    if (!canEscape && !state.isFriendly) {
       log(state, state.unescapableReason ?? "Escape is not an option.");
+    }
+    if (state.isFriendly) {
+      log(state, "Friendly match — no lethal consequences.");
+    }
+    if (state.wager && state.wager.type !== "NONE") {
+      log(state, `Stakes: ${state.wager.label}`);
     }
     return state;
   },
@@ -539,7 +638,7 @@ export const CombatEngine = {
             log(next, `${label} uses ${ability.name} (${mpCost} MP).`);
             for (const targetId of resolution.targetIds) {
               const target = PartyCombatService.getCombatant(next, targetId);
-              if (!target) {
+              if (!target || target.condition === "KNOCKED_OUT" || target.hp <= 0) {
                 continue;
               }
               const base =

@@ -5,6 +5,7 @@ import type {
   RunState,
 } from "../models/types";
 import { CharacterService } from "./CharacterService";
+import { CrewService } from "./CrewService";
 import { IdentityService } from "./IdentityService";
 import { AffiliationService } from "./AffiliationService";
 
@@ -123,7 +124,8 @@ export const RecruitmentModelService = {
   },
 
   /**
-   * Recruit into core crew using route policy. Returns null when blocked or writer fails.
+   * Recruit using CrewService.resolveRecruitment (single writer for join outcomes).
+   * Returns member only for core joins; fleet / blocked / already-on-team use `reason`.
    */
   recruit(
     run: RunState,
@@ -131,17 +133,15 @@ export const RecruitmentModelService = {
     role: CrewRole = "FIGHTER",
     membership?: CrewMembershipType,
   ) {
-    const gate = this.canRecruitCoreCrew(run, membership);
-    if (!gate.ok) {
-      return { member: null as ReturnType<typeof CharacterService.acceptRecruitment>, reason: gate.reason };
+    const result = CrewService.resolveRecruitment(run, characterId, role, membership);
+    if (result.kind === "JOINED_CORE") {
+      return { member: result.member ?? null, reason: undefined as string | undefined, outcome: result.kind };
     }
-    const member = CharacterService.acceptRecruitment(
-      run,
-      characterId,
-      role,
-      gate.membership ?? this.defaultMembership(run, membership),
-    );
-    return { member, reason: member ? undefined : "Recruitment failed." };
+    return {
+      member: null as ReturnType<typeof CharacterService.acceptRecruitment>,
+      reason: result.message,
+      outcome: result.kind,
+    };
   },
 
   assignPartner(run: RunState, characterId: string, role: CrewRole = "FIGHTER") {

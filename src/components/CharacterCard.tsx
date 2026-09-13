@@ -28,6 +28,8 @@ type CharacterCardProps = {
   onDragLeave?: (event: DragEvent<HTMLButtonElement>) => void;
   onDrop?: (event: DragEvent<HTMLButtonElement>) => void;
   onWeaponDragStart?: (event: DragEvent<HTMLSpanElement>, instanceId: string) => void;
+  /** e.g. RECOVERING · 2d or HOSPITALIZED · port */
+  statusLine?: string | null;
 };
 
 function MiniVitalBar({
@@ -70,6 +72,7 @@ export function CharacterCard({
   onDragLeave,
   onDrop,
   onWeaponDragStart,
+  statusLine,
 }: CharacterCardProps) {
   return (
     <button
@@ -80,6 +83,7 @@ export function CharacterCard({
         isActiveFighter ? "is-active-fighter" : "",
         selected ? "is-selected" : "",
         dropTarget ? "is-drop-target" : "",
+        statusLine ? "is-recovering" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -98,6 +102,7 @@ export function CharacterCard({
       <div className="character-card-body">
         <div className="character-card-head">
           <p className="font-display character-card-name">{name}</p>
+          {statusLine ? <p className="character-card-status">{statusLine}</p> : null}
         </div>
         <div className="character-card-footer">
           <div className="character-card-vitals">
