@@ -1,4 +1,5 @@
-# API-only deploy from monorepo root (Docker build context = repo root).
+# API service only. Frontend service must use /railway.frontend.toml
+# (Settings → Config-as-code), otherwise it will crash running this Docker image.
 
 [build]
 builder = "DOCKERFILE"
