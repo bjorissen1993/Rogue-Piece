@@ -74,6 +74,8 @@ GOOGLE_CLIENT_SECRET=...
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 ```
 
+**Important:** `APP_URL` must be the **game** site (`https://roguepiece.freakydev.com`), never the API host. After Google login the API redirects players back to `APP_URL`. If `APP_URL` points at the API, mobile users get stuck on a blank API page.
+
 `PORT` is injected by Railway; the API listens on `0.0.0.0`.
 
 4. Attach custom domain `api.roguepiece.freakydev.com` and create the CNAME at Hostnet DNS as Railway shows.

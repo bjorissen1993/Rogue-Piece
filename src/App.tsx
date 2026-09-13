@@ -21,6 +21,13 @@ function AuthBootstrap() {
     void CloudSync.refreshSession();
     const params = new URLSearchParams(window.location.search);
     if (params.has("auth") || params.has("authError")) {
+      const authError = params.get("authError");
+      if (authError) {
+        console.warn("[auth]", authError);
+        window.setTimeout(() => {
+          window.alert(`Google sign-in failed (${authError}). You can keep playing as Guest.`);
+        }, 0);
+      }
       const url = new URL(window.location.href);
       url.searchParams.delete("auth");
       url.searchParams.delete("authError");

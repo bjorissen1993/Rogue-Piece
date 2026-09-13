@@ -5,7 +5,7 @@ import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { db } from "../db/client.js";
 import { sessions, users, type UserRow } from "../db/schema.js";
-import { config } from "../lib/config.js";
+import { config, frontendBaseUrl } from "../lib/config.js";
 
 const secret = () => new TextEncoder().encode(config.authSecret);
 
@@ -47,7 +47,7 @@ export async function userFromSessionToken(token: string | undefined): Promise<U
 }
 
 export function setSessionCookie(c: Context, token: string): void {
-  const secure = config.appUrl.startsWith("https");
+  const secure = config.apiUrl.startsWith("https") || frontendBaseUrl().startsWith("https");
   setCookie(c, config.cookieName, token, {
     httpOnly: true,
     secure,
@@ -58,7 +58,7 @@ export function setSessionCookie(c: Context, token: string): void {
 }
 
 export function clearSessionCookie(c: Context): void {
-  const secure = config.appUrl.startsWith("https");
+  const secure = config.apiUrl.startsWith("https") || frontendBaseUrl().startsWith("https");
   deleteCookie(c, config.cookieName, {
     path: "/",
     secure,

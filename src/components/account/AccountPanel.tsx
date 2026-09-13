@@ -66,9 +66,40 @@ export function AccountPanel({ selectedSlot = null }: AccountPanelProps) {
       {!user ? (
         <>
           <p className="account-panel-copy">Play as Guest anytime. Sign in to sync your world across devices.</p>
-          <a className="gold-btn account-google-btn" href={googleSignInUrl()} rel="noopener">
+          <a
+            className="gold-btn account-google-btn"
+            href={googleSignInUrl()}
+            rel="noopener"
+            onClick={(event) => {
+              // If the API host is down, avoid dumping the user on a dead page.
+              const apiOrigin = (() => {
+                try {
+                  return new URL(googleSignInUrl()).origin;
+                } catch {
+                  return "";
+                }
+              })();
+              if (!apiOrigin) {
+                return;
+              }
+              event.preventDefault();
+              void fetch(`${apiOrigin}/health`, { method: "GET", mode: "cors" })
+                .then((res) => {
+                  if (!res.ok) {
+                    throw new Error("unhealthy");
+                  }
+                  window.location.assign(googleSignInUrl());
+                })
+                .catch(() => {
+                  setMessage(
+                    "Cloud login is unreachable right now. Check that the API is online, or keep playing as Guest.",
+                  );
+                });
+            }}
+          >
             Sign in with Google
           </a>
+          {message ? <p className="account-panel-copy">{message}</p> : null}
         </>
       ) : (
         <>
