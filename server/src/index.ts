@@ -31,7 +31,10 @@ app.get("/", (c) => {
   const game = frontendBaseUrl();
   const accept = c.req.header("accept") ?? "";
   if (accept.includes("text/html")) {
-    return c.html(apiLandingHtml(game), 200);
+    return c.html(apiLandingHtml(game, c.req.url), 200);
+  }
+  if (isSameOrigin(game, c.req.url)) {
+    return c.json({ service: "rogue-piece-api", hint: "Point APP_URL / the game domain at Hostnet, not this API." });
   }
   return c.redirect(game, 302);
 });
@@ -43,7 +46,7 @@ app.notFound((c) => {
   const game = frontendBaseUrl();
   const accept = c.req.header("accept") ?? "";
   if (accept.includes("text/html")) {
-    return c.html(apiLandingHtml(game, "This API route was not found."), 404);
+    return c.html(apiLandingHtml(game, c.req.url, "This API route was not found."), 404);
   }
   return c.json({ error: "not_found", game }, 404);
 });
@@ -54,18 +57,37 @@ app.onError((err, c) => {
   const accept = c.req.header("accept") ?? "";
   if (accept.includes("text/html")) {
     return c.html(
-      apiLandingHtml(game, "The API hit an error. Return to the game and try again."),
+      apiLandingHtml(game, c.req.url, "The API hit an error. Return to the game and try again."),
       500,
     );
   }
   return c.json({ error: "internal", message: err.message, game }, 500);
 });
 
-function apiLandingHtml(gameUrl: string, detail?: string): string {
+function isSameOrigin(targetUrl: string, requestUrl: string): boolean {
+  try {
+    return new URL(targetUrl).origin === new URL(requestUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+function apiLandingHtml(gameUrl: string, requestUrl: string, detail?: string): string {
+  const loop = isSameOrigin(gameUrl, requestUrl);
   const safeGame = gameUrl.replace(/"/g, "&quot;");
-  const safeDetail = (detail ?? "This is the Rogue Piece API — the game lives on the main site.")
+  const safeDetail = (
+    detail ??
+    (loop
+      ? "This host is serving the API, but APP_URL also points here — so a redirect would loop forever. Point roguepiece.freakydev.com at Hostnet (the static game), and keep only api.roguepiece.freakydev.com on Railway."
+      : "This is the Rogue Piece API — the game lives on the main site.")
+  )
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+  const refresh = loop ? "" : `<meta http-equiv="refresh" content="0;url=${safeGame}" />`;
+  const link = loop
+    ? ""
+    : `<p>Redirecting to the game…</p>
+    <a href="${safeGame}">Open Rogue Piece</a>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -78,16 +100,15 @@ function apiLandingHtml(gameUrl: string, detail?: string): string {
       font-family: system-ui, sans-serif; background: #070b10; color: #e8d7b3; padding: 1.5rem; text-align: center; }
     a { display: inline-block; margin-top: 1.25rem; padding: 0.85rem 1.25rem; border-radius: 0.75rem;
       background: linear-gradient(180deg, #c5a059, #9a7a38); color: #1a140a; font-weight: 700; text-decoration: none; }
-    p { max-width: 28rem; line-height: 1.45; color: #cbb892; }
+    p { max-width: 32rem; line-height: 1.45; color: #cbb892; }
   </style>
-  <meta http-equiv="refresh" content="0;url=${safeGame}" />
+  ${refresh}
 </head>
 <body>
   <div>
     <h1>Rogue Piece</h1>
     <p>${safeDetail}</p>
-    <p>Redirecting to the game…</p>
-    <a href="${safeGame}">Open Rogue Piece</a>
+    ${link}
   </div>
 </body>
 </html>`;
