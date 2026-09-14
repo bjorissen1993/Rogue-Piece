@@ -8946,16 +8946,10 @@ button.level-up-stats-row:disabled {
   }
 }
 
-/* Mobile: one crewmate at a time; keep stats + Back/Choose above bottom nav. */
+/* Mobile: one crewmate at a time; center picker in the content area above bottom nav. */
 @media (max-width: 767px) {
   .encounter-frame.is-picking-participant .encounter-header {
-    flex: 0 1 auto;
-    min-height: 0;
-    margin-bottom: 0.35rem;
-  }
-
-  .encounter-frame.is-picking-participant .encounter-text-plate-face {
-    max-height: min(16dvh, 5.75rem);
+    display: none;
   }
 
   .encounter-frame.is-picking-participant .choice-grid {
@@ -8968,9 +8962,9 @@ button.level-up-stats-row:disabled {
     flex: 1 1 auto;
     min-height: 0;
     width: 100%;
-    align-items: stretch;
-    justify-content: flex-end;
-    padding: 0.15rem var(--mobile-page-padding) 0.35rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.35rem var(--mobile-page-padding) 0.55rem;
     overflow: hidden;
   }
 
@@ -8980,11 +8974,11 @@ button.level-up-stats-row:disabled {
 
   .choice-participant-overlay.is-mobile-compact {
     width: 100%;
-    max-width: 24rem;
+    max-width: 22rem;
     max-height: 100%;
     margin: 0 auto;
-    gap: 0.2rem;
-    justify-content: flex-end;
+    gap: 0.35rem;
+    justify-content: center;
     overflow: hidden;
     animation: none;
     transform: none;
@@ -8995,11 +8989,12 @@ button.level-up-stats-row:disabled {
     font-size: 0.95rem;
     letter-spacing: 0.12em;
     flex: 0 0 auto;
+    text-align: center;
   }
 
   .choice-participant-overlay.is-mobile-compact .choice-participant-wheel-panel {
     margin-bottom: 0;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-height: 0;
     justify-content: center;
   }
@@ -9032,7 +9027,7 @@ button.level-up-stats-row:disabled {
 
   .choice-participant-overlay.is-mobile-compact .choice-participant-panel {
     width: 100%;
-    margin-top: 0.2rem;
+    margin-top: 0.15rem;
     padding: 0.5rem 0.65rem 0.55rem;
     gap: 0.4rem;
     flex: 0 0 auto;
