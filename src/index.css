@@ -8028,7 +8028,7 @@ html.battle-result-open .battler-card.is-down {
     justify-content: flex-start;
     padding-top: 0;
     padding-inline: var(--mobile-page-padding);
-    margin-bottom: 0.55rem;
+    margin-bottom: 0.85rem;
   }
 
   .encounter-text-plate,
@@ -8103,7 +8103,7 @@ html.battle-result-open .battler-card.is-down {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     /* Room so the first selected row isn't flush against the narrative plate. */
-    padding-top: 0.2rem;
+    padding-top: 0.45rem;
     padding-bottom: 0.35rem;
   }
 
