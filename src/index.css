@@ -7974,6 +7974,72 @@ html.battle-result-open .battler-card.is-down {
     max-height: none;
   }
 
+  /* Encounter narrative: drop parchment PNG, use a readable text box like choice rows. */
+  .encounter-header {
+    width: 100%;
+    align-items: stretch;
+    padding-inline: var(--mobile-page-padding);
+    margin-bottom: 0.45rem;
+  }
+
+  .encounter-text-plate,
+  .encounter-text-plate.is-result {
+    --narrative-frame: none;
+    --narrative-face-x: 0;
+    --narrative-face-y-top: 0;
+    --narrative-face-y-bottom: 0;
+    --narrative-face-max: min(38dvh, 16rem);
+    width: 100%;
+    max-width: 100%;
+    margin-bottom: 0;
+    padding: 0.85rem 0.95rem 0.9rem;
+    border-radius: 0.7rem;
+    border: 1px solid rgba(197, 160, 89, 0.28);
+    color: var(--color-parchment);
+    background-color: transparent;
+    background-image: none;
+    background: linear-gradient(180deg, rgba(22, 30, 38, 0.96), rgba(12, 18, 24, 0.98));
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 6px 14px rgba(0, 0, 0, 0.28);
+  }
+
+  .encounter-text-plate-face {
+    max-width: none;
+    max-height: var(--narrative-face-max);
+    padding: 0;
+    text-align: left;
+    scrollbar-color: rgba(232, 215, 179, 0.35) transparent;
+  }
+
+  .encounter-text-plate-face::-webkit-scrollbar-thumb {
+    background: rgba(232, 215, 179, 0.35);
+  }
+
+  .encounter-title {
+    font-size: 1.15rem;
+    line-height: 1.2;
+    text-align: left;
+    color: var(--color-gold);
+  }
+
+  .encounter-copy,
+  .encounter-result-copy {
+    margin: 0.4rem 0 0;
+    max-width: none;
+    font-size: 0.92rem;
+    line-height: 1.4;
+    text-align: left;
+    color: var(--color-parchment);
+  }
+
+  .encounter-dialogue {
+    margin: 0.45rem 0 0.35rem;
+    text-align: left;
+  }
+
+  .encounter-dialogue-line {
+    color: var(--color-parchment-dim);
+  }
+
   .encounter-choice-stack {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
