@@ -7443,12 +7443,10 @@ html.battle-result-open .battler-card.is-down {
     grid-template-columns: 1fr;
     grid-template-rows:
       auto
-      auto
       minmax(0, 1fr)
       var(--mobile-bottom-nav-height);
     grid-template-areas:
-      "top"
-      "vitals"
+      "chrome"
       "main"
       "nav";
     height: 100dvh;
@@ -7468,12 +7466,13 @@ html.battle-result-open .battler-card.is-down {
 
   .game-shell .player-hud,
   .game-shell .faction-hud,
-  .game-shell .news-strip {
+  .game-shell .news-strip,
+  .game-shell .run-bar {
     display: none !important;
   }
 
-  .game-shell .mobile-vitals-strip {
-    grid-area: vitals;
+  .game-shell .mobile-top-chrome {
+    grid-area: chrome;
     display: flex;
   }
 
@@ -7487,39 +7486,13 @@ html.battle-result-open .battler-card.is-down {
     overflow: hidden;
   }
 
-  /* Compact top bar */
-  .run-bar {
-    grid-template-columns: 1fr;
-    gap: 0.25rem;
-    min-height: var(--mobile-header-height);
-    padding: 0.35rem 0.45rem;
-  }
-
+  /* Compact top bar leftovers (desktop RunBar hidden on mobile shell) */
   .run-emblem-well {
     display: none;
   }
 
-  .run-bar-left,
-  .run-bar-right {
-    width: 100%;
-  }
-
-  .run-bar-left {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.4rem;
-  }
-
   .run-bar-right {
     display: none;
-  }
-
-  .run-cluster-nav {
-    flex: 1;
-    min-width: 0;
-    justify-content: flex-start;
-    gap: 0.45rem;
   }
 
   .run-btn span {
@@ -7531,24 +7504,6 @@ html.battle-result-open .battler-card.is-down {
     min-height: var(--mobile-control-size);
     justify-content: center;
     padding: 0.35rem;
-  }
-
-  .run-place-location {
-    max-width: 42%;
-    margin: 0;
-    font-size: 0.78rem;
-  }
-
-  .run-place-location .run-glyph {
-    display: none;
-  }
-
-  .run-day {
-    font-size: 0.82rem;
-  }
-
-  .run-clock {
-    font-size: 0.72rem;
   }
 
   .choice-grid,
@@ -7601,17 +7556,17 @@ html.battle-result-open .battler-card.is-down {
   .choice-card-shell > .select-card.choice-card,
   .select-card.choice-card {
     --choice-face-x: 0.85rem;
-    --choice-face-top: 0.7rem;
-    --choice-face-bottom: 0.65rem;
+    --choice-face-top: 0.55rem;
+    --choice-face-bottom: 0.55rem;
     display: grid;
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto;
     align-content: start;
     gap: 0.3rem;
     width: 100%;
-    min-height: 2.85rem;
+    min-height: 2.65rem;
     height: auto;
-    padding: 0.7rem 0.85rem 0.65rem;
+    padding: 0.65rem 0.85rem;
     border-radius: 0.7rem;
     border: 1px solid rgba(197, 160, 89, 0.28);
     text-align: left;
@@ -7621,9 +7576,22 @@ html.battle-result-open .battler-card.is-down {
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 6px 14px rgba(0, 0, 0, 0.28);
   }
 
+  /* Accordion: collapsed rows show title only; selected expands details. */
+  .select-card.choice-card:not(.is-selected) .choice-body,
+  .select-card.choice-card:not(.is-selected) .choice-footer,
+  .select-card.choice-card:not(.is-selected) .choice-cost-bar,
+  .select-card.choice-card:not(.is-selected) .choice-requirement {
+    display: none !important;
+  }
+
+  .select-card.choice-card:not(.is-selected) {
+    gap: 0;
+    padding-block: 0.7rem;
+  }
+
   .choice-card .choice-title {
     margin: 0;
-    font-size: 1.05rem;
+    font-size: 1.02rem;
     line-height: 1.2;
     text-align: left;
     color: var(--color-gold);
@@ -8064,7 +8032,7 @@ html.battle-result-open .battler-card.is-down {
     --narrative-face-x: 0;
     --narrative-face-y-top: 0;
     --narrative-face-y-bottom: 0;
-    --narrative-face-max: min(28dvh, 9.5rem);
+    --narrative-face-max: min(32dvh, 11rem);
     width: 100%;
     max-width: 100%;
     margin-bottom: 0;
@@ -8159,6 +8127,7 @@ html.battle-result-open .battler-card.is-down {
 }
 
 /* Mobile chrome components — hidden on desktop */
+.mobile-top-chrome,
 .mobile-vitals-strip,
 .mobile-bottom-nav,
 .mobile-sheet-scrim {
@@ -8166,6 +8135,98 @@ html.battle-result-open .battler-card.is-down {
 }
 
 @media (max-width: 767px) {
+  .mobile-top-chrome {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    width: 100%;
+    margin: 0;
+    padding: 0.4rem 0.55rem 0.45rem;
+    border: 1px solid rgba(197, 160, 89, 0.28);
+    border-radius: 0.75rem;
+    background: linear-gradient(180deg, rgba(20, 28, 36, 0.96), rgba(10, 14, 18, 0.96));
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 6px 14px rgba(0, 0, 0, 0.22);
+  }
+
+  .mobile-top-chrome-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+    min-width: 0;
+  }
+
+  .mobile-top-chrome-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .mobile-top-chrome-time {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+    padding: 0.15rem 0.2rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .mobile-top-chrome-time-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    min-width: 0;
+  }
+
+  .mobile-top-chrome-time .run-day,
+  .mobile-top-chrome-time .run-clock {
+    margin: 0;
+    line-height: 1.1;
+  }
+
+  .mobile-top-chrome-time .run-day {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--color-gold);
+  }
+
+  .mobile-top-chrome-time .run-clock {
+    font-size: 0.7rem;
+    color: var(--color-parchment-dim);
+  }
+
+  .mobile-top-chrome-place {
+    margin: 0;
+    max-width: 42%;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    text-align: right;
+    color: var(--color-parchment-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mobile-top-chrome-vitals {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
   .mobile-vitals-strip {
     display: flex;
     align-items: center;
@@ -8186,18 +8247,18 @@ html.battle-result-open .battler-card.is-down {
     display: flex;
     flex-direction: column;
     gap: 0.1rem;
-    min-width: 4.5rem;
+    min-width: 4.1rem;
     flex-shrink: 0;
   }
 
   .mobile-vitals-identity strong {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     color: var(--color-gold);
     line-height: 1.1;
   }
 
   .mobile-vitals-identity span {
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-parchment-dim);
@@ -8208,7 +8269,21 @@ html.battle-result-open .battler-card.is-down {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.22rem;
+    gap: 0.18rem;
+  }
+
+  .mobile-top-chrome .mobile-vitals-bars .resource-bar-track {
+    min-height: 0.55rem;
+    height: 0.55rem;
+  }
+
+  .mobile-top-chrome .mobile-vitals-bars .mb-1 {
+    margin-bottom: 0.05rem;
+  }
+
+  .mobile-top-chrome .mobile-vitals-bars .text-sm {
+    font-size: 0.68rem;
+    line-height: 1;
   }
 
   .mobile-bottom-nav {
