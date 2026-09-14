@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useIsMobile } from "../../hooks/useMediaQuery";
 import type { EncounterChoice, RunState, StatName } from "../../models/types";
 import { participantBounds } from "../../game/encounterParticipants";
 import { CharacterScheduleService } from "../../services/CharacterScheduleService";
@@ -42,10 +43,12 @@ export function ChoiceParticipantPicker({
   onBack,
   onReady,
 }: ChoiceParticipantPickerProps) {
+  const isMobile = useIsMobile();
   const [focused, setFocused] = useState<ChoiceWheelOption | null>(null);
   const { min, max } = participantBounds(choice);
   const multi = max > 1;
   const focus = focusStat(choice);
+  const artSize = isMobile ? Math.round(CHOICE_WHEEL_ICON_SIZE * 0.85) : CHOICE_WHEEL_ICON_SIZE * 2;
 
   const candidates = useMemo(
     () => ["player", ...run.crew.map((member) => member.characterId)],
@@ -93,12 +96,7 @@ export function ChoiceParticipantPicker({
       hint: name,
       disabled: !available,
       selected: picked,
-      icon: (
-        <HudArt
-          size={CHOICE_WHEEL_ICON_SIZE * 2}
-          src={isLeader ? LEADER_ART : CREWMATE_ART}
-        />
-      ),
+      icon: <HudArt size={artSize} src={isLeader ? LEADER_ART : CREWMATE_ART} />,
       onConfirm: () => toggle(id),
     };
   });
@@ -109,7 +107,7 @@ export function ChoiceParticipantPicker({
   return (
     <div
       aria-label="Choose who acts"
-      className="choice-participant-overlay is-pulling-out"
+      className={`choice-participant-overlay is-pulling-out${isMobile ? " is-mobile-compact" : ""}`}
       role="dialog"
     >
       <p className="choice-participant-kicker">
@@ -120,11 +118,12 @@ export function ChoiceParticipantPicker({
 
       <div className="choice-participant-wheel-panel">
         <ChoiceWheel
-          className="choice-participant-wheel"
+          className={`choice-participant-wheel${isMobile ? " is-mobile-solo" : ""}`}
           onFocusChange={setFocused}
           onHoverHint={() => undefined}
           options={options}
-          stepRem={14}
+          soloFocus={isMobile}
+          stepRem={isMobile ? 9 : 14}
         />
       </div>
 
