@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { useIsMobile } from "../../hooks/useMediaQuery";
 import type { Encounter, EncounterChoice, Player, RunState, TimeOfDay } from "../../models/types";
 import { primaryResultTooltip } from "../../utils/effectTooltips";
 import {
@@ -50,6 +51,7 @@ export function EncounterChoiceCard({
   onSelect,
   onConfirm,
 }: EncounterChoiceCardProps) {
+  const isMobile = useIsMobile();
   const variant = choiceVariant(choice);
   const accent = choiceAccentColor(choice);
   const accentStat = choiceAccentStat(choice);
@@ -119,7 +121,9 @@ export function EncounterChoiceCard({
           ) : null}
           {choice.flavour ? <p className="choice-flavour">{choice.flavour}</p> : null}
           {selected && needsParticipants && !participantsReady ? (
-            <p className="choice-participant-card-hint">Pick who acts below</p>
+            <p className="choice-participant-card-hint">
+              {isMobile ? "Confirm to pick who acts" : "Pick who acts below"}
+            </p>
           ) : null}
         </div>
         <ChoiceCostBar

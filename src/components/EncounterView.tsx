@@ -61,14 +61,18 @@ export function EncounterView({
   const isMobile = useIsMobile();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [participantIds, setParticipantIds] = useState<string[]>([]);
+  /** Mobile: open crewmate picker only after Confirm, so choice details stay visible first. */
+  const [participantPickerOpen, setParticipantPickerOpen] = useState(false);
   const overlay = encounter ? encounterOverlay(encounter) : "default";
   const mood = encounterMood(encounter, Boolean(resultText));
   const selected = choices.find((choice) => choice.id === selectedId && !lockReasons?.[choice.id]);
   const needsParticipants = selected ? choiceNeedsParticipants(selected) : false;
-  const pickingParticipants = Boolean(selected && needsParticipants && run);
+  const pickingParticipants = Boolean(
+    selected && needsParticipants && run && (!isMobile || participantPickerOpen),
+  );
   const { min: minParticipants } = selected ? participantBounds(selected) : { min: 0 };
-  const canConfirm =
-    Boolean(selected) && (!needsParticipants || participantIds.length >= minParticipants);
+  const participantsReady = !needsParticipants || participantIds.length >= minParticipants;
+  const canConfirm = Boolean(selected) && (participantsReady || (isMobile && needsParticipants));
   const background = encounterBackground(encounter, {
     timeOfDay,
     weather: backgroundContext?.weather ?? "CLEAR",
@@ -85,13 +89,17 @@ export function EncounterView({
   useEffect(() => {
     setSelectedId(null);
     setParticipantIds([]);
+    setParticipantPickerOpen(false);
   }, [encounter?.id, resultText]);
 
   const showingResult = Boolean(resultText);
 
   const clearParticipantPick = () => {
-    setSelectedId(null);
     setParticipantIds([]);
+    setParticipantPickerOpen(false);
+    if (!isMobile) {
+      setSelectedId(null);
+    }
   };
 
   return (
@@ -149,6 +157,7 @@ export function EncounterView({
               onSelect={(choiceId) => {
                 setSelectedId(choiceId);
                 setParticipantIds([]);
+                setParticipantPickerOpen(false);
               }}
               participantIds={participantIds}
               player={player}
@@ -177,15 +186,22 @@ export function EncounterView({
                 <button
                   className="gold-btn min-w-48"
                   disabled={!canConfirm}
-                  onClick={() =>
-                    selected && onChoose(selected.id, needsParticipants ? participantIds : undefined)
-                  }
+                  onClick={() => {
+                    if (!selected) {
+                      return;
+                    }
+                    if (isMobile && needsParticipants && !participantsReady) {
+                      setParticipantPickerOpen(true);
+                      return;
+                    }
+                    onChoose(selected.id, needsParticipants ? participantIds : undefined);
+                  }}
                   type="button"
                 >
                   {isMobile ? "Confirm" : "Continue"}
                 </button>
               </div>
-            ) : canConfirm && participantBounds(selected!).max > 1 ? (
+            ) : participantsReady && participantBounds(selected!).max > 1 ? (
               <div className="encounter-confirm">
                 <button
                   className="gold-btn min-w-48"
