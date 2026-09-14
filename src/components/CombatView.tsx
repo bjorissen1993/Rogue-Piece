@@ -978,7 +978,14 @@ export function CombatView({
       ) : null}
 
       {!presenting && !logOpen ? (
-        <button className="ghost-btn combat-log-open" onClick={() => setLogOpen(true)} type="button">
+        <button
+          className="ghost-btn combat-log-open"
+          onClick={() => {
+            closeMenu();
+            setLogOpen(true);
+          }}
+          type="button"
+        >
           Combat log
         </button>
       ) : null}

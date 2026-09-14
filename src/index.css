@@ -9869,6 +9869,15 @@ button.level-up-stats-row:disabled {
     overflow: hidden;
   }
 
+  /* Log must also cover any open choice wheel / mid-stage readout. */
+  .combat-battlefield.is-log-open .combat-choice-rail,
+  .combat-battlefield.is-log-open .combat-allies,
+  .combat-battlefield.is-log-open .combat-enemies,
+  .combat-battlefield.is-log-open .combat-mid-row {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
   /* Bottom horizontal solo choice wheel (one option + L/R), docks where actions sit. */
   .combat-battlefield.has-mobile-wheel {
     overflow: hidden;
