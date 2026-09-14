@@ -27,6 +27,8 @@ type EncounterChoiceCardProps = {
   locked?: boolean;
   lockReason?: string;
   isDev?: boolean;
+  /** When false, a second tap only keeps selection — commit via Continue. */
+  confirmOnRetap?: boolean;
   participantIds?: string[];
   onSelect: (choiceId: string) => void;
   onConfirm: (choiceId: string, participantIds?: string[]) => void;
@@ -43,6 +45,7 @@ export function EncounterChoiceCard({
   locked = false,
   lockReason,
   isDev = false,
+  confirmOnRetap = true,
   participantIds = [],
   onSelect,
   onConfirm,
@@ -87,6 +90,9 @@ export function EncounterChoiceCard({
             return;
           }
           if (selected) {
+            if (!confirmOnRetap) {
+              return;
+            }
             if (needsParticipants && !participantsReady) {
               return;
             }

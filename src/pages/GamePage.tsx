@@ -19,7 +19,7 @@ import { LootDispositionModal, peekLootDisposition } from "../components/LootDis
 import { TechniqueOpportunityOverlay } from "../components/TechniqueOpportunityOverlay";
 import { BottomSheet } from "../components/mobile/BottomSheet";
 import { MobileBottomNav, type MobileNavId } from "../components/mobile/MobileBottomNav";
-import { MobileVitalsStrip } from "../components/mobile/MobileVitalsStrip";
+import { MobileTopChrome } from "../components/mobile/MobileTopChrome";
 import { OverlayFrame } from "../components/OverlayFrame";
 import { ProgressionService } from "../services/ProgressionService";
 import { IslandService } from "../services/IslandService";
@@ -249,30 +249,34 @@ export function GamePage() {
 
   return (
     <div className={`game-shell ${isMobile ? "is-mobile" : ""}`}>
-        <RunBar
-          compact={isMobile}
-          isDev={isDev}
-          onMenu={() => openOverlay("gameMenu")}
-          onOpenTime={() => openOverlay("time")}
-          run={run}
-        />
         {isMobile ? (
-          <MobileVitalsStrip
+          <MobileTopChrome
+            isDev={isDev}
+            onMenu={() => openOverlay("gameMenu")}
             onOpenCharacter={() => {
               setMobileNav("game");
               setCharacterSheetOpen(true);
             }}
+            onOpenTime={() => openOverlay("time")}
             run={run}
           />
         ) : (
-          <PlayerHud
-            onCrew={() => openOverlay("crew")}
-            onInventory={(itemId) => {
-              setInventoryFocusId(itemId ?? null);
-              openOverlay("inventory");
-            }}
-            run={run}
-          />
+          <>
+            <RunBar
+              isDev={isDev}
+              onMenu={() => openOverlay("gameMenu")}
+              onOpenTime={() => openOverlay("time")}
+              run={run}
+            />
+            <PlayerHud
+              onCrew={() => openOverlay("crew")}
+              onInventory={(itemId) => {
+                setInventoryFocusId(itemId ?? null);
+                openOverlay("inventory");
+              }}
+              run={run}
+            />
+          </>
         )}
         <main className="game-main">
           {run.combat ? (

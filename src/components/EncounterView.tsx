@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { BackgroundContext, DialogueBeat, Encounter, EncounterChoice, Player, RunState, TimeOfDay } from "../models/types";
 import { CharacterService } from "../services/CharacterService";
 import { encounterBackground, encounterMood, encounterOverlay } from "../utils/presentation";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import { EncounterChoiceGrid, type EncounterChoiceLockMap } from "./encounter/EncounterChoiceGrid";
 import {
   ChoiceParticipantPicker,
@@ -57,6 +58,7 @@ export function EncounterView({
   onChoose,
   onContinue,
 }: EncounterViewProps) {
+  const isMobile = useIsMobile();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [participantIds, setParticipantIds] = useState<string[]>([]);
   const overlay = encounter ? encounterOverlay(encounter) : "default";
@@ -139,6 +141,7 @@ export function EncounterView({
           <div className="encounter-choice-stack">
             <EncounterChoiceGrid
               choices={choices}
+              confirmOnRetap={!isMobile}
               encounter={encounter}
               isDev={isDev}
               lockReasons={lockReasons}
@@ -179,7 +182,7 @@ export function EncounterView({
                   }
                   type="button"
                 >
-                  Continue
+                  {isMobile ? "Confirm" : "Continue"}
                 </button>
               </div>
             ) : canConfirm && participantBounds(selected!).max > 1 ? (
@@ -189,7 +192,7 @@ export function EncounterView({
                   onClick={() => onChoose(selected!.id, participantIds)}
                   type="button"
                 >
-                  Continue
+                  {isMobile ? "Confirm" : "Continue"}
                 </button>
               </div>
             ) : null}

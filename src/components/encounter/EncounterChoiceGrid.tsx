@@ -14,6 +14,7 @@ type EncounterChoiceGridProps = {
   participantIds: string[];
   lockReasons?: EncounterChoiceLockMap;
   isDev?: boolean;
+  confirmOnRetap?: boolean;
   onSelect: (choiceId: string) => void;
   onConfirm: (choiceId: string, participantIds?: string[]) => void;
 };
@@ -28,6 +29,7 @@ export function EncounterChoiceGrid({
   participantIds,
   lockReasons,
   isDev = false,
+  confirmOnRetap = true,
   onSelect,
   onConfirm,
 }: EncounterChoiceGridProps) {
@@ -38,6 +40,7 @@ export function EncounterChoiceGrid({
         return (
           <EncounterChoiceCard
             choice={choice}
+            confirmOnRetap={confirmOnRetap}
             dimmed={Boolean(selectedId) && selectedId !== choice.id}
             encounter={encounter}
             isDev={isDev}
