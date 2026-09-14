@@ -33,8 +33,8 @@ function wrapIndex(index: number, length: number): number {
   return ((index % length) + length) % length;
 }
 
-function bridgeOffsets(count: number, vertical: boolean): number[] {
-  if (count <= 1) {
+function bridgeOffsets(count: number, vertical: boolean, soloFocus: boolean): number[] {
+  if (count <= 1 || soloFocus) {
     return [0];
   }
   // Vertical combat wheel: exactly 3 visible slots (prev / focus / next).
@@ -64,6 +64,8 @@ type ChoiceWheelProps = {
   orientation?: "horizontal" | "vertical";
   /** When false, badges are rendered by the parent (e.g. above skill text). */
   showBadges?: boolean;
+  /** Mobile: only render the focused option; keep L/R arrows to cycle. */
+  soloFocus?: boolean;
 };
 
 export function ChoiceWheel({
@@ -75,6 +77,7 @@ export function ChoiceWheel({
   stepRem,
   orientation = "horizontal",
   showBadges = true,
+  soloFocus = false,
 }: ChoiceWheelProps) {
   const [focus, setFocus] = useState(0);
   const [motion, setMotion] = useState(0);
@@ -138,7 +141,7 @@ export function ChoiceWheel({
     rotate(event.deltaY > 0 ? 1 : -1);
   };
 
-  const offsets = bridgeOffsets(options.length, vertical);
+  const offsets = bridgeOffsets(options.length, vertical, soloFocus);
   const focusedOption = options[wrapIndex(focus, options.length)];
   const pocket = arcPoint(0);
   // Fixed pocket: confirm stays left of the active slot and does not travel with the arc.
@@ -146,7 +149,7 @@ export function ChoiceWheel({
 
   return (
     <div
-      className={`combat-choice-wheel-wrap ${multi ? "has-arrows" : "is-single"} ${vertical ? "is-vertical" : "is-horizontal"} ${className}`.trim()}
+      className={`combat-choice-wheel-wrap ${multi ? "has-arrows" : "is-single"} ${vertical ? "is-vertical" : "is-horizontal"} ${soloFocus ? "is-solo-focus" : ""} ${className}`.trim()}
     >
       {showBadges ? (
         focusedOption?.badges?.length ? (
