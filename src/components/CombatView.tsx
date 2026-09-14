@@ -17,6 +17,7 @@ import {
   primaryManualTargeting,
   targetingSummary,
 } from "../services/TargetResolutionService";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import { EffectTooltip } from "./EffectTooltip";
 import { HpBar } from "./HpBar";
 import { ResourceBar } from "./ResourceBar";
@@ -29,6 +30,7 @@ const ACTION_ICON_SIZE = 190;
 const WHEEL_ICON_SIZE = CHOICE_WHEEL_ICON_SIZE;
 const ACTIVE_SIZE = 1.04;
 const CARD_BASE_PCT = 20;
+const CARD_BASE_PCT_MOBILE = 38;
 const CHOICE_PANEL_MS = 340;
 const TURN_BANNER_MS = 1000;
 const ENEMY_THINK_MS = 1100;
@@ -244,6 +246,7 @@ export function CombatView({
   currentZoanForm,
   onSetZoanForm,
 }: CombatViewProps) {
+  const isMobile = useIsMobile();
   const [actionMenu, setActionMenu] = useState<ActionMenu | null>(null);
   const [choicePhase, setChoicePhase] = useState<"open" | "closing" | null>(null);
   const [focusedOption, setFocusedOption] = useState<ChoiceWheelOption | null>(null);
@@ -815,18 +818,22 @@ export function CombatView({
     }
   })();
 
+  const cardBasePct = isMobile
+    ? Math.min(CARD_BASE_PCT_MOBILE, Math.floor(92 / Math.max(allies.length, enemies.length, 1)))
+    : CARD_BASE_PCT;
+
   const cardWidthPct = (isActiveCard: boolean, count: number, hasActiveInRow: boolean) => {
     if (count <= 0) {
-      return CARD_BASE_PCT;
+      return cardBasePct;
     }
     if (!hasActiveInRow) {
-      return CARD_BASE_PCT;
+      return cardBasePct;
     }
     if (count === 1) {
-      return CARD_BASE_PCT * ACTIVE_SIZE;
+      return cardBasePct * ACTIVE_SIZE;
     }
-    const total = CARD_BASE_PCT * count;
-    const activeWidth = CARD_BASE_PCT * ACTIVE_SIZE;
+    const total = cardBasePct * count;
+    const activeWidth = cardBasePct * ACTIVE_SIZE;
     const idleWidth = (total - activeWidth) / (count - 1);
     return isActiveCard ? activeWidth : idleWidth;
   };
@@ -890,8 +897,59 @@ export function CombatView({
   const choiceClosing = choicePhase === "closing";
   const choiceInfoActive = Boolean(actionMenu && !choiceClosing && actionHint);
 
+  const choiceRail = (
+    <div className={`combat-choice-rail ${menuOpen ? "is-open" : ""}`}>
+      {menuOpen ? (
+        <div
+          className={`combat-choice-overlay ${choicePhase === "closing" ? "is-putting-in" : "is-pulling-out"}`}
+          role="dialog"
+          aria-label="Action choices"
+        >
+          <ChoiceWheel
+            disabled={actionsLocked || choiceClosing}
+            onFocusChange={setFocusedOption}
+            onHoverHint={setActionHint}
+            options={menuOptions}
+            orientation={isMobile ? "horizontal" : "vertical"}
+            showBadges={false}
+            soloFocus={isMobile}
+            stepRem={isMobile ? 9 : undefined}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const combatLogModal = (
+    <div className="combat-log-modal">
+      <div className="combat-log-modal-head">
+        <h3 className="font-display text-gold">Combat Log</h3>
+        <button className="combat-log-close" onClick={() => setLogOpen(false)} type="button">
+          Close
+        </button>
+      </div>
+      <div className="combat-log-modal-body">
+        {combat.log.slice(-40).map((entry) => (
+          <p key={entry.id}>
+            {entry.text}
+            {entry.detail ? <span className="combat-log-detail"> — {entry.detail}</span> : null}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
-    <section className={`combat-stage combat-battlefield ${menuOpen ? "has-side-wheel" : ""}`}>
+    <section
+      className={[
+        "combat-stage",
+        "combat-battlefield",
+        menuOpen ? (isMobile ? "has-mobile-wheel" : "has-side-wheel") : "",
+        logOpen ? "is-log-open" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {combat.battleFormat ? (
         <p className="combat-format-banner">
           {battleFormatLabel(
@@ -964,7 +1022,7 @@ export function CombatView({
       </div>
 
       <div className="combat-mid-row">
-        <div className={`combat-center-stage ${logOpen ? "is-log-open" : ""}`}>
+        <div className={`combat-center-stage ${logOpen && !isMobile ? "is-log-open" : ""}`}>
           {presenting ? (
             <button className="combat-stage-present" onClick={advancePresentation} type="button">
               <div className={`combat-stage-fx ${currentBeat?.animation ? `is-${currentBeat.animation.toLowerCase()}` : ""}`}>
@@ -984,23 +1042,8 @@ export function CombatView({
                 <p className="combat-stage-skip">Click to skip</p>
               </div>
             </button>
-          ) : logOpen ? (
-            <div className="combat-log-modal">
-              <div className="combat-log-modal-head">
-                <h3 className="font-display text-gold">Combat Log</h3>
-                <button className="combat-log-close" onClick={() => setLogOpen(false)} type="button">
-                  Close
-                </button>
-              </div>
-              <div className="combat-log-modal-body">
-                {combat.log.slice(-40).map((entry) => (
-                  <p key={entry.id}>
-                    {entry.text}
-                    {entry.detail ? <span className="combat-log-detail"> — {entry.detail}</span> : null}
-                  </p>
-                ))}
-              </div>
-            </div>
+          ) : logOpen && !isMobile ? (
+            combatLogModal
           ) : (
             <div className="combat-stage-idle">
               <div className="combat-stage-copy">
@@ -1070,24 +1113,7 @@ export function CombatView({
           )}
         </div>
 
-        <div className={`combat-choice-rail ${menuOpen ? "is-open" : ""}`}>
-          {menuOpen ? (
-            <div
-              className={`combat-choice-overlay ${choicePhase === "closing" ? "is-putting-in" : "is-pulling-out"}`}
-              role="dialog"
-              aria-label="Action choices"
-            >
-              <ChoiceWheel
-                disabled={actionsLocked || choiceClosing}
-                onFocusChange={setFocusedOption}
-                onHoverHint={setActionHint}
-                options={menuOptions}
-                orientation="vertical"
-                showBadges={false}
-              />
-            </div>
-          ) : null}
-        </div>
+        {isMobile ? null : choiceRail}
       </div>
 
       <div className={`combat-field-row combat-allies ${menuOpen ? "is-choosing" : ""}`}>
@@ -1127,6 +1153,8 @@ export function CombatView({
           })}
         </div>
       </div>
+
+      {isMobile ? choiceRail : null}
 
       {combat.finished ? null : (
         <div className="combat-actions-dock">
@@ -1206,6 +1234,12 @@ export function CombatView({
           </div>
         </div>
       )}
+
+      {logOpen && isMobile ? (
+        <div className="combat-log-fullscreen" role="dialog" aria-label="Combat log">
+          {combatLogModal}
+        </div>
+      ) : null}
     </section>
   );
 }
