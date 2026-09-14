@@ -216,7 +216,8 @@ body {
 }
 
 .game-shell:has(.icon-tip:hover),
-.game-shell:has(.icon-tip:focus-visible) {
+.game-shell:has(.icon-tip:focus-visible),
+.game-shell:has(.icon-tip.is-tip-open) {
   overflow: visible;
 }
 
@@ -460,7 +461,8 @@ img.run-glyph,
 }
 
 .player-hud:has(.icon-tip:hover),
-.player-hud:has(.icon-tip:focus-visible) {
+.player-hud:has(.icon-tip:focus-visible),
+.player-hud:has(.icon-tip.is-tip-open) {
   overflow: visible;
   z-index: 6;
 }
@@ -2341,9 +2343,10 @@ img.run-glyph,
   background-position: center center;
 }
 
-/* Let choice / cost tooltips escape the stage clip. */
+/* Let choice / cost tooltips escape the stage clip (hover + tap-to-open). */
 .encounter-frame:has(.icon-tip:hover),
-.encounter-frame:has(.icon-tip:focus-visible) {
+.encounter-frame:has(.icon-tip:focus-visible),
+.encounter-frame:has(.icon-tip.is-tip-open) {
   overflow: visible;
 }
 
@@ -2840,20 +2843,23 @@ html.battle-result-open .game-shell {
     filter 0.2s ease;
 }
 
-/* Let hover tooltips escape the parchment clip.
+/* Let hover / tap tooltips escape the parchment clip.
    Do NOT raise .choice-card z-index here — that stacks the parchment above the diamond. */
 .choice-card:has(.icon-tip:hover),
-.choice-card:has(.icon-tip:focus-visible) {
+.choice-card:has(.icon-tip:focus-visible),
+.choice-card:has(.icon-tip.is-tip-open) {
   overflow: visible;
 }
 
 .choice-card-shell:has(.icon-tip:hover),
-.choice-card-shell:has(.icon-tip:focus-visible) {
+.choice-card-shell:has(.icon-tip:focus-visible),
+.choice-card-shell:has(.icon-tip.is-tip-open) {
   z-index: 8;
 }
 
 .game-main:has(.icon-tip:hover),
-.game-main:has(.icon-tip:focus-visible) {
+.game-main:has(.icon-tip:focus-visible),
+.game-main:has(.icon-tip.is-tip-open) {
   overflow: visible;
   z-index: 4;
 }
@@ -3069,7 +3075,9 @@ html.battle-result-open .game-shell {
 
 /* Primary result tip sits below the line so it isn't clipped by the diamond/title. */
 .choice-primary-tip.icon-tip:hover::after,
-.choice-primary-tip.icon-tip:focus-visible::after {
+.choice-primary-tip.icon-tip:focus-visible::after,
+.choice-primary-tip.icon-tip.is-tip-open::after,
+.choice-primary-tip .effect-tooltip-live {
   bottom: auto;
   top: calc(100% + 8px);
 }
@@ -8188,6 +8196,27 @@ button.level-up-stats-row:disabled {
     /* Room so the first selected row isn't flush against the narrative plate. */
     padding-top: 0.45rem;
     padding-bottom: 0.35rem;
+  }
+
+  /* Raise the active row so the tip paints over neighbors (not under the header). */
+  .encounter-choice-stack .choice-card-shell:has(.icon-tip.is-tip-open),
+  .encounter-choice-stack .choice-card-shell:has(.icon-tip:focus-visible) {
+    z-index: 12;
+    position: relative;
+  }
+
+  /* Tips on the first choice open above the button and get clipped by the
+     scroll stack / GENERAL STORE header. Flip them under the trigger. */
+  .encounter-choice-stack .icon-tip.is-tip-open::after,
+  .encounter-choice-stack .icon-tip:focus-visible::after,
+  .encounter-choice-stack .effect-tooltip-live {
+    bottom: auto;
+    top: calc(100% + 8px);
+    left: 0;
+    right: auto;
+    transform: none;
+    max-width: min(280px, calc(100vw - 2rem));
+    z-index: 30;
   }
 
   .encounter-confirm,
