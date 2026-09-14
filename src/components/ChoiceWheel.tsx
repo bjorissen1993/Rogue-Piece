@@ -163,6 +163,21 @@ export function ChoiceWheel({
           <div aria-hidden="true" className="combat-wheel-badges is-spacer" />
         )
       ) : null}
+      {!vertical && soloFocus && focusedOption ? (
+        <button
+          aria-label={`Confirm ${focusedOption.title}`}
+          className="combat-wheel-confirm-btn"
+          disabled={disabled || focusedOption.disabled || motion !== 0}
+          onClick={() => {
+            if (!focusedOption.disabled) {
+              focusedOption.onConfirm();
+            }
+          }}
+          type="button"
+        >
+          Confirm
+        </button>
+      ) : null}
       <div className="combat-choice-wheel-row">
         {multi && !vertical ? (
           <button
@@ -234,7 +249,7 @@ export function ChoiceWheel({
             const transform = vertical
               ? `translate(${point.x}rem, ${point.y}rem) translate(-50%, -50%) scale(${scale})`
               : soloFocus
-                ? `translateX(${visual * slotStep}rem) translateY(calc(-50% + ${drift}rem)) scale(${scale})`
+                ? `translateX(${visual * slotStep}rem) scale(${scale})`
                 : `translateX(${visual * slotStep}rem) translateY(${drift}rem) scale(${scale})`;
             const optionClass = `combat-wheel-option ${isFocus ? "is-focus" : ""} ${instant ? "is-instant" : ""} ${option.disabled ? "is-disabled" : ""} ${option.selected ? "is-picked" : ""} ${vertical && !isFocus ? "is-side-only" : ""}`;
             const optionStyle = {
@@ -293,8 +308,8 @@ export function ChoiceWheel({
                 type="button"
               >
                 <span className="combat-wheel-icon">{option.icon}</span>
-                <span className="combat-wheel-label">{option.title}</span>
-                {isFocus ? <span className="combat-wheel-cost">{option.costLabel}</span> : null}
+                {soloFocus ? null : <span className="combat-wheel-label">{option.title}</span>}
+                {isFocus && !soloFocus ? <span className="combat-wheel-cost">{option.costLabel}</span> : null}
               </button>
             );
           })}

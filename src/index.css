@@ -7515,9 +7515,9 @@ button.level-up-stats-row:disabled {
     --overlay-max-h: calc(100dvh - var(--mobile-safe-top) - var(--mobile-safe-bottom) - 0.5rem);
     --overlay-pad: 0.85rem;
     --combat-side-wheel-w: min(11rem, 38vw);
-    --combat-action-w: clamp(3.1rem, 18vw, 3.75rem);
-    --combat-action-h: clamp(3.35rem, 16vw, 3.9rem);
-    --combat-action-icon: clamp(2.85rem, 14vw, 3.35rem);
+    --combat-action-w: clamp(2.35rem, 14vw, 2.85rem);
+    --combat-action-h: clamp(2.85rem, 13vw, 3.25rem);
+    --combat-action-icon: clamp(2.1rem, 11vw, 2.55rem);
     --combat-wheel-w: min(22rem, 94vw);
     --combat-wheel-h: 6.4rem;
   }
@@ -7977,15 +7977,15 @@ button.level-up-stats-row:disabled {
 
   .combat-actions-main {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.35rem;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.12rem;
     justify-items: center;
     overflow-x: visible;
   }
 
   .combat-action-btn {
     width: 100%;
-    max-width: 7rem;
+    max-width: none;
   }
 
   .combat-action-label {
@@ -9821,44 +9821,56 @@ button.level-up-stats-row:disabled {
   .combat-actions-dock {
     flex-shrink: 0;
     margin-top: 0;
-    padding-top: 0.35rem;
-    padding-bottom: 0.2rem;
+    padding-top: 0.2rem;
+    padding-bottom: 0.15rem;
     overflow: visible;
+    z-index: 40;
   }
 
+  /* All 6 battle actions in one row on mobile. */
   .combat-actions-main {
-    gap: 0.15rem 0.35rem;
-    padding: 0.1rem 0.2rem 0.15rem;
+    display: grid !important;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.12rem;
+    padding: 0.05rem 0.15rem 0.1rem;
     transform: none;
+    flex-wrap: nowrap;
   }
 
   .combat-action-btn {
-    width: var(--combat-action-w);
-    max-width: 3.9rem;
-    min-height: var(--combat-action-h);
-    padding: 0 0 0.05rem;
+    width: 100%;
+    max-width: none;
+    min-height: 3.1rem;
+    padding: 0 0 0.02rem;
     overflow: visible;
   }
 
   .combat-action-glow {
-    bottom: 1.15rem;
-    width: 3.6rem;
-    height: 3.6rem;
+    bottom: 0.95rem;
+    width: 2.6rem;
+    height: 2.6rem;
   }
 
   .combat-action-icon {
-    bottom: 0.85rem;
+    bottom: 0.72rem;
+    width: 2.35rem !important;
+    height: 2.35rem !important;
   }
 
   .combat-action-label {
     min-width: 0;
-    max-width: 3.7rem;
-    font-size: 0.55rem;
-    padding: 0.08rem 0.2rem;
+    max-width: 100%;
+    width: 100%;
+    font-size: 0.42rem;
+    letter-spacing: 0;
+    padding: 0.04rem 0.05rem;
+    border-radius: 0.35rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* Hide main action dock while browsing a choice wheel or reading the log. */
-  .combat-battlefield.has-mobile-wheel .combat-actions-dock,
+  /* Only hide the dock under the fullscreen log — keep actions visible while choosing. */
   .combat-battlefield.is-log-open .combat-actions-dock {
     visibility: hidden;
     pointer-events: none;
@@ -9878,14 +9890,18 @@ button.level-up-stats-row:disabled {
     pointer-events: none;
   }
 
-  /* Bottom horizontal solo choice wheel (one option + L/R), docks where actions sit. */
+  /* Choice strip sits above ally cards + actions; icon + Confirm stay tappable. */
   .combat-battlefield.has-mobile-wheel {
     overflow: hidden;
   }
 
+  .combat-battlefield.has-mobile-wheel .combat-allies {
+    display: none;
+  }
+
   .combat-battlefield.has-mobile-wheel .combat-choice-rail {
     position: relative;
-    z-index: 45;
+    z-index: 55;
     display: flex;
     flex: 0 0 auto;
     width: 100%;
@@ -9913,8 +9929,8 @@ button.level-up-stats-row:disabled {
     flex-direction: column;
     align-items: center;
     justify-content: flex-end;
-    gap: 0;
-    padding: 0.05rem 0.3rem 0.15rem;
+    gap: 0.2rem;
+    padding: 0.1rem 0.3rem 0.1rem;
     transform: none;
     pointer-events: none;
     overflow: visible;
@@ -9923,12 +9939,12 @@ button.level-up-stats-row:disabled {
   .combat-battlefield.has-mobile-wheel .combat-choice-overlay::before {
     left: 50%;
     top: auto;
-    bottom: -0.15rem;
-    width: min(22rem, 94vw);
-    height: 7.5rem;
+    bottom: -0.05rem;
+    width: min(24rem, 98vw);
+    height: 7.25rem;
     transform: translateX(-50%);
     background:
-      radial-gradient(ellipse 70% 70% at 50% 75%, rgba(3, 6, 10, 0.92) 0%, rgba(3, 6, 10, 0.55) 42%, transparent 78%);
+      radial-gradient(ellipse 72% 70% at 50% 70%, rgba(3, 6, 10, 0.94) 0%, rgba(3, 6, 10, 0.62) 48%, transparent 78%);
   }
 
   .combat-battlefield.has-mobile-wheel .combat-choice-overlay.is-pulling-out,
@@ -9938,51 +9954,93 @@ button.level-up-stats-row:disabled {
 
   .combat-battlefield.has-mobile-wheel .combat-choice-wheel-wrap,
   .combat-battlefield.has-mobile-wheel .combat-choice-wheel-wrap.is-solo-focus {
-    width: min(22rem, 94vw);
+    width: min(22rem, 96vw);
     max-width: 100%;
     justify-content: center;
+    gap: 0.2rem;
     pointer-events: auto;
   }
 
   .combat-battlefield.has-mobile-wheel .combat-choice-wheel-row {
     align-items: center;
+    min-height: 3.4rem;
   }
 
   .combat-battlefield.has-mobile-wheel .combat-choice-wheel {
-    width: min(11rem, 42vw);
-    height: 6.2rem;
-    min-height: 6.2rem;
+    width: min(7rem, 30vw);
+    height: 3.4rem;
+    min-height: 3.4rem;
+    overflow: hidden;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   .combat-battlefield.has-mobile-wheel .combat-wheel-arrow {
-    width: 2.35rem;
-    height: 2.35rem;
+    width: 2.1rem;
+    height: 2.1rem;
     margin-bottom: 0;
     align-self: center;
-    font-size: 1.35rem;
+    font-size: 1.2rem;
     pointer-events: auto;
+    z-index: 6;
   }
 
   .combat-battlefield.has-mobile-wheel .combat-wheel-option {
-    width: 8.5rem;
-    margin-left: -4.25rem;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    width: auto !important;
+    height: 3.2rem !important;
+    margin: 0 !important;
+    filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.5));
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-wheel-icon {
+    width: 3.1rem;
+    height: 3.1rem;
   }
 
   .combat-battlefield.has-mobile-wheel .combat-wheel-icon .hud-icon,
   .combat-battlefield.has-mobile-wheel .combat-wheel-icon .hud-art,
   .combat-battlefield.has-mobile-wheel .combat-wheel-icon svg {
-    width: 4.4rem;
-    height: 4.4rem;
+    width: 3.1rem !important;
+    height: 3.1rem !important;
   }
 
-  .combat-battlefield.has-mobile-wheel .combat-wheel-label {
-    margin-top: -0.75rem;
-    font-size: 0.74rem;
-    max-width: 8.5rem;
+  /* Center stage already shows the name/cost — keep the icon clean. */
+  .combat-battlefield.has-mobile-wheel .combat-wheel-label,
+  .combat-battlefield.has-mobile-wheel .combat-wheel-cost {
+    display: none !important;
   }
 
-  .combat-battlefield.has-mobile-wheel .combat-allies {
-    opacity: 0.55;
+  .combat-wheel-confirm-btn {
+    position: relative;
+    z-index: 60;
+    min-height: 2.35rem;
+    min-width: 8rem;
+    margin: 0 0 0.2rem;
+    padding: 0.35rem 1rem;
+    border-radius: 999px;
+    border: 1px solid rgba(212, 179, 106, 0.55);
+    background: linear-gradient(180deg, rgba(212, 179, 106, 0.95), rgba(168, 130, 58, 0.95));
+    color: #1a140c;
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45);
+  }
+
+  .combat-wheel-confirm-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-actions-dock {
+    z-index: 50;
+    padding-top: 0.2rem;
   }
 
   /* Full-screen combat log overlay above every battle layer. */
