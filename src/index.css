@@ -8946,7 +8946,7 @@ button.level-up-stats-row:disabled {
   }
 }
 
-/* Mobile: one crewmate at a time; center picker in the content area above bottom nav. */
+/* Mobile: one crewmate at a time; badge centered between kicker and stats panel. */
 @media (max-width: 767px) {
   .encounter-frame.is-picking-participant .encounter-header {
     display: none;
@@ -8962,7 +8962,7 @@ button.level-up-stats-row:disabled {
     flex: 1 1 auto;
     min-height: 0;
     width: 100%;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
     padding: 0.35rem var(--mobile-page-padding) 0.55rem;
     overflow: hidden;
@@ -8975,10 +8975,11 @@ button.level-up-stats-row:disabled {
   .choice-participant-overlay.is-mobile-compact {
     width: 100%;
     max-width: 22rem;
+    height: 100%;
     max-height: 100%;
     margin: 0 auto;
-    gap: 0.35rem;
-    justify-content: center;
+    gap: 0.45rem;
+    justify-content: flex-start;
     overflow: hidden;
     animation: none;
     transform: none;
@@ -8992,23 +8993,47 @@ button.level-up-stats-row:disabled {
     text-align: center;
   }
 
+  /* Grow between title and stats so the badge sits in the middle of that gap. */
   .choice-participant-overlay.is-mobile-compact .choice-participant-wheel-panel {
     margin-bottom: 0;
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-height: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
     justify-content: center;
   }
 
+  .choice-participant-overlay.is-mobile-compact .choice-participant-wheel,
+  .choice-participant-overlay.is-mobile-compact .combat-choice-wheel-wrap {
+    width: 100%;
+    height: auto;
+    max-height: 100%;
+    justify-content: center;
+  }
+
+  .choice-participant-overlay.is-mobile-compact .combat-choice-wheel-row {
+    align-items: center;
+    height: auto;
+  }
+
+  /* Hug the badge; options are bottom-anchored, so a tall wheel left empty space above. */
   .choice-participant-wheel.is-mobile-solo .combat-choice-wheel,
   .choice-participant-overlay.is-mobile-compact .choice-participant-wheel .combat-choice-wheel {
     width: min(18rem, 78vw);
-    height: 7.25rem;
-    min-height: 7.25rem;
+    height: 6.6rem;
+    min-height: 6.6rem;
+  }
+
+  .choice-participant-overlay.is-mobile-compact .combat-wheel-badges {
+    display: none;
   }
 
   .choice-participant-overlay.is-mobile-compact .choice-participant-wheel .combat-wheel-option {
     width: 8.5rem;
     margin-left: -4.25rem;
+    top: 50%;
+    bottom: auto;
   }
 
   .choice-participant-overlay.is-mobile-compact .choice-participant-wheel .combat-wheel-icon .hud-icon,
@@ -9022,12 +9047,13 @@ button.level-up-stats-row:disabled {
     width: 2.35rem;
     height: 2.35rem;
     margin-bottom: 0;
+    align-self: center;
     font-size: 1.35rem;
   }
 
   .choice-participant-overlay.is-mobile-compact .choice-participant-panel {
     width: 100%;
-    margin-top: 0.15rem;
+    margin-top: 0;
     padding: 0.5rem 0.65rem 0.55rem;
     gap: 0.4rem;
     flex: 0 0 auto;

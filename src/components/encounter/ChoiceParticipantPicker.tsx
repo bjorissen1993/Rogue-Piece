@@ -122,6 +122,7 @@ export function ChoiceParticipantPicker({
           onFocusChange={setFocused}
           onHoverHint={() => undefined}
           options={options}
+          showBadges={false}
           soloFocus={isMobile}
           stepRem={isMobile ? 9 : 14}
         />
