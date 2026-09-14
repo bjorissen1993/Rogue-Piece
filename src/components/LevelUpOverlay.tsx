@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import type { PendingLevelUp, RunState, StatName } from "../models/types";
 import { ProgressionService } from "../services/ProgressionService";
 import { STAT_LABELS } from "../utils/text";
@@ -23,6 +24,7 @@ export function LevelUpOverlay({
   queueTotal,
   submitting = false,
 }: LevelUpOverlayProps) {
+  const isMobile = useIsMobile();
   const [selected, setSelected] = useState<StatName | null>(null);
   const [ready, setReady] = useState(false);
   const name = ProgressionService.getDisplayName(run, pending.characterId);
@@ -38,7 +40,7 @@ export function LevelUpOverlay({
   }, [pendingKey]);
 
   return (
-    <div className="level-up-shell">
+    <div className={`level-up-shell${isMobile ? " is-mobile-merged" : ""}`}>
       <section className="level-up-overlay panel">
         <header className="level-up-header">
           <h2 className="level-up-title font-display">Level Up!</h2>
@@ -59,24 +61,63 @@ export function LevelUpOverlay({
         </header>
 
         <div className={`level-up-choose${ready ? " is-ready" : ""}`}>
-          <p className="level-up-prompt">Choose one stat to increase by +1.</p>
-          <ul className={`level-up-stat-grid${selected ? " has-selection" : ""}`}>
-            {STATS.map((stat) => (
-              <li key={stat}>
-                <button
-                  className={`level-up-stat-btn ${selected === stat ? "is-selected" : ""}`}
-                  disabled={!ready || submitting}
-                  onClick={() => setSelected(stat)}
-                  type="button"
-                >
-                  <span className="level-up-stat-icon-wrap">
-                    <StatIcon showTooltip={false} size={120} stat={stat} />
-                  </span>
-                  <span className="level-up-stat-label">{STAT_LABELS[stat]}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <p className="level-up-prompt">
+            {isMobile
+              ? "Tap a current stat to raise it by +1, then Confirm."
+              : "Choose one stat to increase by +1."}
+          </p>
+
+          {isMobile ? (
+            <ul
+              aria-label={`${name} current stats`}
+              className={`level-up-stats-list is-selectable${selected ? " has-selection" : ""}`}
+            >
+              {STATS.map((stat) => {
+                const value = stats[stat];
+                const isSelected = selected === stat;
+                return (
+                  <li key={stat}>
+                    <button
+                      className={`level-up-stats-row${isSelected ? " is-selected" : ""}`}
+                      disabled={!ready || submitting}
+                      onClick={() => setSelected(stat)}
+                      type="button"
+                    >
+                      <span className="level-up-stats-icon">
+                        <StatIcon showTooltip={false} size={40} stat={stat} />
+                      </span>
+                      <span className="level-up-stats-label">{STAT_LABELS[stat]}</span>
+                      <span className="level-up-stats-value">
+                        {value}
+                        {isSelected ? (
+                          <span className="level-up-stats-delta"> → {value + 1}</span>
+                        ) : null}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <ul className={`level-up-stat-grid${selected ? " has-selection" : ""}`}>
+              {STATS.map((stat) => (
+                <li key={stat}>
+                  <button
+                    className={`level-up-stat-btn ${selected === stat ? "is-selected" : ""}`}
+                    disabled={!ready || submitting}
+                    onClick={() => setSelected(stat)}
+                    type="button"
+                  >
+                    <span className="level-up-stat-icon-wrap">
+                      <StatIcon showTooltip={false} size={120} stat={stat} />
+                    </span>
+                    <span className="level-up-stat-label">{STAT_LABELS[stat]}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
           <button
             className="gold-btn level-up-confirm"
             disabled={!ready || !selected || submitting}
@@ -88,33 +129,35 @@ export function LevelUpOverlay({
         </div>
       </section>
 
-      <aside className="level-up-stats-panel panel" aria-label={`${name} current stats`}>
-        <p className="level-up-stats-kicker">Current stats</p>
-        <h3 className="level-up-stats-name font-display">{name}</h3>
-        <p className="level-up-stats-level text-parchment-dim">
-          LV {pending.fromLevel}
-          <span aria-hidden="true"> → </span>
-          <span className="text-gold">LV {pending.toLevel}</span>
-        </p>
-        <ul className="level-up-stats-list">
-          {STATS.map((stat) => {
-            const value = stats[stat];
-            const isSelected = selected === stat;
-            return (
-              <li className={`level-up-stats-row${isSelected ? " is-selected" : ""}`} key={stat}>
-                <span className="level-up-stats-icon">
-                  <StatIcon showTooltip={false} size={40} stat={stat} />
-                </span>
-                <span className="level-up-stats-label">{STAT_LABELS[stat]}</span>
-                <span className="level-up-stats-value">
-                  {value}
-                  {isSelected ? <span className="level-up-stats-delta"> → {value + 1}</span> : null}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </aside>
+      {!isMobile ? (
+        <aside className="level-up-stats-panel panel" aria-label={`${name} current stats`}>
+          <p className="level-up-stats-kicker">Current stats</p>
+          <h3 className="level-up-stats-name font-display">{name}</h3>
+          <p className="level-up-stats-level text-parchment-dim">
+            LV {pending.fromLevel}
+            <span aria-hidden="true"> → </span>
+            <span className="text-gold">LV {pending.toLevel}</span>
+          </p>
+          <ul className="level-up-stats-list">
+            {STATS.map((stat) => {
+              const value = stats[stat];
+              const isSelected = selected === stat;
+              return (
+                <li className={`level-up-stats-row${isSelected ? " is-selected" : ""}`} key={stat}>
+                  <span className="level-up-stats-icon">
+                    <StatIcon showTooltip={false} size={40} stat={stat} />
+                  </span>
+                  <span className="level-up-stats-label">{STAT_LABELS[stat]}</span>
+                  <span className="level-up-stats-value">
+                    {value}
+                    {isSelected ? <span className="level-up-stats-delta"> → {value + 1}</span> : null}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </aside>
+      ) : null}
     </div>
   );
 }
