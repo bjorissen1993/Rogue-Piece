@@ -3,6 +3,7 @@ import type { RunState, StatName } from "../models/types";
 import { getDevilFruit } from "../data/devilFruits";
 import { getWeapon } from "../data/weapons";
 import { CORE_CREW_CAP } from "../game/constants";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import { CharacterService } from "../services/CharacterService";
 import { CrewService } from "../services/CrewService";
 import { CrewCombatService, SUPPORT_ABILITIES } from "../services/CrewCombatService";
@@ -65,6 +66,7 @@ function crewStatsFor(character: ReturnType<typeof CharacterService.getCharacter
 }
 
 export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFruit }: CrewOverlayProps) {
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState<CrewTab>("CORE");
   const [sidePanel, setSidePanel] = useState<SidePanelMode>("character");
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -218,8 +220,10 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
 
   const rosterGridClassName = [
     "crew-roster-grid",
+    isMobile ? "is-mobile-list" : "",
     selectedId ? "has-selection" : "",
     dropTargetId ? "is-drag-targeting" : "",
+    isMobile && selectedWeaponId && sidePanel === "weapons" ? "is-assign-mode" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -227,6 +231,10 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
   const renderRosterSlot = (member: (typeof rosterSlots)[number], index: number) => {
     const isBattleSlot = index < BATTLE_FORMATION_SLOTS;
     const slotKey = member?.id ?? `open-${index}`;
+
+    if (isMobile && !member) {
+      return null;
+    }
 
     return (
       <li className={isBattleSlot ? "crew-roster-slot-battle" : undefined} key={slotKey}>
@@ -239,6 +247,13 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
             isCaptain={member.isCaptain}
             name={member.name}
             onClick={() => {
+              if (isMobile && selectedWeaponId && sidePanel === "weapons") {
+                onAssignStashWeapon?.(selectedWeaponId, member.id);
+                setSelectedWeaponId(null);
+                setSelectedId(member.id);
+                setSidePanel("character");
+                return;
+              }
               if (selectedId === member.id) {
                 setSelectedId(null);
                 return;
@@ -258,7 +273,13 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
             portraitInitials={portraitInitials(member.name)}
             primaryWeapon={member.weapon}
             selected={selectedId === member.id}
-            statusLine={member.statusLine}
+            statusLine={
+              isMobile && isBattleSlot
+                ? member.statusLine
+                  ? `Battle · ${member.statusLine}`
+                  : "Battle"
+                : member.statusLine
+            }
             vitals={member.vitals}
             weaponInstanceId={member.weaponInstanceId}
           />
@@ -304,25 +325,31 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
       </div>
 
       {tab === "CORE" ? (
-        <div className="split-overlay crew-split-overlay">
+        <div className={`split-overlay crew-split-overlay${isMobile ? " is-mobile-crew" : ""}`}>
           <div className="split-pane crew-roster-pane">
             <p className="text-sm text-parchment-dim crew-fleet-unlock-line">{fleetUnlockLine}</p>
             <div className="crew-roster-wrap">
-              <span className="crew-battle-formation-label">Battle Formation</span>
-              <div aria-hidden="true" className="crew-battle-formation-marker" />
+              {isMobile ? null : (
+                <>
+                  <span className="crew-battle-formation-label">Battle Formation</span>
+                  <div aria-hidden="true" className="crew-battle-formation-marker" />
+                </>
+              )}
               <ul className={rosterGridClassName}>
                 {rosterSlots.map((member, index) => renderRosterSlot(member, index))}
               </ul>
             </div>
             {stashFruits.length > 0 ? (
               <section className="crew-stash crew-stash-compact">
-                <p className="detail-label">Devil Fruits in pack — drag onto a crewmate</p>
+                <p className="detail-label">
+                  {isMobile ? "Devil Fruits in pack" : "Devil Fruits in pack — drag onto a crewmate"}
+                </p>
                 <ul className="crew-stash-grid">
                   {stashFruits.map((item) => (
                     <li key={item.id}>
                       <button
                         className="crew-stash-chip"
-                        draggable
+                        draggable={!isMobile}
                         onDragStart={(event) =>
                           handleDragStart(event, { kind: "devil_fruit", fruitId: item.fruitId! })
                         }
@@ -339,7 +366,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
           </div>
 
           <aside className="detail-panel panel crew-side-panel">
-            <div className="crew-side-toggle">
+            <div className="crew-side-toggle" role="tablist" aria-label="Crew detail">
               <button
                 className={sidePanel === "character" ? "crew-side-toggle-btn is-active" : "crew-side-toggle-btn"}
                 onClick={() => setSidePanel("character")}
@@ -358,7 +385,13 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
 
             {sidePanel === "weapons" ? (
               <div className="crew-weapons-panel">
-                <p className="detail-label">Drag weapons onto crew cards — click to inspect stats</p>
+                <p className="detail-label">
+                  {isMobile
+                    ? selectedWeaponId
+                      ? "Tap a crewmate above to assign this weapon"
+                      : "Tap a weapon, then tap a crewmate to assign"
+                    : "Drag weapons onto crew cards — click to inspect stats"}
+                </p>
                 {weaponRows.length === 0 ? (
                   <p className="text-sm text-parchment-dim">No weapons in the crew pack.</p>
                 ) : (
@@ -367,7 +400,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                       <li key={instance.id}>
                         <button
                           className={`crew-weapon-row ${selectedWeaponId === instance.id ? "is-selected" : ""}`}
-                          draggable
+                          draggable={!isMobile}
                           onClick={() =>
                             setSelectedWeaponId((current) => (current === instance.id ? null : instance.id))
                           }
@@ -393,7 +426,9 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                   </div>
                 ) : (
                   <p className="text-sm text-parchment-dim mt-3">
-                    Select a weapon to see damage, speed, and other stats. Drag onto a crewmate to assign.
+                    {isMobile
+                      ? "Select a weapon to see its stats."
+                      : "Select a weapon to see damage, speed, and other stats. Drag onto a crewmate to assign."}
                   </p>
                 )}
               </div>
