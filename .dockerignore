@@ -2,13 +2,14 @@ node_modules
 **/node_modules
 dist
 **/dist
+server/node_modules
+server/dist
 .git
 .env
 **/.env
 **/.env.*
 !.env.production.example
 *.mp3
-public
-src
-index.html
-vite.config.*
+Beyond the Blue*
+Captain's Duel.mp3
+Uncertain Victory.mp3

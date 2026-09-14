@@ -1,4 +1,5 @@
-# Optional explicit path for the frontend service: /railway.frontend.toml
+# DEFAULT = frontend (tranquil-comfort / roguepiece.freakydev.com).
+# API service must set Config-as-code path to /railway.api.toml
 
 [build]
 builder = "DOCKERFILE"

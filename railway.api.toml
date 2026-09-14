@@ -1,5 +1,5 @@
-# API service only. Frontend service must use /railway.frontend.toml
-# (Settings → Config-as-code), otherwise it will crash running this Docker image.
+# API service (api.roguepiece): set Config-as-code path to /railway.api.toml
+# Default railway.toml deploys the frontend image instead.
 
 [build]
 builder = "DOCKERFILE"
