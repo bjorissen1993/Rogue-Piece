@@ -8138,152 +8138,191 @@ html.battle-result-open .battler-card.is-down {
   .mobile-top-chrome {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.28rem;
     width: 100%;
     margin: 0;
-    padding: 0.4rem 0.55rem 0.45rem;
+    padding: 0.32rem 0.42rem 0.36rem;
     border: 1px solid rgba(197, 160, 89, 0.28);
-    border-radius: 0.75rem;
+    border-radius: 0.65rem;
     background: linear-gradient(180deg, rgba(20, 28, 36, 0.96), rgba(10, 14, 18, 0.96));
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 6px 14px rgba(0, 0, 0, 0.22);
   }
 
-  .mobile-top-chrome-meta {
+  .mobile-top-chrome-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.45rem;
+    gap: 0.28rem;
     min-width: 0;
   }
 
-  .mobile-top-chrome-nav {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    min-width: 0;
-    flex: 1;
-  }
-
-  .mobile-top-chrome-time {
+  .mobile-top-chrome-menu {
+    flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    min-width: 0;
-    padding: 0.15rem 0.2rem;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    text-align: left;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    margin: 0;
+    padding: 0;
+    border: 1px solid rgba(197, 160, 89, 0.35);
+    border-radius: 0.45rem;
+    background: rgba(8, 12, 16, 0.55);
+    color: var(--color-gold);
     cursor: pointer;
   }
 
-  .mobile-top-chrome-time-text {
-    display: flex;
-    flex-direction: column;
-    gap: 0.05rem;
+  .mobile-top-chrome-time {
+    flex: 0 1 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.22rem;
     min-width: 0;
-  }
-
-  .mobile-top-chrome-time .run-day,
-  .mobile-top-chrome-time .run-clock {
     margin: 0;
+    padding: 0.12rem 0.2rem;
+    border: 0;
+    background: transparent;
+    color: var(--color-gold);
+    font-size: 0.68rem;
+    font-weight: 700;
     line-height: 1.1;
+    white-space: nowrap;
+    cursor: pointer;
   }
 
-  .mobile-top-chrome-time .run-day {
-    font-size: 0.78rem;
-    font-weight: 700;
+  .mobile-top-chrome-time-icon {
+    flex-shrink: 0;
     color: var(--color-gold);
   }
 
-  .mobile-top-chrome-time .run-clock {
-    font-size: 0.7rem;
-    color: var(--color-parchment-dim);
+  .mobile-top-chrome-time-line {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .mobile-top-chrome-place {
+    flex: 1 1 auto;
+    min-width: 0;
     margin: 0;
-    max-width: 42%;
-    font-size: 0.72rem;
-    line-height: 1.2;
-    text-align: right;
+    font-size: 0.66rem;
+    line-height: 1.15;
+    text-align: center;
     color: var(--color-parchment-dim);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .mobile-top-chrome-vitals {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    width: 100%;
+  .mobile-top-chrome-identity {
+    flex: 0 0 auto;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
     margin: 0;
-    padding: 0;
+    padding: 0 0 0 0.15rem;
     border: 0;
     background: transparent;
     color: inherit;
-    text-align: left;
+    text-align: right;
     cursor: pointer;
   }
 
-  .mobile-vitals-strip {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    width: 100%;
-    margin: 0;
-    padding: 0.45rem 0.65rem;
-    border: 1px solid rgba(197, 160, 89, 0.28);
-    border-radius: 0.75rem;
-    background: linear-gradient(180deg, rgba(20, 28, 36, 0.96), rgba(10, 14, 18, 0.96));
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-    min-height: var(--mobile-vitals-height);
-  }
-
-  .mobile-vitals-identity {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-    min-width: 4.1rem;
-    flex-shrink: 0;
-  }
-
-  .mobile-vitals-identity strong {
-    font-size: 0.9rem;
+  .mobile-top-chrome-identity strong {
+    font-size: 0.78rem;
+    line-height: 1.05;
     color: var(--color-gold);
-    line-height: 1.1;
   }
 
-  .mobile-vitals-identity span {
-    font-size: 0.68rem;
+  .mobile-top-chrome-identity span {
+    font-size: 0.58rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-parchment-dim);
+    line-height: 1;
   }
 
-  .mobile-vitals-bars {
-    flex: 1;
+  .mobile-top-chrome-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.28rem;
+    width: 100%;
+    margin: 0;
+    padding: 0.08rem 0 0;
+    border: 0;
+    border-top: 1px solid rgba(197, 160, 89, 0.16);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .mobile-stat-chip {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.18rem;
+    gap: 0.12rem;
   }
 
-  .mobile-top-chrome .mobile-vitals-bars .resource-bar-track {
-    min-height: 0.55rem;
-    height: 0.55rem;
+  .mobile-stat-chip-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.15rem;
+    min-width: 0;
   }
 
-  .mobile-top-chrome .mobile-vitals-bars .mb-1 {
-    margin-bottom: 0.05rem;
+  .mobile-stat-chip-label {
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--color-gold);
   }
 
-  .mobile-top-chrome .mobile-vitals-bars .text-sm {
-    font-size: 0.68rem;
-    line-height: 1;
+  .mobile-stat-chip-value {
+    font-size: 0.56rem;
+    color: var(--color-parchment-dim);
+    white-space: nowrap;
+  }
+
+  .mobile-stat-chip-track {
+    height: 0.32rem;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(8, 12, 16, 0.65);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+
+  .mobile-stat-chip-fill {
+    height: 100%;
+    border-radius: inherit;
+    transition: width 0.2s ease;
+  }
+
+  .mobile-stat-chip-hp .mobile-stat-chip-track {
+    background: var(--color-hp-bg);
+  }
+
+  .mobile-stat-chip-hp .mobile-stat-chip-fill {
+    background: linear-gradient(90deg, #a83832, var(--color-hp));
+  }
+
+  .mobile-stat-chip-mp .mobile-stat-chip-track {
+    background: var(--color-mp-bg);
+  }
+
+  .mobile-stat-chip-mp .mobile-stat-chip-fill {
+    background: linear-gradient(90deg, #3a7ab8, var(--color-mp));
+  }
+
+  .mobile-stat-chip-xp .mobile-stat-chip-track {
+    background: var(--color-xp-bg);
+  }
+
+  .mobile-stat-chip-xp .mobile-stat-chip-fill {
+    background: linear-gradient(90deg, #b89828, var(--color-xp));
+  }
+
+  .mobile-vitals-strip {
+    display: none !important;
   }
 
   .mobile-bottom-nav {

@@ -4,9 +4,7 @@ import { MpService } from "../../services/MpService";
 import { ProgressionService } from "../../services/ProgressionService";
 import { clockFromTimeOfDay } from "../../utils/presentation";
 import { DevBadge } from "../DevBadge";
-import { HpBar } from "../HpBar";
 import { HudIcon } from "../HudIcons";
-import { ResourceBar } from "../ResourceBar";
 
 type MobileTopChromeProps = {
   run: RunState;
@@ -16,9 +14,32 @@ type MobileTopChromeProps = {
   onOpenCharacter: () => void;
 };
 
+type StatChipProps = {
+  label: string;
+  current: number;
+  max: number;
+  kind: "hp" | "mp" | "xp";
+};
+
+function MobileStatChip({ label, current, max, kind }: StatChipProps) {
+  const pct = max <= 0 ? 0 : Math.max(0, Math.min(100, (current / max) * 100));
+  return (
+    <div className={`mobile-stat-chip mobile-stat-chip-${kind}`}>
+      <div className="mobile-stat-chip-head">
+        <span className="mobile-stat-chip-label">{label}</span>
+        <span className="mobile-stat-chip-value">
+          {current}/{max}
+        </span>
+      </div>
+      <div className="mobile-stat-chip-track">
+        <div className="mobile-stat-chip-fill" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 /**
- * Single mobile chrome strip: menu / day-time / location + name/level / HP-MP-XP.
- * Replaces the separate RunBar + MobileVitalsStrip to free encounter space.
+ * Single compact mobile chrome: menu + day/time + location + name/level + HP/MP/XP in one card.
  */
 export function MobileTopChrome({
   run,
@@ -32,47 +53,49 @@ export function MobileTopChrome({
   const { player } = run;
   const progression = ProgressionService.getProgression(run, "player");
   const xp = ProgressionService.xpProgress(progression);
+  const mpMax = player.maxMp ?? MpService.maxMpFor(player);
+  const mpCurrent = player.mp ?? mpMax;
 
   return (
     <header className="mobile-top-chrome">
-      <div className="mobile-top-chrome-meta">
-        <div className="mobile-top-chrome-nav">
-          <button aria-label="Menu" className="run-btn" onClick={onMenu} type="button">
-            <HudIcon name="menu" size={18} />
-          </button>
-          <button
-            className="run-time-btn mobile-top-chrome-time"
-            onClick={onOpenTime}
-            type="button"
-            title="Day and crew schedule"
-          >
-            <HudIcon className="run-glyph" name="hourglass" size={18} />
-            <span className="mobile-top-chrome-time-text">
-              <span className="run-day">Day {run.day}</span>
-              <span className="run-clock">{clockFromTimeOfDay(run.timeOfDay)}</span>
-            </span>
-          </button>
-          {isDev ? <DevBadge /> : null}
-        </div>
-        <p className="mobile-top-chrome-place">
-          <span>{place}</span>
+      <div className="mobile-top-chrome-head">
+        <button aria-label="Menu" className="mobile-top-chrome-menu" onClick={onMenu} type="button">
+          <HudIcon name="menu" size={16} />
+        </button>
+
+        <button
+          className="mobile-top-chrome-time"
+          onClick={onOpenTime}
+          type="button"
+          title="Day and crew schedule"
+        >
+          <HudIcon className="mobile-top-chrome-time-icon" name="hourglass" size={14} />
+          <span className="mobile-top-chrome-time-line">
+            Day {run.day} · {clockFromTimeOfDay(run.timeOfDay)}
+          </span>
+        </button>
+
+        <p className="mobile-top-chrome-place" title={place}>
+          {place}
         </p>
+
+        <button
+          className="mobile-top-chrome-identity"
+          onClick={onOpenCharacter}
+          type="button"
+          title="Character sheet"
+        >
+          <strong className="font-display">{player.name}</strong>
+          <span>Lv {progression.level}</span>
+        </button>
+
+        {isDev ? <DevBadge /> : null}
       </div>
 
-      <button className="mobile-top-chrome-vitals" onClick={onOpenCharacter} type="button">
-        <div className="mobile-vitals-identity">
-          <strong className="font-display">{player.name}</strong>
-          <span>LV {progression.level}</span>
-        </div>
-        <div className="mobile-vitals-bars">
-          <HpBar hp={player.hp} maxHp={player.maxHp} />
-          <ResourceBar
-            current={player.mp ?? MpService.maxMpFor(player)}
-            kind="mp"
-            max={player.maxMp ?? MpService.maxMpFor(player)}
-          />
-          <ResourceBar current={xp.current} kind="xp" label="XP" max={xp.needed} />
-        </div>
+      <button className="mobile-top-chrome-stats" onClick={onOpenCharacter} type="button">
+        <MobileStatChip current={player.hp} kind="hp" label="HP" max={player.maxHp} />
+        <MobileStatChip current={mpCurrent} kind="mp" label="MP" max={mpMax} />
+        <MobileStatChip current={xp.current} kind="xp" label="XP" max={xp.needed} />
       </button>
     </header>
   );
