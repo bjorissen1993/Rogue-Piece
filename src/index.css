@@ -4267,7 +4267,7 @@ html.battle-result-open .battler-card.is-down {
   display: none;
 }
 
-.combat-battlefield:not(.has-side-wheel) .combat-choice-rail {
+.combat-battlefield:not(.has-side-wheel):not(.has-mobile-wheel) .combat-choice-rail {
   display: none;
 }
 
@@ -9716,4 +9716,298 @@ button.level-up-stats-row:disabled {
   .weapon-shop-row-price { grid-area: price; }
   .weapon-shop-row-type { grid-area: type; }
   .weapon-shop-row-rarity { grid-area: rarity; }
+}
+
+/* Mobile battle screen: compact cards, horizontal solo choice wheel, fullscreen log. */
+@media (max-width: 767px) {
+  .combat-stage.combat-battlefield,
+  .combat-battlefield {
+    gap: 0.2rem;
+    padding: 0.2rem 0.1rem 0.25rem;
+  }
+
+  .combat-format-banner {
+    margin: 0.1rem 0 0.15rem;
+    font-size: 0.72rem;
+  }
+
+  .combat-field-row.combat-enemies,
+  .combat-field-row.combat-allies {
+    flex: 0 0 auto;
+  }
+
+  .combat-unit-row {
+    gap: 0.35rem;
+    padding: 0 0.35rem;
+    align-items: flex-end;
+  }
+
+  .combat-unit,
+  .combat-battlefield .battler-card,
+  .combat-party-card.is-compact,
+  .combat-party-card.is-enemy.combat-unit,
+  .combat-party-card.is-active-turn,
+  .combat-party-card.is-boss {
+    min-height: 0;
+    padding: 0.28rem 0.35rem 0.3rem;
+  }
+
+  .combat-unit-slot.is-active-slot {
+    transform: translateY(-0.15rem);
+  }
+
+  .combat-unit-name {
+    margin: 0 0 0.05rem;
+    padding-right: 1.35rem;
+    font-size: 0.78rem !important;
+    line-height: 1.1;
+  }
+
+  .combat-current-turn {
+    margin: 0 0 0.05rem;
+    font-size: 0.52rem;
+    letter-spacing: 0.08em;
+  }
+
+  .combat-formation,
+  .combat-status-row {
+    display: none;
+  }
+
+  .combat-turn-badge {
+    min-width: 1.15rem;
+    height: 1.15rem;
+    font-size: 0.58rem;
+  }
+
+  .combat-turn-badge-wrap {
+    top: 0.22rem;
+    right: 0.22rem;
+  }
+
+  .combat-battlefield .resource-bar-track,
+  .combat-battlefield .hp-bar .resource-bar-track {
+    height: 0.4rem;
+    min-height: 0.4rem;
+  }
+
+  .combat-battlefield .resource-bar .mb-1,
+  .combat-battlefield .resource-bar > .mb-1 {
+    margin-bottom: 0.08rem !important;
+    font-size: 0.6rem;
+  }
+
+  .combat-mid-row {
+    flex: 1 1 auto;
+    min-height: 3.25rem;
+  }
+
+  .combat-center-stage {
+    min-height: 0;
+    margin: 0.1rem 0.35rem;
+    padding: 0.3rem 0.4rem;
+  }
+
+  .combat-stage-headline {
+    font-size: clamp(1rem, 4.5vw, 1.35rem);
+  }
+
+  .combat-stage-sub {
+    font-size: 0.78rem;
+  }
+
+  .combat-actions-dock {
+    flex-shrink: 0;
+    padding-top: 0.1rem;
+    padding-bottom: 0.35rem;
+  }
+
+  .combat-actions-main {
+    gap: 0.2rem;
+  }
+
+  .combat-action-btn {
+    max-width: 5.4rem;
+    min-height: 3.2rem;
+    padding: 0.15rem 0.1rem 0.2rem;
+  }
+
+  .combat-action-label {
+    font-size: 0.6rem;
+  }
+
+  /* Bottom horizontal solo choice wheel (one option + L/R). */
+  .combat-battlefield.has-mobile-wheel {
+    overflow: hidden;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-mid-row {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-stage-copy {
+    left: 0;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-choice-rail {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0.1rem;
+    z-index: 45;
+    display: flex;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    pointer-events: none;
+    align-self: auto;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-choice-rail.is-open {
+    pointer-events: none;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-choice-overlay {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0;
+    padding: 0.1rem 0.35rem 0.2rem;
+    transform: none;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-choice-overlay::before {
+    left: 50%;
+    top: auto;
+    bottom: -0.2rem;
+    width: min(22rem, 92vw);
+    height: 8.25rem;
+    transform: translateX(-50%);
+    background:
+      radial-gradient(ellipse 70% 70% at 50% 75%, rgba(3, 6, 10, 0.92) 0%, rgba(3, 6, 10, 0.55) 42%, transparent 78%);
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-choice-overlay.is-pulling-out,
+  .combat-battlefield.has-mobile-wheel .combat-choice-overlay.is-putting-in {
+    animation: none;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-choice-wheel-wrap,
+  .combat-battlefield.has-mobile-wheel .combat-choice-wheel-wrap.is-solo-focus {
+    width: min(22rem, 94vw);
+    max-width: 100%;
+    justify-content: center;
+    pointer-events: auto;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-choice-wheel {
+    width: min(11rem, 42vw);
+    height: 6.2rem;
+    min-height: 6.2rem;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-wheel-arrow {
+    width: 2.35rem;
+    height: 2.35rem;
+    margin-bottom: 0;
+    align-self: center;
+    font-size: 1.35rem;
+    pointer-events: auto;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-wheel-option {
+    width: 8.5rem;
+    margin-left: -4.25rem;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-wheel-icon .hud-icon,
+  .combat-battlefield.has-mobile-wheel .combat-wheel-icon .hud-art,
+  .combat-battlefield.has-mobile-wheel .combat-wheel-icon svg {
+    width: 4.6rem;
+    height: 4.6rem;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-wheel-label {
+    margin-top: -0.85rem;
+    font-size: 0.78rem;
+    max-width: 8.5rem;
+  }
+
+  .combat-battlefield.has-mobile-wheel .combat-center-stage {
+    padding-bottom: 6.75rem;
+  }
+
+  /* Keep log above every other battle layer (mid-row stacking context). */
+  .combat-battlefield.is-log-open .combat-mid-row {
+    z-index: 100;
+  }
+
+  .combat-battlefield.is-log-open .combat-center-stage.is-log-open {
+    position: fixed;
+    inset: 0;
+    z-index: 101;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    margin: 0;
+    padding:
+      max(0.75rem, var(--mobile-safe-top, 0px))
+      max(0.75rem, var(--mobile-safe-right, 0px))
+      max(0.75rem, var(--mobile-safe-bottom, 0px))
+      max(0.75rem, var(--mobile-safe-left, 0px));
+    border-radius: 0;
+    border: 0;
+    background: #0a0e12;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .combat-battlefield.is-log-open .combat-log-modal {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    gap: 0.75rem;
+  }
+
+  .combat-battlefield.is-log-open .combat-log-modal-head {
+    padding: 0.15rem 0.1rem;
+  }
+
+  .combat-battlefield.is-log-open .combat-log-modal-head h3 {
+    font-size: 1.35rem;
+  }
+
+  .combat-battlefield.is-log-open .combat-log-modal-body {
+    flex: 1 1 auto;
+    max-height: none;
+    padding: 0.85rem 0.95rem;
+    border-radius: 0.85rem;
+    font-size: 0.92rem;
+  }
+
+  .combat-battlefield.is-log-open .combat-log-close {
+    min-height: 2.55rem;
+    padding: 0.45rem 1.1rem;
+  }
+
+  .combat-log-open {
+    top: 0.35rem;
+    left: 0.35rem;
+    font-size: 0.72rem;
+    padding: 0.28rem 0.65rem;
+  }
 }

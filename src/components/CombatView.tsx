@@ -17,6 +17,7 @@ import {
   primaryManualTargeting,
   targetingSummary,
 } from "../services/TargetResolutionService";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import { EffectTooltip } from "./EffectTooltip";
 import { HpBar } from "./HpBar";
 import { ResourceBar } from "./ResourceBar";
@@ -29,6 +30,7 @@ const ACTION_ICON_SIZE = 190;
 const WHEEL_ICON_SIZE = CHOICE_WHEEL_ICON_SIZE;
 const ACTIVE_SIZE = 1.04;
 const CARD_BASE_PCT = 20;
+const CARD_BASE_PCT_MOBILE = 38;
 const CHOICE_PANEL_MS = 340;
 const TURN_BANNER_MS = 1000;
 const ENEMY_THINK_MS = 1100;
@@ -244,6 +246,7 @@ export function CombatView({
   currentZoanForm,
   onSetZoanForm,
 }: CombatViewProps) {
+  const isMobile = useIsMobile();
   const [actionMenu, setActionMenu] = useState<ActionMenu | null>(null);
   const [choicePhase, setChoicePhase] = useState<"open" | "closing" | null>(null);
   const [focusedOption, setFocusedOption] = useState<ChoiceWheelOption | null>(null);
@@ -815,18 +818,22 @@ export function CombatView({
     }
   })();
 
+  const cardBasePct = isMobile
+    ? Math.min(CARD_BASE_PCT_MOBILE, Math.floor(92 / Math.max(allies.length, enemies.length, 1)))
+    : CARD_BASE_PCT;
+
   const cardWidthPct = (isActiveCard: boolean, count: number, hasActiveInRow: boolean) => {
     if (count <= 0) {
-      return CARD_BASE_PCT;
+      return cardBasePct;
     }
     if (!hasActiveInRow) {
-      return CARD_BASE_PCT;
+      return cardBasePct;
     }
     if (count === 1) {
-      return CARD_BASE_PCT * ACTIVE_SIZE;
+      return cardBasePct * ACTIVE_SIZE;
     }
-    const total = CARD_BASE_PCT * count;
-    const activeWidth = CARD_BASE_PCT * ACTIVE_SIZE;
+    const total = cardBasePct * count;
+    const activeWidth = cardBasePct * ACTIVE_SIZE;
     const idleWidth = (total - activeWidth) / (count - 1);
     return isActiveCard ? activeWidth : idleWidth;
   };
@@ -891,7 +898,16 @@ export function CombatView({
   const choiceInfoActive = Boolean(actionMenu && !choiceClosing && actionHint);
 
   return (
-    <section className={`combat-stage combat-battlefield ${menuOpen ? "has-side-wheel" : ""}`}>
+    <section
+      className={[
+        "combat-stage",
+        "combat-battlefield",
+        menuOpen ? (isMobile ? "has-mobile-wheel" : "has-side-wheel") : "",
+        logOpen ? "is-log-open" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {combat.battleFormat ? (
         <p className="combat-format-banner">
           {battleFormatLabel(
@@ -1082,8 +1098,10 @@ export function CombatView({
                 onFocusChange={setFocusedOption}
                 onHoverHint={setActionHint}
                 options={menuOptions}
-                orientation="vertical"
+                orientation={isMobile ? "horizontal" : "vertical"}
                 showBadges={false}
+                soloFocus={isMobile}
+                stepRem={isMobile ? 9 : undefined}
               />
             </div>
           ) : null}
