@@ -228,11 +228,14 @@ export function ChoiceWheel({
                 : absVisual >= 1.5
                   ? 0.4
                   : 0.78;
-            const drift = vertical ? 0 : isFocus ? 0.45 : 0.95;
+            // Solo focus (mobile crewmate picker): keep the badge vertically centered in its slot.
+            const drift = vertical || soloFocus ? 0 : isFocus ? 0.45 : 0.95;
             const point = arcPoint(visual);
             const transform = vertical
               ? `translate(${point.x}rem, ${point.y}rem) translate(-50%, -50%) scale(${scale})`
-              : `translateX(${visual * slotStep}rem) translateY(${drift}rem) scale(${scale})`;
+              : soloFocus
+                ? `translateX(${visual * slotStep}rem) translateY(calc(-50% + ${drift}rem)) scale(${scale})`
+                : `translateX(${visual * slotStep}rem) translateY(${drift}rem) scale(${scale})`;
             const optionClass = `combat-wheel-option ${isFocus ? "is-focus" : ""} ${instant ? "is-instant" : ""} ${option.disabled ? "is-disabled" : ""} ${option.selected ? "is-picked" : ""} ${vertical && !isFocus ? "is-side-only" : ""}`;
             const optionStyle = {
               transform,
