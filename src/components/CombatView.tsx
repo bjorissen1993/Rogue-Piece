@@ -897,6 +897,48 @@ export function CombatView({
   const choiceClosing = choicePhase === "closing";
   const choiceInfoActive = Boolean(actionMenu && !choiceClosing && actionHint);
 
+  const choiceRail = (
+    <div className={`combat-choice-rail ${menuOpen ? "is-open" : ""}`}>
+      {menuOpen ? (
+        <div
+          className={`combat-choice-overlay ${choicePhase === "closing" ? "is-putting-in" : "is-pulling-out"}`}
+          role="dialog"
+          aria-label="Action choices"
+        >
+          <ChoiceWheel
+            disabled={actionsLocked || choiceClosing}
+            onFocusChange={setFocusedOption}
+            onHoverHint={setActionHint}
+            options={menuOptions}
+            orientation={isMobile ? "horizontal" : "vertical"}
+            showBadges={false}
+            soloFocus={isMobile}
+            stepRem={isMobile ? 9 : undefined}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const combatLogModal = (
+    <div className="combat-log-modal">
+      <div className="combat-log-modal-head">
+        <h3 className="font-display text-gold">Combat Log</h3>
+        <button className="combat-log-close" onClick={() => setLogOpen(false)} type="button">
+          Close
+        </button>
+      </div>
+      <div className="combat-log-modal-body">
+        {combat.log.slice(-40).map((entry) => (
+          <p key={entry.id}>
+            {entry.text}
+            {entry.detail ? <span className="combat-log-detail"> — {entry.detail}</span> : null}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <section
       className={[
@@ -980,7 +1022,7 @@ export function CombatView({
       </div>
 
       <div className="combat-mid-row">
-        <div className={`combat-center-stage ${logOpen ? "is-log-open" : ""}`}>
+        <div className={`combat-center-stage ${logOpen && !isMobile ? "is-log-open" : ""}`}>
           {presenting ? (
             <button className="combat-stage-present" onClick={advancePresentation} type="button">
               <div className={`combat-stage-fx ${currentBeat?.animation ? `is-${currentBeat.animation.toLowerCase()}` : ""}`}>
@@ -1000,23 +1042,8 @@ export function CombatView({
                 <p className="combat-stage-skip">Click to skip</p>
               </div>
             </button>
-          ) : logOpen ? (
-            <div className="combat-log-modal">
-              <div className="combat-log-modal-head">
-                <h3 className="font-display text-gold">Combat Log</h3>
-                <button className="combat-log-close" onClick={() => setLogOpen(false)} type="button">
-                  Close
-                </button>
-              </div>
-              <div className="combat-log-modal-body">
-                {combat.log.slice(-40).map((entry) => (
-                  <p key={entry.id}>
-                    {entry.text}
-                    {entry.detail ? <span className="combat-log-detail"> — {entry.detail}</span> : null}
-                  </p>
-                ))}
-              </div>
-            </div>
+          ) : logOpen && !isMobile ? (
+            combatLogModal
           ) : (
             <div className="combat-stage-idle">
               <div className="combat-stage-copy">
@@ -1086,26 +1113,7 @@ export function CombatView({
           )}
         </div>
 
-        <div className={`combat-choice-rail ${menuOpen ? "is-open" : ""}`}>
-          {menuOpen ? (
-            <div
-              className={`combat-choice-overlay ${choicePhase === "closing" ? "is-putting-in" : "is-pulling-out"}`}
-              role="dialog"
-              aria-label="Action choices"
-            >
-              <ChoiceWheel
-                disabled={actionsLocked || choiceClosing}
-                onFocusChange={setFocusedOption}
-                onHoverHint={setActionHint}
-                options={menuOptions}
-                orientation={isMobile ? "horizontal" : "vertical"}
-                showBadges={false}
-                soloFocus={isMobile}
-                stepRem={isMobile ? 9 : undefined}
-              />
-            </div>
-          ) : null}
-        </div>
+        {isMobile ? null : choiceRail}
       </div>
 
       <div className={`combat-field-row combat-allies ${menuOpen ? "is-choosing" : ""}`}>
@@ -1145,6 +1153,8 @@ export function CombatView({
           })}
         </div>
       </div>
+
+      {isMobile ? choiceRail : null}
 
       {combat.finished ? null : (
         <div className="combat-actions-dock">
@@ -1224,6 +1234,12 @@ export function CombatView({
           </div>
         </div>
       )}
+
+      {logOpen && isMobile ? (
+        <div className="combat-log-fullscreen" role="dialog" aria-label="Combat log">
+          {combatLogModal}
+        </div>
+      ) : null}
     </section>
   );
 }
