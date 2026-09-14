@@ -9,7 +9,6 @@ import { HudIcon } from "../HudIcons";
 type MobileTopChromeProps = {
   run: RunState;
   isDev: boolean;
-  onMenu: () => void;
   onOpenTime?: () => void;
   onOpenCharacter: () => void;
 };
@@ -39,12 +38,12 @@ function MobileStatChip({ label, current, max, kind }: StatChipProps) {
 }
 
 /**
- * Single compact mobile chrome: menu + day/time + location + name/level + HP/MP/XP in one card.
+ * Compact mobile chrome: day/time + location + name/level + HP/MP/XP.
+ * Menu lives in the bottom MORE tab — no duplicate hamburger here.
  */
 export function MobileTopChrome({
   run,
   isDev,
-  onMenu,
   onOpenTime,
   onOpenCharacter,
 }: MobileTopChromeProps) {
@@ -59,10 +58,6 @@ export function MobileTopChrome({
   return (
     <header className="mobile-top-chrome">
       <div className="mobile-top-chrome-head">
-        <button aria-label="Menu" className="mobile-top-chrome-menu" onClick={onMenu} type="button">
-          <HudIcon name="menu" size={16} />
-        </button>
-
         <button
           className="mobile-top-chrome-time"
           onClick={onOpenTime}
