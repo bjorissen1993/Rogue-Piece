@@ -1,8 +1,8 @@
-# Optional explicit path for the frontend service: /railway.frontend.toml
+# tranquil-comfort / game — optional; default railway.toml is already the frontend.
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile.web"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 restartPolicyType = "ON_FAILURE"

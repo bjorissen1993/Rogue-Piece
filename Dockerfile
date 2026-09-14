@@ -1,20 +1,23 @@
-# Build context = repo root (Railway default).
-FROM node:22-alpine
+# DEFAULT Docker image = Vite game (tranquil-comfort / roguepiece.freakydev.com)
+FROM node:22-alpine AS build
 
 WORKDIR /app
-
-COPY server/package.json server/package-lock.json ./
+COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY server/tsconfig.json ./
-COPY server/drizzle.config.ts ./
-COPY server/drizzle ./drizzle
-COPY server/src ./src
+COPY index.html vite.config.ts tsconfig.json ./
+COPY src ./src
+COPY public ./public
 
-RUN npm run build \
-  && npm prune --omit=dev
+ARG VITE_API_URL=https://api.roguepiece.freakydev.com
+ENV VITE_API_URL=$VITE_API_URL
 
+RUN npm run build
+
+FROM node:22-alpine
+WORKDIR /app
+RUN npm install -g serve@14.2.6
+COPY --from=build /app/dist ./dist
 ENV NODE_ENV=production
 EXPOSE 3000
-
-CMD ["npm", "start"]
+CMD ["sh", "-c", "serve -s dist -l tcp://0.0.0.0:${PORT:-3000}"]

@@ -1,13 +1,9 @@
-# DEFAULT = API (api.roguepiece). Keeps /health as JSON.
-# Frontend service MUST set Config-as-code to /railway.frontend.toml
-# (Dockerfile.web) or it will crash looking for DATABASE_URL.
+# Default for most services = frontend game image.
 
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5

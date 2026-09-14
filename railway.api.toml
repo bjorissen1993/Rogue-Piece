@@ -1,9 +1,8 @@
-# API service (api.roguepiece): set Config-as-code path to /railway.api.toml
-# Default railway.toml deploys the frontend image instead.
+# Rogue-Piece API service ONLY — Settings → Config-as-code → /railway.api.toml
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "Dockerfile.api"
 
 [deploy]
 healthcheckPath = "/health"

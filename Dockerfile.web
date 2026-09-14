@@ -1,4 +1,5 @@
-# Static Vite frontend for Railway service `tranquil-comfort` / roguepiece.freakydev.com
+# Same as root Dockerfile (frontend). Kept so older UI settings still work.
+
 FROM node:22-alpine AS build
 
 WORKDIR /app
