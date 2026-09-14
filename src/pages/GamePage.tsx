@@ -252,7 +252,6 @@ export function GamePage() {
         {isMobile ? (
           <MobileTopChrome
             isDev={isDev}
-            onMenu={() => openOverlay("gameMenu")}
             onOpenCharacter={() => {
               setMobileNav("game");
               setCharacterSheetOpen(true);
