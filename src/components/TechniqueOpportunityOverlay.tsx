@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { getTechnique } from "../data/weapons";
 import { getStyleTechnique } from "../data/fightingStyles";
 import { resolvePowerLevel, techniqueToAbility } from "../game/techniqueAbility";
@@ -101,6 +101,7 @@ export function TechniqueOpportunityOverlay({
             const badges = tech ? resolveSkillBadges(tech) : [];
             const potency = tech ? resolveOfferPotency(tech, stats) : null;
             const hasSide = Boolean(scalingStat) || badges.length > 0;
+            const badgeSize = isMobile ? 44 : 52;
             const scaleTip = scalingStat
               ? potency?.kind === "HEAL"
                 ? `Heal amount scales with ${STAT_LABELS[scalingStat]}${
@@ -146,16 +147,24 @@ export function TechniqueOpportunityOverlay({
                     </span>
                   </span>
                   {hasSide ? (
-                    <span className="technique-offer-badges">
+                    <span className="technique-offer-badges" aria-label="Skill info">
                       {scalingStat ? (
                         <EffectTooltip tip={scaleTip}>
-                          <span className="technique-offer-scale-icon">
-                            <StatIcon showTooltip={false} size={64} stat={scalingStat} />
+                          <span
+                            className="technique-offer-scale-icon"
+                            style={{ "--badge-size": `${badgeSize}px` } as CSSProperties}
+                          >
+                            <StatIcon showTooltip={false} size={badgeSize} stat={scalingStat} />
                           </span>
                         </EffectTooltip>
                       ) : null}
                       {badges.length ? (
-                        <SkillBadgeRow badges={badges} layout="column" size={64} />
+                        <SkillBadgeRow
+                          badges={badges}
+                          className="technique-offer-skill-badges"
+                          layout="column"
+                          size={badgeSize}
+                        />
                       ) : null}
                     </span>
                   ) : null}
