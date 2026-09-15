@@ -76,8 +76,7 @@ export function InventoryOverlay({
   const selected =
     run.player.inventory.find((item) => item.id === selectedId) ??
     run.player.inventory.find((item) => (item.itemId || item.id) === selectedId) ??
-    list[0] ??
-    null;
+    (isMobile ? null : list[0] ?? null);
 
   const def = selected && selected.type !== "WEAPON" ? getItemDefinition(selected.itemId || selected.id) : undefined;
   const weapon = selected ? WeaponService.resolveWeaponView(selected) : undefined;
@@ -200,7 +199,7 @@ export function InventoryOverlay({
             ) : list.length === 0 && collectibles.length === 0 ? (
               <p className="text-parchment-dim">Nothing in {INVENTORY_CATEGORY_LABELS[category]}.</p>
             ) : (
-              <div className={`split-overlay ${isMobile ? "is-mobile-inventory" : ""}`}>
+              <div className={`split-overlay ${isMobile ? "is-mobile-inventory is-mobile-accordion" : ""}`}>
                 <div className="split-pane">
                   {list.length > 0 ? (
                     <ul
@@ -216,21 +215,156 @@ export function InventoryOverlay({
                         const ownerLabel = item.weaponDefinitionId
                           ? WeaponService.weaponOwnerLabel(run, item)
                           : undefined;
-                        const selectedRow = selectedId === id || selected?.id === item.id;
+                        const selectedRow = selectedId === id || (!isMobile && selected?.id === item.id);
+                        const itemIsFruit = item.type === "DEVIL_FRUIT" || Boolean(item.fruitId);
+                        const itemDef =
+                          item.type !== "WEAPON" ? getItemDefinition(item.itemId || item.id) : undefined;
+                        const itemWeapon = WeaponService.resolveWeaponView(item);
+                        const itemShowUse = ItemService.canUseFromPack(item, inCombat);
+                        const itemNote = ItemService.detailNote(item, inCombat);
                         return (
-                          <li key={`${id}-${item.weaponDefinitionId ?? item.fruitId ?? ""}`}>
+                          <li
+                            className={selectedRow && isMobile ? "inventory-accordion-item is-open" : "inventory-accordion-item"}
+                            key={`${id}-${item.weaponDefinitionId ?? item.fruitId ?? ""}`}
+                          >
                             {isMobile ? (
-                              <button
-                                className={`inventory-list-row ${selectedRow ? "is-selected" : ""}`}
-                                onClick={() => setSelectedId(id)}
-                                type="button"
-                              >
-                                <span className="inventory-list-name font-display">{item.name}</span>
-                                {ownerLabel ? (
-                                  <span className="inventory-list-meta">{ownerLabel}</span>
+                              <>
+                                <button
+                                  aria-expanded={selectedRow}
+                                  className={`inventory-list-row ${selectedRow ? "is-selected" : ""}`}
+                                  onClick={() => setSelectedId(selectedRow ? null : id)}
+                                  type="button"
+                                >
+                                  <span className="inventory-list-name font-display">{item.name}</span>
+                                  {ownerLabel ? (
+                                    <span className="inventory-list-meta">{ownerLabel}</span>
+                                  ) : null}
+                                  <span className="inventory-list-qty">{qty}</span>
+                                </button>
+                                {selectedRow ? (
+                                  <div className="inventory-accordion-body">
+                                    <p className="hud-kicker">
+                                      {isCarriedCollectible(item)
+                                        ? "COLLECTIBLE"
+                                        : categorizeItem(item).replaceAll("_", " ")}
+                                    </p>
+                                    <section className="detail-section mt-2">
+                                      <p className="detail-label">Description</p>
+                                      <p className="detail-value">{item.description}</p>
+                                    </section>
+                                    {itemWeapon ? (
+                                      <section className="detail-section">
+                                        <p className="detail-label">Weapon</p>
+                                        <p className="detail-value">
+                                          {itemWeapon.weaponType} · {itemWeapon.rarity} · dmg {itemWeapon.damage} · spd{" "}
+                                          {itemWeapon.speed}
+                                        </p>
+                                        {onEquipWeapon && !inCombat ? (
+                                          <div className="grid gap-2 mt-2">
+                                            <button
+                                              className="gold-btn"
+                                              onClick={() => onEquipWeapon(item.id, "primary")}
+                                              type="button"
+                                            >
+                                              Equip primary
+                                            </button>
+                                            <button
+                                              className="ghost-btn"
+                                              disabled={itemWeapon.grip === "TWO_HAND"}
+                                              onClick={() => onEquipWeapon(item.id, "secondary")}
+                                              type="button"
+                                            >
+                                              Equip secondary
+                                            </button>
+                                          </div>
+                                        ) : null}
+                                      </section>
+                                    ) : null}
+                                    {itemDef?.effects.some(
+                                      (effect) => effect.type === "HEAL" || effect.type === "RESTORE_MP",
+                                    ) ? (
+                                      <section className="detail-section">
+                                        <p className="detail-label">Effect</p>
+                                        <p className="detail-value text-gold">
+                                          {(() => {
+                                            const lines: string[] = [];
+                                            const previewHeal = ItemService.previewHeal(
+                                              run.player,
+                                              item.itemId || item.id,
+                                            );
+                                            if (previewHeal) {
+                                              lines.push(
+                                                `${previewHeal.label}. Current ${previewHeal.before} → ${previewHeal.after}.`,
+                                              );
+                                            }
+                                            const previewMp = ItemService.previewMpRestore(
+                                              run.player,
+                                              item.itemId || item.id,
+                                            );
+                                            if (previewMp) {
+                                              lines.push(
+                                                `${previewMp.label}. Current ${previewMp.before} → ${previewMp.after}.`,
+                                              );
+                                            }
+                                            return lines.length ? lines.join(" ") : "Restores resources";
+                                          })()}
+                                        </p>
+                                      </section>
+                                    ) : null}
+                                    {itemNote ? (
+                                      <p className="text-sm text-parchment-dim mt-2">{itemNote}</p>
+                                    ) : null}
+                                    <div className="inventory-accordion-actions">
+                                      {itemIsFruit && item.fruitId ? (
+                                        <div className="grid gap-2">
+                                          <button
+                                            className="gold-btn"
+                                            onClick={() =>
+                                              setPendingTarget({
+                                                kind: "fruit",
+                                                itemId: item.fruitId!,
+                                                label: item.name,
+                                              })
+                                            }
+                                            type="button"
+                                          >
+                                            Use on…
+                                          </button>
+                                          <button
+                                            className="ghost-btn"
+                                            onClick={() => onFruitAction?.("SELL", item.fruitId!)}
+                                            type="button"
+                                          >
+                                            Sell
+                                          </button>
+                                          <button
+                                            className="ghost-btn"
+                                            onClick={() => onFruitAction?.("KEEP", item.fruitId!)}
+                                            type="button"
+                                          >
+                                            Keep
+                                          </button>
+                                        </div>
+                                      ) : null}
+                                      {itemShowUse ? (
+                                        <button
+                                          className="gold-btn inventory-use-btn"
+                                          onClick={() =>
+                                            setPendingTarget({
+                                              kind: "item",
+                                              itemId: item.itemId || item.id,
+                                              label: item.name,
+                                            })
+                                          }
+                                          type="button"
+                                        >
+                                          Use on…
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  </div>
                                 ) : null}
-                                <span className="inventory-list-qty">{qty}</span>
-                              </button>
+                              </>
                             ) : (
                               <InventoryCard
                                 name={item.name}
@@ -250,6 +384,7 @@ export function InventoryOverlay({
                     </p>
                   )}
                 </div>
+                {isMobile ? null : (
                 <aside className="detail-panel panel detail-panel-stack">
               {selected ? (
                 <>
@@ -421,6 +556,7 @@ export function InventoryOverlay({
                 <p className="text-parchment-dim">Select an item.</p>
               )}
             </aside>
+                )}
               </div>
             )}
           </div>
