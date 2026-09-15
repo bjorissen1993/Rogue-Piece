@@ -118,11 +118,13 @@ export function ChoiceParticipantPicker({
 
       <div className="choice-participant-wheel-panel">
         <ChoiceWheel
+          alignFocus={isMobile ? "center" : "bottom"}
           className={`choice-participant-wheel${isMobile ? " is-mobile-solo" : ""}`}
           onFocusChange={setFocused}
           onHoverHint={() => undefined}
           options={options}
           showBadges={false}
+          showConfirmButton={false}
           soloFocus={isMobile}
           stepRem={isMobile ? 9 : 14}
         />
