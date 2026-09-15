@@ -56,6 +56,25 @@ describe("IdentityService", () => {
     expect(identity.roleId).toBe("MARINE_RECRUIT");
   });
 
+  it("joining Marines clears Wanted legal status with the bounty", () => {
+    const run = freshRun();
+    run.player.bounty = 12_000;
+    IdentityService.syncLegalFromBounty(run);
+    expect(IdentityService.get(run).legalStatusId).toBe("WANTED");
+    AffiliationService.join(run, { factionId: "MARINES", note: "enlist" });
+    expect(run.player.bounty).toBe(0);
+    expect(IdentityService.get(run).legalStatusId).toBe("LAWFUL");
+  });
+
+  it("active Marine ensure clears leftover Wanted even with bounty already 0", () => {
+    const run = freshRun();
+    AffiliationService.join(run, { factionId: "MARINES", note: "enlist" });
+    IdentityService.setLegalStatus(run, "WANTED", "stale warrant");
+    run.player.bounty = 0;
+    AffiliationService.ensure(run);
+    expect(IdentityService.get(run).legalStatusId).toBe("LAWFUL");
+  });
+
   it("bounty alone does not make you a pirate", () => {
     const run = freshRun();
     IdentityService.setRole(run, "BOUNTY_HUNTER", "hunter_unknown");
