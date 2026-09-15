@@ -78,12 +78,20 @@ export const CrewService = {
     return !this.isCoreFull(run);
   },
 
+  /** Pirate-style fleet is bounty-gated; law orgs (e.g. Marines) do not use it. */
+  usesBountyFleet(run: RunState): boolean {
+    return !AffiliationService.isPlayerMarine(run) && !AffiliationService.isPlayerWorldGovernment(run);
+  },
+
   fleetUnlockBounty(): number {
     return FLEET_UNLOCK_BOUNTY;
   },
 
   /** True when the player's bounty is high enough to attract a fleet. */
   isFleetUnlocked(run: RunState): boolean {
+    if (!this.usesBountyFleet(run)) {
+      return false;
+    }
     return run.player.bounty >= FLEET_UNLOCK_BOUNTY;
   },
 
@@ -91,7 +99,10 @@ export const CrewService = {
     return Math.max(0, FLEET_UNLOCK_BOUNTY - run.player.bounty);
   },
 
-  fleetUnlockSummary(run: RunState): string {
+  fleetUnlockSummary(run: RunState): string | null {
+    if (!this.usesBountyFleet(run)) {
+      return null;
+    }
     if (this.isFleetUnlocked(run)) {
       return "Fleet available — your name carries enough weight for followers under your banner.";
     }
@@ -224,6 +235,12 @@ export const CrewService = {
     }
 
     if (!this.isFleetUnlocked(run)) {
+      if (!this.usesBountyFleet(run)) {
+        return {
+          kind: "BLOCKED_FLEET_BOUNTY",
+          message: `${character.name} would join, but your unit roster is full.`,
+        };
+      }
       const needed = this.bountyNeededForFleet(run);
       return {
         kind: "BLOCKED_FLEET_BOUNTY",

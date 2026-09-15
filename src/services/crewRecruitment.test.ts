@@ -125,7 +125,7 @@ describe("CrewService recruitment", () => {
     expect(CrewService.bountyNeededForFleet(run)).toBe(10);
     run.player.bounty = FLEET_UNLOCK_BOUNTY;
     expect(CrewService.isFleetUnlocked(run)).toBe(true);
-    expect(CrewService.fleetUnlockSummary(run).toLowerCase()).toMatch(/available|banner/);
+    expect(CrewService.fleetUnlockSummary(run)?.toLowerCase()).toMatch(/available|banner/);
   });
 
   it("RecruitmentModelService.recruit suppresses already-on-team join text", () => {

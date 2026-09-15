@@ -70,6 +70,8 @@ type ChoiceWheelProps = {
   showConfirmButton?: boolean;
   /** Horizontal focus badge alignment inside the wheel slot. */
   alignFocus?: "bottom" | "center";
+  /** When solo-focus, still show the focused option title (crewmate name under the badge). */
+  showFocusLabel?: boolean;
 };
 
 export function ChoiceWheel({
@@ -84,6 +86,7 @@ export function ChoiceWheel({
   soloFocus = false,
   showConfirmButton,
   alignFocus = "bottom",
+  showFocusLabel = false,
 }: ChoiceWheelProps) {
   const [focus, setFocus] = useState(0);
   const [motion, setMotion] = useState(0);
@@ -317,7 +320,9 @@ export function ChoiceWheel({
                 type="button"
               >
                 <span className="combat-wheel-icon">{option.icon}</span>
-                {soloFocus ? null : <span className="combat-wheel-label">{option.title}</span>}
+                {soloFocus && !showFocusLabel ? null : (
+                  <span className="combat-wheel-label">{option.title}</span>
+                )}
                 {isFocus && !soloFocus ? <span className="combat-wheel-cost">{option.costLabel}</span> : null}
               </button>
             );
