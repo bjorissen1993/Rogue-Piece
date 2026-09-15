@@ -10530,42 +10530,44 @@ button.level-up-stats-row:disabled {
   .combat-actions-main {
     display: grid !important;
     grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 0.18rem;
+    gap: 0.1rem;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
-    padding: 0.1rem 0.2rem 0.15rem;
+    margin: 0;
+    padding: 0.12rem 0.08rem 0.18rem;
     transform: none;
     flex-wrap: nowrap;
+    justify-content: stretch;
   }
 
   .combat-action-btn {
-    width: 100%;
-    max-width: none;
-    min-height: 4.15rem;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 4.45rem;
     padding: 0 0 0.05rem;
     overflow: visible;
   }
 
   .combat-action-glow {
-    bottom: 1.15rem;
-    width: 3.35rem;
-    height: 3.35rem;
+    bottom: 1.2rem;
+    width: 3.55rem;
+    height: 3.55rem;
   }
 
   .combat-action-icon {
-    bottom: 0.95rem;
-    width: 3.15rem !important;
-    height: 3.15rem !important;
+    bottom: 1rem;
+    width: 3.4rem !important;
+    height: 3.4rem !important;
   }
 
   .combat-action-label {
     min-width: 0;
     max-width: 100%;
     width: 100%;
-    font-size: 0.55rem;
+    font-size: 0.58rem;
     letter-spacing: 0.01em;
-    padding: 0.06rem 0.08rem;
+    padding: 0.07rem 0.06rem;
     border-radius: 0.35rem;
     white-space: nowrap;
     overflow: hidden;
