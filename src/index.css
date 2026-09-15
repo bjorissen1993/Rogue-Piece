@@ -9774,9 +9774,10 @@ button.level-up-stats-row:disabled {
 .skill-badge-legend-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
+  z-index: 160;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 1rem 1.25rem;
   background: rgba(4, 8, 12, 0.72);
 }
@@ -9798,6 +9799,29 @@ button.level-up-stats-row:disabled {
   justify-content: space-between;
   gap: 0.75rem;
   flex-shrink: 0;
+}
+
+.skill-badge-legend-close {
+  appearance: none;
+  flex-shrink: 0;
+  min-height: 2.5rem;
+  min-width: 4.5rem;
+  padding: 0.4rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid rgba(212, 179, 106, 0.55);
+  background: linear-gradient(180deg, rgba(56, 44, 24, 0.95), rgba(28, 22, 12, 0.96));
+  color: var(--color-gold, #d4af5f);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(212, 179, 106, 0.12) inset, 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.skill-badge-legend-close:hover {
+  border-color: rgba(232, 198, 120, 0.85);
+  color: #f0d78a;
 }
 
 .skill-badge-legend-head h3 {
@@ -9826,6 +9850,8 @@ button.level-up-stats-row:disabled {
   gap: 0.85rem 0.75rem;
   min-height: 0;
   flex: 1 1 auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: rgba(212, 179, 106, 0.55) rgba(8, 12, 16, 0.65);
 }
@@ -9892,6 +9918,16 @@ button.level-up-stats-row:disabled {
   color: var(--color-parchment, #f0e6d2);
 }
 
+.skill-badge-legend-foot {
+  display: none;
+  flex-shrink: 0;
+}
+
+.skill-badge-legend-close-main {
+  width: 100%;
+  min-height: 2.85rem;
+}
+
 @media (max-width: 70rem) {
   .skill-badge-legend-list {
     grid-template-rows: none;
@@ -9902,6 +9938,41 @@ button.level-up-stats-row:disabled {
 }
 
 @media (max-width: 40rem) {
+  .skill-badge-legend-backdrop {
+    align-items: stretch;
+    justify-content: stretch;
+    padding:
+      max(0.45rem, var(--mobile-safe-top, 0px))
+      max(0.45rem, var(--mobile-safe-right, 0px))
+      max(0.45rem, var(--mobile-safe-bottom, 0px))
+      max(0.45rem, var(--mobile-safe-left, 0px));
+  }
+
+  .skill-badge-legend {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    border-radius: 0.85rem;
+    padding: 0.85rem 0.9rem 0.95rem;
+    gap: 0.65rem;
+  }
+
+  .skill-badge-legend-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding-bottom: 0.15rem;
+    background: linear-gradient(180deg, rgba(26, 36, 44, 0.98), rgba(26, 36, 44, 0.92));
+  }
+
+  .skill-badge-legend-close {
+    min-height: 2.75rem;
+    min-width: 5rem;
+    padding: 0.45rem 1rem;
+    font-size: 0.82rem;
+  }
+
   .skill-badge-legend-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -9909,6 +9980,10 @@ button.level-up-stats-row:disabled {
   .skill-badge-legend-card .skill-badge {
     width: 60px;
     height: 60px;
+  }
+
+  .skill-badge-legend-foot {
+    display: block;
   }
 }
 

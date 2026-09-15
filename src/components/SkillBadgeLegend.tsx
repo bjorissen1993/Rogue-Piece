@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { SKILL_BADGE_CATALOG } from "../game/skillBadges";
 import type { SkillBadgeId } from "../models/types";
 import { SkillBadgeIcon } from "./SkillBadgeRow";
@@ -30,9 +32,26 @@ type SkillBadgeLegendProps = {
 };
 
 export function SkillBadgeLegend({ open, onClose }: SkillBadgeLegendProps) {
-  if (!open) return null;
-  return (
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) {
+    return null;
+  }
+
+  const node = (
     <div
+      aria-label="Skill badges"
       aria-modal="true"
       className="skill-badge-legend-backdrop"
       onClick={onClose}
@@ -44,7 +63,7 @@ export function SkillBadgeLegend({ open, onClose }: SkillBadgeLegendProps) {
       >
         <header className="skill-badge-legend-head">
           <h3 className="font-display text-gold">Skill badges</h3>
-          <button className="combat-log-close" onClick={onClose} type="button">
+          <button className="skill-badge-legend-close" onClick={onClose} type="button">
             Close
           </button>
         </header>
@@ -66,7 +85,17 @@ export function SkillBadgeLegend({ open, onClose }: SkillBadgeLegendProps) {
             );
           })}
         </ul>
+        <div className="skill-badge-legend-foot">
+          <button className="gold-btn skill-badge-legend-close-main" onClick={onClose} type="button">
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") {
+    return node;
+  }
+  return createPortal(node, document.body);
 }
