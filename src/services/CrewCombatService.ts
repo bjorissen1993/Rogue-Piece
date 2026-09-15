@@ -247,18 +247,19 @@ export const CrewCombatService = {
       if (!character || !member) {
         continue;
       }
-      const hp = CrewService.estimatedHp(character);
+      const hp = CrewService.estimatedHp(character, member);
       const stats = character.crewStats ?? statsFromStrength(character.strength);
       const maxMp = MpService.maxMpForStats(stats);
+      const vitals = CrewService.ensureMemberVitals(run, characterId);
       const abilities = getAbilitiesForCrewmember(run, characterId);
       party.allyCombatants.push({
         id: characterId,
         name: character.name,
         side: "PLAYER",
-        hp: hp.hp,
-        maxHp: hp.maxHp,
-        mp: maxMp,
-        maxMp,
+        hp: vitals?.hp ?? hp.hp,
+        maxHp: vitals?.maxHp ?? hp.maxHp,
+        mp: vitals?.mp ?? maxMp,
+        maxMp: vitals?.maxMp ?? maxMp,
         stats,
         defending: false,
         observed: false,

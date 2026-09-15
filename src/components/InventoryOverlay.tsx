@@ -13,17 +13,21 @@ import {
   packItems,
 } from "../services/ItemService";
 import { AffiliationService } from "../services/AffiliationService";
+import { CrewService } from "../services/CrewService";
+import { DevilFruitService } from "../services/DevilFruitService";
 import { WeaponService } from "../services/WeaponService";
 import { InventoryCard } from "./CharacterCard";
 import { ConfirmModal } from "./ConfirmModal";
+import { ItemTargetPicker } from "./ItemTargetPicker";
 
 type InventoryOverlayProps = {
   run: RunState;
   inCombat: boolean;
   initialSelectedId?: string | null;
   onClose: () => void;
-  onUse: (itemId: string) => void;
+  onUse: (itemId: string, targetCharacterId: string) => void;
   onFruitAction?: (action: "EAT" | "SELL" | "KEEP", fruitId: string) => void;
+  onGiveFruitToCrew?: (fruitId: string, characterId: string) => void;
   onEquipWeapon?: (instanceId: string, slot: "primary" | "secondary") => void;
   onUnequipWeapon?: (instanceId: string) => void;
 };
@@ -46,6 +50,7 @@ export function InventoryOverlay({
   onClose,
   onUse,
   onFruitAction,
+  onGiveFruitToCrew,
   onEquipWeapon,
   onUnequipWeapon,
 }: InventoryOverlayProps) {
@@ -54,6 +59,11 @@ export function InventoryOverlay({
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
   const [confirm, setConfirm] = useState<null | { kind: "eat"; fruitId: string }>(null);
+  const [pendingTarget, setPendingTarget] = useState<null | {
+    kind: "item" | "fruit";
+    itemId: string;
+    label: string;
+  }>(null);
 
   const fruit = run.player.devilFruitId ? getDevilFruit(run.player.devilFruitId) : undefined;
   const collectibles = useMemo(
@@ -362,11 +372,16 @@ export function InventoryOverlay({
                       <div className="grid gap-2">
                         <button
                           className="gold-btn"
-                          disabled={!DevilFruitCanEat(run)}
-                          onClick={() => setConfirm({ kind: "eat", fruitId: selected.fruitId! })}
+                          onClick={() =>
+                            setPendingTarget({
+                              kind: "fruit",
+                              itemId: selected.fruitId!,
+                              label: selected.name,
+                            })
+                          }
                           type="button"
                         >
-                          Eat
+                          Use on…
                         </button>
                         <button
                           className="ghost-btn"
@@ -382,19 +397,22 @@ export function InventoryOverlay({
                         >
                           Keep
                         </button>
-                        <p className="text-sm text-parchment-dim">
-                          To give a fruit to a crewmate, drag it from the team screen.
-                        </p>
                       </div>
                     ) : null}
 
                     {showUseButton ? (
                       <button
                         className="gold-btn inventory-use-btn"
-                        onClick={() => onUse(selected.itemId || selected.id)}
+                        onClick={() =>
+                          setPendingTarget({
+                            kind: "item",
+                            itemId: selected.itemId || selected.id,
+                            label: selected.name,
+                          })
+                        }
                         type="button"
                       >
-                        Use
+                        Use on…
                       </button>
                     ) : null}
                   </div>
@@ -408,6 +426,53 @@ export function InventoryOverlay({
           </div>
         </section>
       </div>
+
+      {pendingTarget ? (
+        <ItemTargetPicker
+          itemLabel={pendingTarget.label}
+          onCancel={() => setPendingTarget(null)}
+          onPick={(characterId) => {
+            if (pendingTarget.kind === "fruit") {
+              if (characterId === run.player.id || characterId === "player") {
+                setPendingTarget(null);
+                setConfirm({ kind: "eat", fruitId: pendingTarget.itemId });
+                return;
+              }
+              onGiveFruitToCrew?.(pendingTarget.itemId, characterId);
+              setPendingTarget(null);
+              return;
+            }
+            onUse(pendingTarget.itemId, characterId);
+            setPendingTarget(null);
+          }}
+          options={
+            pendingTarget.kind === "fruit"
+              ? [
+                  {
+                    id: run.player.id,
+                    name: run.player.name,
+                    detail: DevilFruitService.canEat(run) ? "Eat (you)" : "Already bound",
+                  },
+                  ...CrewService.list(run)
+                    .filter((entry) => !entry.character.devilFruitId)
+                    .map((entry) => ({
+                      id: entry.member.characterId,
+                      name: entry.character.name,
+                      detail: "Give fruit",
+                    })),
+                ].filter((entry) =>
+                  entry.id === run.player.id ? DevilFruitService.canEat(run) : true,
+                )
+              : undefined
+          }
+          prompt={
+            pendingTarget.kind === "fruit"
+              ? "Who should eat this Devil Fruit? This choice is permanent."
+              : "Who should this item be used on?"
+          }
+          run={run}
+        />
+      ) : null}
 
       {confirm?.kind === "eat" ? (
         <ConfirmModal
@@ -423,8 +488,4 @@ export function InventoryOverlay({
       ) : null}
     </div>
   );
-}
-
-function DevilFruitCanEat(run: RunState): boolean {
-  return run.player.devilFruitId === null;
 }

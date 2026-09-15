@@ -121,8 +121,8 @@ type GameStoreValue = {
   cancelBattleSetup: () => void;
   combatAction: (action: CombatAction) => void;
   resolveEnemyTurn: () => void;
-  useCombatItem: (itemId: string) => void;
-  useInventoryItem: (itemId: string) => void;
+  useCombatItem: (itemId: string, targetCharacterId?: string) => void;
+  useInventoryItem: (itemId: string, targetCharacterId?: string) => void;
   equipWeapon: (instanceId: string, slot?: "primary" | "secondary") => void;
   unequipWeapon: (instanceId: string) => void;
   setZoanForm: (formId: ZoanFormId) => void;
@@ -541,21 +541,21 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   }, [profile, persist]);
 
   const useCombatItem = useCallback(
-    (itemId: string) => {
+    (itemId: string, targetCharacterId?: string) => {
       if (!profile?.activeRun?.combat) {
         return;
       }
-      persist(EncounterEngine.useCombatItem(profile, itemId));
+      persist(EncounterEngine.useCombatItem(profile, itemId, targetCharacterId));
     },
     [profile, persist],
   );
 
   const useInventoryItem = useCallback(
-    (itemId: string) => {
+    (itemId: string, targetCharacterId?: string) => {
       if (!profile?.activeRun || profile.activeRun.combat) {
         return;
       }
-      persist(EncounterEngine.useOutOfCombatItem(profile, itemId));
+      persist(EncounterEngine.useOutOfCombatItem(profile, itemId, targetCharacterId));
     },
     [profile, persist],
   );

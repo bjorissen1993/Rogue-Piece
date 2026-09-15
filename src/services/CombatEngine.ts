@@ -775,20 +775,26 @@ export const CombatEngine = {
     result: ItemUseResult,
     rng: RandomService,
     run?: RunState,
+    targetCombatantId?: string,
   ): CombatState {
     if (state.finished || !PartyCombatService.isPlayerTurn(state)) {
       return state;
     }
     const next: CombatState = structuredClone(state);
     next.lastHits = [];
-    const actor = PartyCombatService.getActiveCombatant(next) ?? next.playerCombatant;
+    const target =
+      (targetCombatantId
+        ? PartyCombatService.allAllies(next).find((ally) => ally.id === targetCombatantId)
+        : null) ??
+      PartyCombatService.getActiveCombatant(next) ??
+      next.playerCombatant;
     if (result.hpHealed > 0) {
-      actor.hp = clamp(actor.hp + result.hpHealed, 0, actor.maxHp);
-      recordHit(next, actor, result.hpHealed, "HEAL");
+      target.hp = clamp(target.hp + result.hpHealed, 0, target.maxHp);
+      recordHit(next, target, result.hpHealed, "HEAL");
     }
     if (result.mpRestored > 0) {
-      const maxMp = actor.maxMp ?? 0;
-      actor.mp = clamp((actor.mp ?? 0) + result.mpRestored, 0, maxMp);
+      const maxMp = target.maxMp ?? 0;
+      target.mp = clamp((target.mp ?? 0) + result.mpRestored, 0, maxMp);
     }
     log(next, result.message);
     if (result.guaranteeEscape) {

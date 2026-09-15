@@ -9,6 +9,8 @@ import type {
 } from "../models/types";
 import { clamp } from "../utils/stats";
 import { CollectionService } from "./CollectionService";
+import { CharacterService } from "./CharacterService";
+import { CrewService } from "./CrewService";
 import { MpService } from "./MpService";
 
 export type ItemUseResult = {
@@ -519,6 +521,149 @@ export const ItemService = {
       hpHealed,
       mpRestored,
       guaranteeEscape,
+      itemName: def.name,
+    };
+  },
+
+  /**
+   * Use a pack item on the captain or a crewmate. Consumables come from the
+   * player inventory either way. Escape tools stay captain-only.
+   */
+  useOnTarget(
+    run: RunState,
+    itemId: string,
+    targetCharacterId: string,
+    context: ItemUseContext,
+  ): ItemUseResult {
+    const isPlayer =
+      targetCharacterId === run.player.id ||
+      targetCharacterId === "player" ||
+      !targetCharacterId;
+    if (isPlayer) {
+      return this.useOnPlayer(run.player, itemId, context);
+    }
+
+    const def = getItemDefinition(itemId);
+    const fail = (message: string): ItemUseResult => ({
+      ok: false,
+      message,
+      consumed: false,
+      freeAction: false,
+      hpHealed: 0,
+      mpRestored: 0,
+      guaranteeEscape: false,
+      itemName: def?.name ?? "item",
+    });
+    if (!def) {
+      return fail("That item is not in the ledger.");
+    }
+    if (!CrewService.isCharacterAlreadyInCrew(run, targetCharacterId)) {
+      return fail("That crewmate is not sailing with you.");
+    }
+    if (!this.usableIn(itemId, context)) {
+      if (def.useContext === "COMBAT") {
+        return fail("This is for a fight, not the open deck.");
+      }
+      if (def.useContext === "OUT_OF_COMBAT") {
+        return fail("Not while blades are out.");
+      }
+      return fail("This cannot be used here.");
+    }
+    if (def.effects.some((effect) => effect.type === "GUARANTEE_ESCAPE")) {
+      return fail("Only you can use that to escape.");
+    }
+
+    const stack = stackOf(run.player, itemId);
+    if (!stack || (stack.quantity ?? 0) <= 0) {
+      return fail("You do not have that.");
+    }
+
+    const inCombat = Boolean(run.combat && !run.combat.finished);
+    const allyCombatant = inCombat
+      ? run.combat?.party?.allyCombatants.find((ally) => ally.id === targetCharacterId)
+      : undefined;
+
+    let hpHealed = 0;
+    let mpRestored = 0;
+    let targetName = CharacterService.getCharacter(run, targetCharacterId)?.name ?? "crewmate";
+
+    if (inCombat && allyCombatant) {
+      targetName = allyCombatant.name;
+      for (const effect of def.effects) {
+        if (effect.type === "HEAL") {
+          const total = computeHealAmount(effect.amount, effect.percentMaxHp, allyCombatant.maxHp);
+          const before = allyCombatant.hp;
+          const after = clamp(allyCombatant.hp + total, 0, allyCombatant.maxHp);
+          hpHealed += after - before;
+        }
+        if (effect.type === "RESTORE_MP") {
+          const maxMp = allyCombatant.maxMp ?? 0;
+          const before = allyCombatant.mp ?? 0;
+          const total = computeMpRestoreAmount(effect.amount, effect.percentMaxMp, maxMp);
+          const after = clamp(before + total, 0, maxMp);
+          mpRestored += after - before;
+        }
+      }
+    } else {
+      let plannedHp = 0;
+      let plannedMp = 0;
+      for (const effect of def.effects) {
+        if (effect.type === "HEAL") {
+          const vitals = CrewService.ensureMemberVitals(run, targetCharacterId);
+          if (!vitals) {
+            return fail("That crewmate is not sailing with you.");
+          }
+          plannedHp += computeHealAmount(effect.amount, effect.percentMaxHp, vitals.maxHp);
+        }
+        if (effect.type === "RESTORE_MP") {
+          const vitals = CrewService.ensureMemberVitals(run, targetCharacterId);
+          if (!vitals) {
+            return fail("That crewmate is not sailing with you.");
+          }
+          plannedMp += computeMpRestoreAmount(effect.amount, effect.percentMaxMp, vitals.maxMp);
+        }
+      }
+      const applied = CrewService.applyMemberHeal(run, targetCharacterId, plannedHp, plannedMp);
+      if (!applied) {
+        return fail("That crewmate is not sailing with you.");
+      }
+      hpHealed = applied.hpHealed;
+      mpRestored = applied.mpRestored;
+      targetName = applied.name;
+    }
+
+    let consumed = false;
+    if (def.consumable) {
+      stack.quantity = (stack.quantity ?? 1) - 1;
+      consumed = true;
+      if (stack.quantity <= 0) {
+        run.player.inventory = run.player.inventory.filter((item) => item !== stack);
+      }
+    }
+
+    const parts: string[] = [];
+    if (hpHealed > 0) {
+      parts.push(`${def.name} restored ${hpHealed} HP to ${targetName}.`);
+    } else if (def.effects.some((effect) => effect.type === "HEAL")) {
+      parts.push(`${def.name} did nothing for HP — ${targetName} is already at full health.`);
+    }
+    if (mpRestored > 0) {
+      parts.push(`${def.name} restored ${mpRestored} MP to ${targetName}.`);
+    } else if (def.effects.some((effect) => effect.type === "RESTORE_MP")) {
+      parts.push(`${def.name} did nothing for MP — ${targetName}'s spirit is already full.`);
+    }
+    if (!parts.length) {
+      parts.push(`You use the ${def.name} on ${targetName}.`);
+    }
+
+    return {
+      ok: true,
+      message: parts.join(" "),
+      consumed,
+      freeAction: Boolean(def.freeAction),
+      hpHealed,
+      mpRestored,
+      guaranteeEscape: false,
       itemName: def.name,
     };
   },

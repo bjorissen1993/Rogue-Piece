@@ -15,10 +15,13 @@ import type {
 } from "../models/types";
 import { AffiliationService } from "./AffiliationService";
 import { CharacterService } from "./CharacterService";
+import { statsFromStrength } from "./CombatCalculationService";
 import { FleetService } from "./FleetService";
+import { MpService } from "./MpService";
 import { RaceService } from "./RaceService";
 import { RecruitmentModelService } from "./RecruitmentModelService";
 import { WeaponService } from "./WeaponService";
+import { clamp } from "../utils/stats";
 
 export type CrewOverviewEntry = {
   member: CrewMember;
@@ -345,9 +348,60 @@ export const CrewService = {
     return mika;
   },
 
-  estimatedHp(character: WorldCharacter): { hp: number; maxHp: number } {
-    const maxHp = 18 + character.strength * 4;
-    return { hp: maxHp, maxHp };
+  estimatedHp(character: WorldCharacter, member?: CrewMember | null): { hp: number; maxHp: number } {
+    const maxHp = Math.max(1, 18 + character.strength * 4);
+    const hp = member?.hp != null ? clamp(member.hp, 0, maxHp) : maxHp;
+    return { hp, maxHp };
+  },
+
+  maxMpForCharacter(character: WorldCharacter): number {
+    const stats = character.crewStats ?? statsFromStrength(character.strength);
+    return MpService.maxMpForStats(stats);
+  },
+
+  /** Ensure crewmate vitals exist; returns live hp/mp pools. */
+  ensureMemberVitals(
+    run: RunState,
+    characterId: string,
+  ): { hp: number; maxHp: number; mp: number; maxMp: number; name: string } | null {
+    const member = run.crew.find((entry) => entry.characterId === characterId);
+    const character = CharacterService.getCharacter(run, characterId);
+    if (!member || !character) {
+      return null;
+    }
+    const { hp: defaultHp, maxHp } = this.estimatedHp(character, null);
+    const maxMp = this.maxMpForCharacter(character);
+    if (member.hp == null) {
+      member.hp = defaultHp;
+    }
+    if (member.mp == null) {
+      member.mp = maxMp;
+    }
+    member.hp = clamp(member.hp, 0, maxHp);
+    member.mp = clamp(member.mp, 0, maxMp);
+    return { hp: member.hp, maxHp, mp: member.mp, maxMp, name: character.name };
+  },
+
+  applyMemberHeal(
+    run: RunState,
+    characterId: string,
+    hpGain: number,
+    mpGain: number,
+  ): { hpHealed: number; mpRestored: number; name: string } | null {
+    const vitals = this.ensureMemberVitals(run, characterId);
+    const member = run.crew.find((entry) => entry.characterId === characterId);
+    if (!vitals || !member) {
+      return null;
+    }
+    const beforeHp = member.hp ?? vitals.hp;
+    const beforeMp = member.mp ?? vitals.mp;
+    member.hp = clamp(beforeHp + Math.max(0, hpGain), 0, vitals.maxHp);
+    member.mp = clamp(beforeMp + Math.max(0, mpGain), 0, vitals.maxMp);
+    return {
+      hpHealed: (member.hp ?? beforeHp) - beforeHp,
+      mpRestored: (member.mp ?? beforeMp) - beforeMp,
+      name: vitals.name,
+    };
   },
 
   roleLabel(role: CrewRole): string {
