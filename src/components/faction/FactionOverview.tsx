@@ -54,7 +54,7 @@ export function FactionOverview({ run, factionId, onClose }: FactionOverviewProp
       <div className="faction-overview">
         <FactionHeader factionId={factionId} run={run} />
 
-        <div className="mb-3 flex shrink-0 flex-wrap gap-2">
+        <div className="faction-overview-tabs mb-3 flex shrink-0 flex-wrap gap-2">
           {TABS.map((entry) => (
             <button
               className={`tab-btn ${tab === entry.id ? "is-selected" : ""}`}
