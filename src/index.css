@@ -10673,24 +10673,12 @@ button.level-up-stats-row:disabled {
   }
 
   .combat-battlefield.has-mobile-wheel .combat-choice-wheel {
-    width: min(14.5rem, 62vw);
-    height: 3.6rem;
-    min-height: 3.6rem;
-    overflow: hidden;
-    -webkit-mask-image: linear-gradient(
-      90deg,
-      transparent 0%,
-      #000 10%,
-      #000 90%,
-      transparent 100%
-    );
-    mask-image: linear-gradient(
-      90deg,
-      transparent 0%,
-      #000 10%,
-      #000 90%,
-      transparent 100%
-    );
+    width: min(7rem, 30vw);
+    height: 3.4rem;
+    min-height: 3.4rem;
+    overflow: visible;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   .combat-battlefield.has-mobile-wheel .combat-wheel-arrow {
@@ -10703,7 +10691,7 @@ button.level-up-stats-row:disabled {
     z-index: 6;
   }
 
-  /* Absolute centering for 3-slot carousel (prev / focus / next). */
+  /* Keep absolute centering — relative + overflow clip made solo-focus icons slide away. */
   .combat-battlefield.has-mobile-wheel .combat-wheel-option {
     position: absolute;
     left: 50%;
