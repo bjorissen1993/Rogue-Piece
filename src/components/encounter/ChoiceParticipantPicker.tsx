@@ -125,6 +125,7 @@ export function ChoiceParticipantPicker({
           options={options}
           showBadges={false}
           showConfirmButton={false}
+          showFocusLabel={isMobile}
           soloFocus={isMobile}
           stepRem={isMobile ? 9 : 14}
         />

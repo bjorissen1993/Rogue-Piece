@@ -507,7 +507,9 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
         >
           {!showMobileDetail ? (
             <div className="split-pane crew-roster-pane">
-              <p className="text-sm text-parchment-dim crew-fleet-unlock-line">{fleetUnlockLine}</p>
+              {fleetUnlockLine ? (
+                <p className="text-sm text-parchment-dim crew-fleet-unlock-line">{fleetUnlockLine}</p>
+              ) : null}
               <div className="crew-roster-wrap">
                 {isMobile ? null : (
                   <>
@@ -620,8 +622,15 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
       {tab === "FLEET" ? (
         <div className="panel">
           <p className="detail-label">Named fleet captains</p>
-          <p className="text-sm text-parchment-dim mb-2">{fleetUnlockLine}</p>
-          {fleet.length ? (
+          {fleetUnlockLine ? (
+            <p className="text-sm text-parchment-dim mb-2">{fleetUnlockLine}</p>
+          ) : null}
+          {!CrewService.usesBountyFleet(run) ? (
+            <p className="text-sm text-parchment-dim">
+              Serving under a formal banner does not gather a personal pirate fleet. Leave that path if you want
+              followers under your own bounty.
+            </p>
+          ) : fleet.length ? (
             <ul className="detail-history">
               {fleet.map((entry) => {
                 const character = CharacterService.getCharacter(run, entry.characterId);

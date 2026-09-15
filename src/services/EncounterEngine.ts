@@ -842,15 +842,18 @@ function applyOutcome(
     run.player.berries = Math.max(0, run.player.berries + outcome.berriesChange);
   }
   if (outcome.bountyChange) {
-    run.player.bounty = Math.max(0, run.player.bounty + outcome.bountyChange);
-    if (outcome.bountyChange > 0 && !run.worldProgressionFlags.first_bounty) {
-      run.worldProgressionFlags.first_bounty = true;
-    }
-    IdentityService.syncLegalFromBounty(run);
-    if (outcome.bountyChange > 0) {
-      IdentityService.applyTendencyChanges(run, {
-        criminality: Math.min(5, Math.round(outcome.bountyChange / 2000)),
-      });
+    // Active Marines do not accrue personal bounty while serving.
+    if (!AffiliationService.isPlayerMarine(run)) {
+      run.player.bounty = Math.max(0, run.player.bounty + outcome.bountyChange);
+      if (outcome.bountyChange > 0 && !run.worldProgressionFlags.first_bounty) {
+        run.worldProgressionFlags.first_bounty = true;
+      }
+      IdentityService.syncLegalFromBounty(run);
+      if (outcome.bountyChange > 0) {
+        IdentityService.applyTendencyChanges(run, {
+          criminality: Math.min(5, Math.round(outcome.bountyChange / 2000)),
+        });
+      }
     }
   }
   if (outcome.trainStat) {

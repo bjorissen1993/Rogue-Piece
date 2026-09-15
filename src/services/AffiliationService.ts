@@ -110,6 +110,15 @@ export const AffiliationService = {
 
   ensure(run: RunState): PlayerAffiliation {
     const affiliation = materializeAffiliation(run);
+    // Existing saves may still carry bounty after joining the Marines.
+    if (
+      affiliation.primaryFactionId === "MARINES" &&
+      ACTIVE_MEMBERSHIP.includes(affiliation.membershipStatus) &&
+      run.player.bounty > 0
+    ) {
+      run.player.bounty = 0;
+      IdentityService.syncLegalFromBounty(run);
+    }
     run.player.title = this.computeTitle(run);
     return affiliation;
   },
@@ -415,6 +424,9 @@ export const AffiliationService = {
         if (identity.roleId === "WANDERER" || identity.roleId === "BOUNTY_HUNTER" || switching) {
           IdentityService.setRole(run, "MARINE_RECRUIT", rank?.id, options.note);
         }
+        // Active Marines are not wanted — clear personal bounty until they leave.
+        run.player.bounty = 0;
+        IdentityService.syncLegalFromBounty(run);
         break;
       case "PIRATES":
         IdentityService.setFaction(run, "PIRATES");
