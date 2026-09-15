@@ -359,7 +359,7 @@ export const EXTENDED_ENCOUNTERS: Encounter[] = [
     description:
       "{npcName} finds you at a tavern. \"I've been thinking,\" they say. \"Your crew could use someone like me.\"",
     weight: 8,
-    conditions: [{ type: "NPC_TAGS", tags: ["known_to_player"] }],
+    conditions: [{ type: "NPC_TAGS", tags: ["known_to_player"], recruitableOnly: true }],
     bindNpcTags: ["known_to_player"],
     choices: [
       {

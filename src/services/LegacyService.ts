@@ -18,6 +18,7 @@ import type {
 } from "../models/types";
 import { createId, nowIso } from "../utils/ids";
 import { CharacterService } from "./CharacterService";
+import { CrewService } from "./CrewService";
 import type { RandomService } from "./RandomService";
 import { createRng } from "./RandomService";
 import { BATTLE_FORMATS } from "./EncounterCompositionService";
@@ -811,7 +812,11 @@ export const LegacyService = {
     const hints = this.dialogueHints(profile, characterId);
     const age = this.ageOf(profile, characterId) ?? 20;
     const canRecruit =
-      record.status === "ACTIVE" && age < 50 && (record.character.joinInterest ?? 0) < 100;
+      record.status === "ACTIVE" &&
+      age < 50 &&
+      (record.character.joinInterest ?? 0) < 100 &&
+      Boolean(profile.activeRun) &&
+      CrewService.canOfferRecruitment(profile.activeRun!, characterId);
     const canTrain = age >= 28 || record.status === "RETIRED";
     const historyBeat =
       hints.find((h) => /crew|survived|sailed|trained|child/i.test(h)) ??

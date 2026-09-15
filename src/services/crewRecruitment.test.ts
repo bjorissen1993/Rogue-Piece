@@ -6,6 +6,7 @@ import { CharacterService } from "./CharacterService";
 import { CrewService } from "./CrewService";
 import { FleetService } from "./FleetService";
 import { RecruitmentModelService } from "./RecruitmentModelService";
+import { WorldService } from "./WorldService";
 
 function freshRun(): RunState {
   const profile = createEmptyProfile("crew_recruit_test", "NORMAL");
@@ -151,5 +152,15 @@ describe("CrewService recruitment", () => {
     expect(first?.characterId).toBe(fleetNpc.id);
     expect(second?.characterId).toBe(fleetNpc.id);
     expect((run.fleet ?? []).filter((entry) => entry.characterId === fleetNpc.id)).toHaveLength(1);
+  });
+
+  it("keeps existing crew out of the join-offer rotation", () => {
+    const run = freshRun();
+    const npc = makeNpc(run, "npc_jex_like", "Jex");
+    npc.tags.push("known_to_player");
+    CrewService.resolveRecruitment(run, npc.id, "FIGHTER", "ALLY");
+    expect(CrewService.canOfferRecruitment(run, npc.id)).toBe(false);
+    expect(WorldService.findRecruitableNpcByTags(run, ["known_to_player"])?.id).not.toBe(npc.id);
+    expect(WorldService.findNpcByTags(run, ["known_to_player"], true)?.id).toBe(npc.id);
   });
 });
