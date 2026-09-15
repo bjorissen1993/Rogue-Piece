@@ -73,6 +73,10 @@ function legalFromBounty(bounty: number, existing?: LegalStatusId): LegalStatusI
   if (bounty >= FUGITIVE_BOUNTY_THRESHOLD) return "FUGITIVE";
   if (bounty >= WANTED_BOUNTY_THRESHOLD) return "WANTED";
   if (bounty >= SUSPECTED_BOUNTY_THRESHOLD) return "SUSPECTED";
+  // Bounty wiped (e.g. Marine enlistment): clear wanted/fugitive standing.
+  if (existing === "WANTED" || existing === "FUGITIVE" || existing === "SUSPECTED") {
+    return "LAWFUL";
+  }
   return existing ?? "LAWFUL";
 }
 
