@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type WheelEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type WheelEvent } from "react";
 import type { SkillBadgeRef } from "../models/types";
 import { SkillBadgeRow } from "./SkillBadgeRow";
 
@@ -96,22 +96,29 @@ export function ChoiceWheel({
   const multi = options.length > 1;
   const vertical = orientation === "vertical";
   const slotStep = stepRem ?? WHEEL_STEP_REM;
-
-  useEffect(() => {
+  const optionsKey = `${options.length}:${options[0]?.id ?? ""}`;
+  const [syncedOptionsKey, setSyncedOptionsKey] = useState(optionsKey);
+  // Reset focus during render when the option list identity changes (avoids one stale frame).
+  if (optionsKey !== syncedOptionsKey) {
+    setSyncedOptionsKey(optionsKey);
     setFocus(0);
     setMotion(0);
     locked.current = false;
-  }, [options.length, options[0]?.id]);
+  }
 
-  useEffect(() => {
+  // Sync parent readout before paint so mobile combat never shows icon/Confirm without text.
+  useLayoutEffect(() => {
     const current = options[wrapIndex(focus, options.length)] ?? null;
     onHoverHint(current?.hint ?? null);
     onFocusChange(current);
+  }, [focus, options.length, optionsKey, options[focus]?.id, options[focus]?.hint, onHoverHint, onFocusChange]);
+
+  useEffect(() => {
     return () => {
       onHoverHint(null);
       onFocusChange(null);
     };
-  }, [focus, options.length, options[0]?.id, options[focus]?.id, onHoverHint, onFocusChange]);
+  }, [onHoverHint, onFocusChange]);
 
   if (!options.length) {
     return <p className="combat-wheel-empty">No options available.</p>;
@@ -121,9 +128,18 @@ export function ChoiceWheel({
     if (disabled || locked.current || !multi || delta === 0) {
       return;
     }
+    const dir = delta > 0 ? 1 : -1;
+    // Solo-focus (mobile): only one icon is mounted inside a clipped viewport.
+    // Sliding it away leaves a description with no usable Confirm/icon underneath.
+    if (soloFocus) {
+      setFocus((current) => wrapIndex(current + dir, options.length));
+      setMotion(0);
+      setInstant(false);
+      locked.current = false;
+      return;
+    }
     locked.current = true;
     setInstant(false);
-    const dir = delta > 0 ? 1 : -1;
     setMotion(dir);
     window.setTimeout(() => {
       // Snap without transition so the focus slot does not animate back to center.

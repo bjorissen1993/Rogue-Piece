@@ -268,6 +268,8 @@ export function CombatView({
   const finishPresentedRef = useRef(false);
   const finaleQueuedRef = useRef(false);
   const defeatedAnimPlayedRef = useRef<Set<string>>(new Set());
+  const resolveEnemyTurnRef = useRef(onResolveEnemyTurn);
+  resolveEnemyTurnRef.current = onResolveEnemyTurn;
 
   const allies = PartyCombatService.allAllies(combat).slice(0, 4);
   const enemies = combat.enemies.slice(0, 4);
@@ -544,10 +546,21 @@ export function CombatView({
       return;
     }
     const timer = window.setTimeout(() => {
-      onResolveEnemyTurn();
+      resolveEnemyTurnRef.current();
     }, ENEMY_THINK_MS);
     return () => window.clearTimeout(timer);
-  }, [enemyThinking, combat.activeCombatantId, combat.round, presenting, onResolveEnemyTurn]);
+    // Intentionally omit onResolveEnemyTurn: profile-keyed callbacks restart this timer
+    // and can stall the enemy turn until an unrelated click re-renders.
+  }, [enemyThinking, combat.activeCombatantId, combat.round, presenting]);
+
+  // Drop finished beats so leftover queue cannot keep `presenting` sticky.
+  useEffect(() => {
+    if (beats.length === 0 || beatIndex < beats.length) {
+      return;
+    }
+    setBeats([]);
+    setBeatIndex(0);
+  }, [beats.length, beatIndex]);
 
   useEffect(() => {
     if (!startedRef.current) {
@@ -690,7 +703,8 @@ export function CombatView({
     }
     setActionMenu(next);
     setChoicePhase("open");
-    setActionHint(null);
+    // Do not clear actionHint here — ChoiceWheel syncs the focused option before paint.
+    // Clearing caused a "skill with no description" flash on mobile.
   };
 
   const techniqueOptions: ChoiceWheelOption[] = activeCombatant.abilities.map((ability) => {
@@ -905,7 +919,10 @@ export function CombatView({
   const actionsLocked = waiting || presenting || enemyThinking;
   const menuOpen = Boolean(actionMenu);
   const choiceClosing = choicePhase === "closing";
-  const choiceInfoActive = Boolean(actionMenu && !choiceClosing && actionHint);
+  const choiceInfoActive = Boolean(
+    actionMenu && !choiceClosing && (actionHint || focusedOption?.hint),
+  );
+  const choiceReadout = actionHint || focusedOption?.hint || null;
 
   const choiceRail = (
     <div className={`combat-choice-rail ${menuOpen ? "is-open" : ""}`}>
@@ -916,6 +933,7 @@ export function CombatView({
           aria-label="Action choices"
         >
           <ChoiceWheel
+            alignFocus="center"
             disabled={actionsLocked || choiceClosing}
             onFocusChange={setFocusedOption}
             onHoverHint={setActionHint}
@@ -1064,14 +1082,14 @@ export function CombatView({
           ) : (
             <div className="combat-stage-idle">
               <div className="combat-stage-copy">
-                {showTurnBanner && !enemyThinking && !combat.finished ? (
+                {showTurnBanner && !enemyThinking && !combat.finished && !choiceInfoActive ? (
                   <h2 className="combat-stage-headline font-display combat-turn-banner-anim" key={activeCombatant.id}>
                     {idleHeadline}
                   </h2>
                 ) : (
                   <>
-                    {choiceInfoActive ? (
-                      <div className="combat-skill-readout combat-info-fade" key={focusedOption?.id ?? actionHint ?? "info"}>
+                    {choiceInfoActive && choiceReadout ? (
+                      <div className="combat-skill-readout combat-info-fade" key={focusedOption?.id ?? choiceReadout}>
                         {focusedOption?.badges?.length ? (
                           <SkillBadgeRow
                             badges={focusedOption.badges}
@@ -1080,7 +1098,7 @@ export function CombatView({
                             size={48}
                           />
                         ) : null}
-                        <p className="combat-stage-sub combat-stage-hint">{actionHint}</p>
+                        <p className="combat-stage-sub combat-stage-hint">{choiceReadout}</p>
                       </div>
                     ) : enemyThinking || combat.finished ? (
                       <h2 className="combat-stage-headline font-display">{idleHeadline}</h2>
