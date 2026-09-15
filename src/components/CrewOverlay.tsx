@@ -223,10 +223,12 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
     isMobile ? "is-mobile-list" : "",
     selectedId ? "has-selection" : "",
     dropTargetId ? "is-drag-targeting" : "",
-    isMobile && selectedWeaponId && sidePanel === "weapons" ? "is-assign-mode" : "",
   ]
     .filter(Boolean)
     .join(" ");
+
+  const showMobileDetail = isMobile && tab === "CORE" && Boolean(selectedId);
+  const showMobileList = isMobile && tab === "CORE" && !selectedId;
 
   const renderRosterSlot = (member: (typeof rosterSlots)[number], index: number) => {
     const isBattleSlot = index < BATTLE_FORMATION_SLOTS;
@@ -247,18 +249,8 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
             isCaptain={member.isCaptain}
             name={member.name}
             onClick={() => {
-              if (isMobile && selectedWeaponId && sidePanel === "weapons") {
-                onAssignStashWeapon?.(selectedWeaponId, member.id);
-                setSelectedWeaponId(null);
-                setSelectedId(member.id);
-                setSidePanel("character");
-                return;
-              }
-              if (selectedId === member.id) {
-                setSelectedId(null);
-                return;
-              }
               setSelectedId(member.id);
+              setSelectedWeaponId(null);
               setSidePanel("character");
             }}
             onDragLeave={() => setDropTargetId((current) => (current === member.id ? null : current))}
@@ -300,6 +292,183 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
     );
   };
 
+  const renderCharacterDetail = () => {
+    if (selectedId === null) {
+      return <p className="text-parchment-dim">Select a crewmate to view details.</p>;
+    }
+    if (selectedId === run.player.id) {
+      return (
+        <>
+          <p className="hud-kicker">{leaderLabel}</p>
+          <h3 className="font-display mt-2 text-2xl">{run.player.name}</h3>
+          <section className="detail-section mt-3">
+            <p className="detail-label">Identity</p>
+            <p className="detail-value text-sm">Faction: {IdentityService.hudSummary(run).faction}</p>
+            <p className="detail-value text-sm">Role: {IdentityService.hudSummary(run).role}</p>
+            <p className="detail-value text-sm">Legal: {IdentityService.hudSummary(run).legal}</p>
+            <p className="detail-value text-sm text-parchment-dim">
+              Standing: {affiliation.rankLabel} · {affiliation.standingLabel}
+            </p>
+          </section>
+          <section className="detail-section">
+            <p className="detail-label">Vitals</p>
+            <div className="detail-vitals-stack">
+              <HpBar hp={run.player.hp} maxHp={run.player.maxHp} />
+              <ResourceBar
+                current={run.player.mp ?? MpService.maxMpFor(run.player)}
+                kind="mp"
+                max={run.player.maxMp ?? MpService.maxMpFor(run.player)}
+              />
+              <ResourceBar
+                current={playerXp.current}
+                kind="xp"
+                max={playerXp.needed}
+                label={`LV ${playerProgress.level}`}
+              />
+            </div>
+          </section>
+          <section className="detail-section">
+            <p className="detail-label">Stats</p>
+            <ul className="detail-stat-list">
+              {STAT_ORDER.map((stat) => (
+                <li key={stat}>
+                  <span>{STAT_LABELS[stat]}</span>
+                  <span>{run.player.stats[stat]}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section className="detail-section">
+            <p className="detail-label">Equipped weapon</p>
+            {selectedCharacterWeaponView ? (
+              <WeaponStatsBlock weapon={selectedCharacterWeaponView} />
+            ) : (
+              <p className="text-sm text-parchment-dim">No weapon equipped.</p>
+            )}
+          </section>
+        </>
+      );
+    }
+    if (selectedCrew && selectedCharacter) {
+      return (
+        <>
+          <p className="hud-kicker">{CrewService.membershipLabel(selectedCrew.member.membership)}</p>
+          <h3 className="font-display mt-2 text-2xl">{selectedCharacter.name}</h3>
+          <section className="detail-section mt-3">
+            <p className="detail-label">Role / AI</p>
+            <p className="detail-value text-sm">
+              {CrewService.roleLabel(selectedCrew.member.role)} · {selectedCrew.member.aiMode ?? "BALANCED"}
+            </p>
+            {selectedCrew.member.inActiveParty ? (
+              <p className="text-sm text-gold">Active fighter</p>
+            ) : selectedCrew.member.inSupportSlot ? (
+              <p className="text-sm text-gold">Support slot</p>
+            ) : null}
+          </section>
+          <section className="detail-section">
+            <p className="detail-label">Vitals</p>
+            <div className="detail-vitals-stack">
+              <HpBar
+                hp={CrewService.estimatedHp(selectedCharacter, selectedCrew.member).hp}
+                maxHp={CrewService.estimatedHp(selectedCharacter, selectedCrew.member).maxHp}
+              />
+              <ResourceBar current={selectedCrewMaxMp} kind="mp" max={selectedCrewMaxMp} />
+              {selectedCrewXp && selectedCrewProgress ? (
+                <ResourceBar
+                  current={selectedCrewXp.current}
+                  kind="xp"
+                  max={selectedCrewXp.needed}
+                  label={`LV ${selectedCrewProgress.level}`}
+                />
+              ) : null}
+            </div>
+          </section>
+          <section className="detail-section">
+            <p className="detail-label">Stats</p>
+            <ul className="detail-stat-list">
+              {STAT_ORDER.map((stat) => {
+                const stats = crewStatsFor(selectedCharacter, selectedCharacter.strength);
+                return (
+                  <li key={stat}>
+                    <span>{STAT_LABELS[stat]}</span>
+                    <span>{stats[stat]}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+          <section className="detail-section">
+            <p className="detail-label">Equipped weapon</p>
+            {selectedCharacterWeaponView ? (
+              <WeaponStatsBlock weapon={selectedCharacterWeaponView} />
+            ) : (
+              <p className="text-sm text-parchment-dim">No weapon equipped.</p>
+            )}
+          </section>
+        </>
+      );
+    }
+    return <p className="text-parchment-dim">Select a crewmate.</p>;
+  };
+
+  const renderWeaponsAssignList = (mode: "desktop" | "mobile") => (
+    <div className="crew-weapons-panel">
+      <p className="detail-label">
+        {mode === "mobile"
+          ? selectedWeaponId
+            ? "Tap a weapon again to clear, or tap another to equip on this crewmate"
+            : "Tap a weapon to equip it on this crewmate"
+          : "Drag weapons onto crew cards — click to inspect stats"}
+      </p>
+      {weaponRows.length === 0 ? (
+        <p className="text-sm text-parchment-dim">No weapons in the crew pack.</p>
+      ) : (
+        <ul className="crew-weapon-list">
+          {weaponRows.map(({ instance, ownerLabel, ownerName }) => (
+            <li key={instance.id}>
+              <button
+                className={`crew-weapon-row ${selectedWeaponId === instance.id ? "is-selected" : ""}`}
+                draggable={mode === "desktop"}
+                onClick={() => {
+                  if (mode === "mobile" && selectedId) {
+                    if (selectedWeaponId === instance.id) {
+                      setSelectedWeaponId(null);
+                      return;
+                    }
+                    onAssignStashWeapon?.(instance.id, selectedId);
+                    setSelectedWeaponId(instance.id);
+                    return;
+                  }
+                  setSelectedWeaponId((current) => (current === instance.id ? null : instance.id));
+                }}
+                onDragStart={(event) => handleDragStart(event, { kind: "weapon", instanceId: instance.id })}
+                type="button"
+              >
+                <span className="crew-weapon-row-name font-display">{instance.name}</span>
+                {ownerName ? (
+                  <span className="crew-weapon-row-owner">{ownerName}</span>
+                ) : (
+                  <span className="crew-weapon-row-meta">{ownerLabel}</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {selectedWeaponView ? (
+        <div className="crew-weapon-stats mt-3">
+          <WeaponStatsBlock weapon={selectedWeaponView} />
+        </div>
+      ) : (
+        <p className="text-sm text-parchment-dim mt-3">
+          {mode === "mobile"
+            ? "Select a weapon to see its stats and equip it."
+            : "Select a weapon to see damage, speed, and other stats. Drag onto a crewmate to assign."}
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <OverlayFrame eyebrow="SHIP" title={crewLabel} onClose={onClose}>
       <div className="crew-tabs">
@@ -325,229 +494,102 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
       </div>
 
       {tab === "CORE" ? (
-        <div className={`split-overlay crew-split-overlay${isMobile ? " is-mobile-crew" : ""}`}>
-          <div className="split-pane crew-roster-pane">
-            <p className="text-sm text-parchment-dim crew-fleet-unlock-line">{fleetUnlockLine}</p>
-            <div className="crew-roster-wrap">
-              {isMobile ? null : (
-                <>
-                  <span className="crew-battle-formation-label">Battle Formation</span>
-                  <div aria-hidden="true" className="crew-battle-formation-marker" />
-                </>
-              )}
-              <ul className={rosterGridClassName}>
-                {rosterSlots.map((member, index) => renderRosterSlot(member, index))}
-              </ul>
-            </div>
-            {isMobile || stashFruits.length === 0 ? null : (
-              <section className="crew-stash crew-stash-compact">
-                <p className="detail-label">Devil Fruits in pack — drag onto a crewmate</p>
-                <ul className="crew-stash-grid">
-                  {stashFruits.map((item) => (
-                    <li key={item.id}>
-                      <button
-                        className="crew-stash-chip"
-                        draggable
-                        onDragStart={(event) =>
-                          handleDragStart(event, { kind: "devil_fruit", fruitId: item.fruitId! })
-                        }
-                        type="button"
-                      >
-                        <span className="crew-stash-chip-name">{item.name}</span>
-                        <span className="crew-stash-chip-kind">Devil Fruit</span>
-                      </button>
-                    </li>
-                  ))}
+        <div
+          className={[
+            "split-overlay",
+            "crew-split-overlay",
+            isMobile ? "is-mobile-crew" : "",
+            showMobileDetail ? "is-mobile-detail" : "",
+            showMobileList ? "is-mobile-list-only" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {!showMobileDetail ? (
+            <div className="split-pane crew-roster-pane">
+              <p className="text-sm text-parchment-dim crew-fleet-unlock-line">{fleetUnlockLine}</p>
+              <div className="crew-roster-wrap">
+                {isMobile ? null : (
+                  <>
+                    <span className="crew-battle-formation-label">Battle Formation</span>
+                    <div aria-hidden="true" className="crew-battle-formation-marker" />
+                  </>
+                )}
+                <ul className={rosterGridClassName}>
+                  {rosterSlots.map((member, index) => renderRosterSlot(member, index))}
                 </ul>
-              </section>
-            )}
-          </div>
-
-          <aside className="detail-panel panel crew-side-panel">
-            <div className="crew-side-toggle" role="tablist" aria-label="Crew detail">
-              <button
-                className={sidePanel === "character" ? "crew-side-toggle-btn is-active" : "crew-side-toggle-btn"}
-                onClick={() => setSidePanel("character")}
-                type="button"
-              >
-                Crewmate
-              </button>
-              <button
-                className={sidePanel === "weapons" ? "crew-side-toggle-btn is-active" : "crew-side-toggle-btn"}
-                onClick={() => setSidePanel("weapons")}
-                type="button"
-              >
-                Weapons
-              </button>
-            </div>
-
-            {sidePanel === "weapons" ? (
-              <div className="crew-weapons-panel">
-                <p className="detail-label">
-                  {isMobile
-                    ? selectedWeaponId
-                      ? "Tap a crewmate above to assign this weapon"
-                      : "Tap a weapon, then tap a crewmate to assign"
-                    : "Drag weapons onto crew cards — click to inspect stats"}
-                </p>
-                {weaponRows.length === 0 ? (
-                  <p className="text-sm text-parchment-dim">No weapons in the crew pack.</p>
-                ) : (
-                  <ul className="crew-weapon-list">
-                    {weaponRows.map(({ instance, ownerLabel, ownerName }) => (
-                      <li key={instance.id}>
+              </div>
+              {isMobile || stashFruits.length === 0 ? null : (
+                <section className="crew-stash crew-stash-compact">
+                  <p className="detail-label">Devil Fruits in pack — drag onto a crewmate</p>
+                  <ul className="crew-stash-grid">
+                    {stashFruits.map((item) => (
+                      <li key={item.id}>
                         <button
-                          className={`crew-weapon-row ${selectedWeaponId === instance.id ? "is-selected" : ""}`}
-                          draggable={!isMobile}
-                          onClick={() =>
-                            setSelectedWeaponId((current) => (current === instance.id ? null : instance.id))
-                          }
+                          className="crew-stash-chip"
+                          draggable
                           onDragStart={(event) =>
-                            handleDragStart(event, { kind: "weapon", instanceId: instance.id })
+                            handleDragStart(event, { kind: "devil_fruit", fruitId: item.fruitId! })
                           }
                           type="button"
                         >
-                          <span className="crew-weapon-row-name font-display">{instance.name}</span>
-                          {ownerName ? (
-                            <span className="crew-weapon-row-owner">{ownerName}</span>
-                          ) : (
-                            <span className="crew-weapon-row-meta">{ownerLabel}</span>
-                          )}
+                          <span className="crew-stash-chip-name">{item.name}</span>
+                          <span className="crew-stash-chip-kind">Devil Fruit</span>
                         </button>
                       </li>
                     ))}
                   </ul>
-                )}
-                {selectedWeaponView ? (
-                  <div className="crew-weapon-stats mt-3">
-                    <WeaponStatsBlock weapon={selectedWeaponView} />
-                  </div>
-                ) : (
-                  <p className="text-sm text-parchment-dim mt-3">
-                    {isMobile
-                      ? "Select a weapon to see its stats."
-                      : "Select a weapon to see damage, speed, and other stats. Drag onto a crewmate to assign."}
-                  </p>
-                )}
-              </div>
-            ) : selectedId === null ? (
-              <p className="text-parchment-dim">Select a crewmate to view details.</p>
-            ) : selectedId === run.player.id ? (
-              <>
-                <p className="hud-kicker">{leaderLabel}</p>
-                <h3 className="font-display mt-2 text-2xl">{run.player.name}</h3>
-                <section className="detail-section mt-3">
-                  <p className="detail-label">Identity</p>
-                  <p className="detail-value text-sm">
-                    Faction: {IdentityService.hudSummary(run).faction}
-                  </p>
-                  <p className="detail-value text-sm">
-                    Role: {IdentityService.hudSummary(run).role}
-                  </p>
-                  <p className="detail-value text-sm">
-                    Legal: {IdentityService.hudSummary(run).legal}
-                  </p>
-                  <p className="detail-value text-sm text-parchment-dim">
-                    Standing: {affiliation.rankLabel} · {affiliation.standingLabel}
-                  </p>
                 </section>
-                <section className="detail-section">
-                  <p className="detail-label">Vitals</p>
-                  <div className="detail-vitals-stack">
-                    <HpBar hp={run.player.hp} maxHp={run.player.maxHp} />
-                    <ResourceBar
-                      current={run.player.mp ?? MpService.maxMpFor(run.player)}
-                      kind="mp"
-                      max={run.player.maxMp ?? MpService.maxMpFor(run.player)}
-                    />
-                    <ResourceBar
-                      current={playerXp.current}
-                      kind="xp"
-                      max={playerXp.needed}
-                      label={`LV ${playerProgress.level}`}
-                    />
-                  </div>
-                </section>
-                <section className="detail-section">
-                  <p className="detail-label">Stats</p>
-                  <ul className="detail-stat-list">
-                    {STAT_ORDER.map((stat) => (
-                      <li key={stat}>
-                        <span>{STAT_LABELS[stat]}</span>
-                        <span>{run.player.stats[stat]}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-                <section className="detail-section">
-                  <p className="detail-label">Equipped weapon</p>
-                  {selectedCharacterWeaponView ? (
-                    <WeaponStatsBlock weapon={selectedCharacterWeaponView} />
-                  ) : (
-                    <p className="text-sm text-parchment-dim">No weapon equipped.</p>
-                  )}
-                </section>
-              </>
-            ) : selectedCrew && selectedCharacter ? (
-              <>
-                <p className="hud-kicker">{CrewService.membershipLabel(selectedCrew.member.membership)}</p>
-                <h3 className="font-display mt-2 text-2xl">{selectedCharacter.name}</h3>
-                <section className="detail-section mt-3">
-                  <p className="detail-label">Role / AI</p>
-                  <p className="detail-value text-sm">
-                    {CrewService.roleLabel(selectedCrew.member.role)} · {selectedCrew.member.aiMode ?? "BALANCED"}
-                  </p>
-                  {selectedCrew.member.inActiveParty ? (
-                    <p className="text-sm text-gold">Active fighter</p>
-                  ) : selectedCrew.member.inSupportSlot ? (
-                    <p className="text-sm text-gold">Support slot</p>
-                  ) : null}
-                </section>
-                <section className="detail-section">
-                  <p className="detail-label">Vitals</p>
-                  <div className="detail-vitals-stack">
-                    <HpBar
-                      hp={CrewService.estimatedHp(selectedCharacter).hp}
-                      maxHp={CrewService.estimatedHp(selectedCharacter).maxHp}
-                    />
-                    <ResourceBar current={selectedCrewMaxMp} kind="mp" max={selectedCrewMaxMp} />
-                    {selectedCrewXp && selectedCrewProgress ? (
-                      <ResourceBar
-                        current={selectedCrewXp.current}
-                        kind="xp"
-                        max={selectedCrewXp.needed}
-                        label={`LV ${selectedCrewProgress.level}`}
-                      />
-                    ) : null}
-                  </div>
-                </section>
-                <section className="detail-section">
-                  <p className="detail-label">Stats</p>
-                  <ul className="detail-stat-list">
-                    {STAT_ORDER.map((stat) => {
-                      const stats = crewStatsFor(selectedCharacter, selectedCharacter.strength);
-                      return (
-                        <li key={stat}>
-                          <span>{STAT_LABELS[stat]}</span>
-                          <span>{stats[stat]}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </section>
-                <section className="detail-section">
-                  <p className="detail-label">Equipped weapon</p>
-                  {selectedCharacterWeaponView ? (
-                    <WeaponStatsBlock weapon={selectedCharacterWeaponView} />
-                  ) : (
-                    <p className="text-sm text-parchment-dim">No weapon equipped.</p>
-                  )}
-                </section>
-              </>
-            ) : (
-              <p className="text-parchment-dim">Select a crewmate.</p>
-            )}
-          </aside>
+              )}
+            </div>
+          ) : null}
+
+          {!showMobileList ? (
+            <aside className="detail-panel panel crew-side-panel">
+              {showMobileDetail ? (
+                <div className="crew-mobile-detail-head">
+                  <button
+                    className="ghost-btn py-2"
+                    onClick={() => {
+                      setSelectedId(null);
+                      setSelectedWeaponId(null);
+                    }}
+                    type="button"
+                  >
+                    ← Crew list
+                  </button>
+                </div>
+              ) : (
+                <div className="crew-side-toggle" role="tablist" aria-label="Crew detail">
+                  <button
+                    className={sidePanel === "character" ? "crew-side-toggle-btn is-active" : "crew-side-toggle-btn"}
+                    onClick={() => setSidePanel("character")}
+                    type="button"
+                  >
+                    Crewmate
+                  </button>
+                  <button
+                    className={sidePanel === "weapons" ? "crew-side-toggle-btn is-active" : "crew-side-toggle-btn"}
+                    onClick={() => setSidePanel("weapons")}
+                    type="button"
+                  >
+                    Weapons
+                  </button>
+                </div>
+              )}
+
+              {showMobileDetail ? (
+                <div className="crew-mobile-detail-body">
+                  <div className="crew-mobile-detail-stats">{renderCharacterDetail()}</div>
+                  <div className="crew-mobile-detail-weapons">{renderWeaponsAssignList("mobile")}</div>
+                </div>
+              ) : sidePanel === "weapons" ? (
+                renderWeaponsAssignList("desktop")
+              ) : (
+                renderCharacterDetail()
+              )}
+            </aside>
+          ) : null}
         </div>
       ) : null}
 
