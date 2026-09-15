@@ -6698,6 +6698,52 @@ html.battle-result-open .battler-card.is-down {
   margin-top: 0.85rem;
 }
 
+.crew-skill-list {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.crew-skill-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid rgba(212, 179, 106, 0.28);
+  border-radius: 0.55rem;
+  background: linear-gradient(180deg, rgba(18, 24, 34, 0.92), rgba(10, 14, 20, 0.92));
+}
+
+.crew-skill-name {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.15;
+}
+
+.crew-skill-desc {
+  margin: 0.15rem 0 0;
+  color: var(--color-parchment-dim, #b7c0cc);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.crew-skill-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.65rem;
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: rgba(212, 179, 106, 0.92);
+}
+
+.crew-skill-badges {
+  justify-content: flex-start;
+}
+
 .detail-label {
   margin: 0 0 0.25rem;
   font-size: 0.68rem;
@@ -7716,9 +7762,9 @@ button.level-up-stats-row:disabled {
     --overlay-max-h: calc(100dvh - var(--mobile-safe-top) - var(--mobile-safe-bottom) - 0.5rem);
     --overlay-pad: 0.85rem;
     --combat-side-wheel-w: min(11rem, 38vw);
-    --combat-action-w: clamp(2.35rem, 14vw, 2.85rem);
-    --combat-action-h: clamp(2.85rem, 13vw, 3.25rem);
-    --combat-action-icon: clamp(2.1rem, 11vw, 2.55rem);
+    --combat-action-w: clamp(3.1rem, 15.5vw, 3.75rem);
+    --combat-action-h: clamp(3.6rem, 15vw, 4.25rem);
+    --combat-action-icon: clamp(2.85rem, 13.5vw, 3.4rem);
     --combat-wheel-w: min(22rem, 94vw);
     --combat-wheel-h: 6.4rem;
   }
@@ -10475,14 +10521,20 @@ button.level-up-stats-row:disabled {
     padding-bottom: 0.15rem;
     overflow: visible;
     z-index: 40;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
-  /* All 6 battle actions in one row on mobile. */
+  /* All 6 battle actions in one row on mobile — fill screen width. */
   .combat-actions-main {
     display: grid !important;
     grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 0.12rem;
-    padding: 0.05rem 0.15rem 0.1rem;
+    gap: 0.18rem;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 0.1rem 0.2rem 0.15rem;
     transform: none;
     flex-wrap: nowrap;
   }
@@ -10490,30 +10542,30 @@ button.level-up-stats-row:disabled {
   .combat-action-btn {
     width: 100%;
     max-width: none;
-    min-height: 3.1rem;
-    padding: 0 0 0.02rem;
+    min-height: 4.15rem;
+    padding: 0 0 0.05rem;
     overflow: visible;
   }
 
   .combat-action-glow {
-    bottom: 0.95rem;
-    width: 2.6rem;
-    height: 2.6rem;
+    bottom: 1.15rem;
+    width: 3.35rem;
+    height: 3.35rem;
   }
 
   .combat-action-icon {
-    bottom: 0.72rem;
-    width: 2.35rem !important;
-    height: 2.35rem !important;
+    bottom: 0.95rem;
+    width: 3.15rem !important;
+    height: 3.15rem !important;
   }
 
   .combat-action-label {
     min-width: 0;
     max-width: 100%;
     width: 100%;
-    font-size: 0.42rem;
-    letter-spacing: 0;
-    padding: 0.04rem 0.05rem;
+    font-size: 0.55rem;
+    letter-spacing: 0.01em;
+    padding: 0.06rem 0.08rem;
     border-radius: 0.35rem;
     white-space: nowrap;
     overflow: hidden;
@@ -10603,8 +10655,9 @@ button.level-up-stats-row:disabled {
   }
 
   .combat-battlefield.has-mobile-wheel .combat-choice-wheel-wrap,
-  .combat-battlefield.has-mobile-wheel .combat-choice-wheel-wrap.is-solo-focus {
-    width: min(22rem, 96vw);
+  .combat-battlefield.has-mobile-wheel .combat-choice-wheel-wrap.is-solo-focus,
+  .combat-battlefield.has-mobile-wheel .combat-choice-wheel-wrap.is-triple-focus {
+    width: min(24rem, 98vw);
     max-width: 100%;
     justify-content: center;
     gap: 0.2rem;
@@ -10613,16 +10666,29 @@ button.level-up-stats-row:disabled {
 
   .combat-battlefield.has-mobile-wheel .combat-choice-wheel-row {
     align-items: center;
-    min-height: 3.4rem;
+    min-height: 3.6rem;
+    width: 100%;
   }
 
   .combat-battlefield.has-mobile-wheel .combat-choice-wheel {
-    width: min(7rem, 30vw);
-    height: 3.4rem;
-    min-height: 3.4rem;
-    overflow: visible;
-    -webkit-mask-image: none;
-    mask-image: none;
+    width: min(14.5rem, 62vw);
+    height: 3.6rem;
+    min-height: 3.6rem;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      #000 10%,
+      #000 90%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      #000 10%,
+      #000 90%,
+      transparent 100%
+    );
   }
 
   .combat-battlefield.has-mobile-wheel .combat-wheel-arrow {
@@ -10635,7 +10701,7 @@ button.level-up-stats-row:disabled {
     z-index: 6;
   }
 
-  /* Keep absolute centering — relative + overflow clip made solo-focus icons slide away. */
+  /* Absolute centering for 3-slot carousel (prev / focus / next). */
   .combat-battlefield.has-mobile-wheel .combat-wheel-option {
     position: absolute;
     left: 50%;

@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
-import type { RunState, StatName } from "../models/types";
+import type { Ability, RunState, StatName } from "../models/types";
+import { getAbilitiesForCrewmember, getAbilitiesForPlayer } from "../data/abilities";
 import { getDevilFruit } from "../data/devilFruits";
 import { getWeapon } from "../data/weapons";
 import { CORE_CREW_CAP } from "../game/constants";
+import { resolveSkillBadges } from "../game/skillBadges";
+import { techniqueHitChancePercent } from "../game/techniquePower";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { CharacterService } from "../services/CharacterService";
 import { CrewService } from "../services/CrewService";
@@ -16,6 +19,10 @@ import { RaceService } from "../services/RaceService";
 import { LootDispositionService } from "../services/LootDispositionService";
 import { WeaponService } from "../services/WeaponService";
 import { MedicalRecoveryService } from "../services/MedicalRecoveryService";
+import {
+  TargetResolutionService,
+  targetingSummary,
+} from "../services/TargetResolutionService";
 import { STAT_LABELS } from "../utils/text";
 import { ensurePlayerStats } from "../utils/stats";
 import { CharacterCard } from "./CharacterCard";
@@ -23,6 +30,7 @@ import { HpBar } from "./HpBar";
 import { ResourceBar } from "./ResourceBar";
 import { MpService } from "../services/MpService";
 import { OverlayFrame } from "./OverlayFrame";
+import { SkillBadgeRow } from "./SkillBadgeRow";
 import { WeaponStatsBlock } from "./WeaponStatsBlock";
 
 type CrewOverlayProps = {
@@ -292,6 +300,61 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
     );
   };
 
+  const renderSkillset = (characterId: string) => {
+    const isCaptain = characterId === run.player.id;
+    const abilities: Ability[] = isCaptain
+      ? getAbilitiesForPlayer(run.player)
+      : getAbilitiesForCrewmember(run, characterId);
+    const level = isCaptain
+      ? playerProgress.level
+      : (ProgressionService.getProgression(run, characterId).level ?? 1);
+
+    return (
+      <section className="detail-section crew-skillset">
+        <p className="detail-label">Skillset</p>
+        {abilities.length === 0 ? (
+          <p className="text-sm text-parchment-dim">No combat techniques unlocked yet.</p>
+        ) : (
+          <ul className="crew-skill-list">
+            {abilities.map((ability) => {
+              const mpCost = MpService.abilityMpCost(ability);
+              const powerLevel = ability.powerLevel ?? Math.max(1, Math.round(ability.power / 1.5));
+              const hitPct = techniqueHitChancePercent(powerLevel, level, ability.accuracyMod ?? 0);
+              const targeting =
+                ability.targeting ?? TargetResolutionService.legacyTargetingFromAbility(ability);
+              const badges = resolveSkillBadges(ability);
+              return (
+                <li className="crew-skill-card" key={ability.id}>
+                  <div className="crew-skill-card-main">
+                    <p className="crew-skill-name font-display text-gold">{ability.name}</p>
+                    <p className="crew-skill-desc">{ability.description}</p>
+                    <p className="crew-skill-meta">
+                      <span>Power Lv {powerLevel}</span>
+                      <span>Acc ~{hitPct}%</span>
+                      <span>{mpCost} MP</span>
+                      <span>{targetingSummary(targeting)}</span>
+                      {ability.scalingStat ? (
+                        <span>Scales: {STAT_LABELS[ability.scalingStat]}</span>
+                      ) : null}
+                    </p>
+                  </div>
+                  {badges.length ? (
+                    <SkillBadgeRow
+                      badges={badges}
+                      className="crew-skill-badges"
+                      layout="row"
+                      size={isMobile ? 40 : 48}
+                    />
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    );
+  };
+
   const renderCharacterDetail = () => {
     if (selectedId === null) {
       return <p className="text-parchment-dim">Select a crewmate to view details.</p>;
@@ -346,6 +409,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
               <p className="text-sm text-parchment-dim">No weapon equipped.</p>
             )}
           </section>
+          {renderSkillset(run.player.id)}
         </>
       );
     }
@@ -405,6 +469,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
               <p className="text-sm text-parchment-dim">No weapon equipped.</p>
             )}
           </section>
+          {renderSkillset(selectedId)}
         </>
       );
     }
