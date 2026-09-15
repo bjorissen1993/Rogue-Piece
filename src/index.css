@@ -1437,8 +1437,13 @@ img.run-glyph,
   align-items: center;
   justify-content: center;
   padding: clamp(0.75rem, 3vh, 2.5rem) clamp(0.75rem, 3vw, 2.5rem);
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(2px);
+  background: rgba(4, 8, 12, 0.88);
+}
+
+html.overlay-open .overlay-scrim,
+html.battle-result-open .overlay-scrim {
+  /* Avoid continuous backdrop blur over animating game chrome (major stutter source). */
+  backdrop-filter: none;
 }
 
 .crew-badge-detail-scrim {
@@ -2602,17 +2607,37 @@ html.battle-result-open .encounter-frame.mood-fight::after,
 html.battle-result-open .encounter-frame.mood-talk::before,
 html.battle-result-open .encounter-frame.mood-mystery::after,
 html.battle-result-open .liquid-fill,
-html.battle-result-open .tube-liquid {
+html.battle-result-open .tube-liquid,
+html.battle-result-open .tube-meniscus,
+html.overlay-open .encounter-frame.mood-explore,
+html.overlay-open .encounter-frame.mood-explore::before,
+html.overlay-open .encounter-frame.mood-fight::before,
+html.overlay-open .encounter-frame.mood-fight::after,
+html.overlay-open .encounter-frame.mood-talk::before,
+html.overlay-open .encounter-frame.mood-mystery::after,
+html.overlay-open .liquid-fill,
+html.overlay-open .tube-liquid,
+html.overlay-open .tube-meniscus {
   animation-play-state: paused !important;
 }
 
 html.battle-result-open .combat-stage,
-html.battle-result-open .combat-stage * {
+html.battle-result-open .combat-stage *,
+html.overlay-open .combat-stage,
+html.overlay-open .combat-stage * {
   animation-play-state: paused !important;
 }
 
-html.battle-result-open .game-shell {
+html.battle-result-open .game-shell,
+html.overlay-open .game-shell {
   contain: paint;
+}
+
+html.overlay-open .game-main,
+html.overlay-open .faction-hud,
+html.overlay-open .news-strip,
+html.overlay-open .player-hud {
+  content-visibility: auto;
 }
 
 .encounter-frame.mood-settle {
@@ -9153,7 +9178,8 @@ button.level-up-stats-row:disabled {
   .encounter-frame.mood-settle .encounter-result,
   .choice-card:active:not(:disabled) .choice-action-logo,
   .choice-card-shell:has(> .select-card.choice-card:active:not(:disabled)) .choice-diamond,
-  .feedback-toast {
+  .feedback-toast,
+  .tube-meniscus {
     animation: none;
   }
 }

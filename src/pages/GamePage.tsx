@@ -28,6 +28,7 @@ import { AffiliationService } from "../services/AffiliationService";
 import { DevilFruitCombatService } from "../services/DevilFruitCombatService";
 import { interpolate } from "../utils/text";
 import { useGameStore } from "../stores/GameStore";
+import { useDocumentClass } from "../hooks/useDocumentClass";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import type { ZoanFormId } from "../models/types";
 import { relativeDayLabel } from "../utils/presentation";
@@ -179,6 +180,21 @@ export function GamePage() {
   const lastFeedback = run?.lastFeedback ?? null;
   const lastHpChange = run?.lastHpChange ?? null;
   const playerHp = run?.player.hp ?? 0;
+
+  const pauseBackgroundMotion =
+    overlay != null ||
+    characterSheetOpen ||
+    factionsSheetOpen ||
+    newsArchiveOpen ||
+    moreSheetOpen ||
+    Boolean(run?.pendingBattleResult) ||
+    Boolean(run?.pendingBattleSetup) ||
+    Boolean(run?.pendingLevelUps?.length) ||
+    Boolean(run?.pendingTechniqueChoice) ||
+    Boolean(run?.pendingAssignmentResults?.length) ||
+    (run?.currentEncounterId === "weapon_smith" && !run.awaitingAdvance);
+
+  useDocumentClass("overlay-open", pauseBackgroundMotion);
 
   useEffect(() => {
     if (!lastFeedback) {
