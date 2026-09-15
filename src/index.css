@@ -7641,11 +7641,20 @@ button.level-up-stats-row:disabled {
 
   .inventory-overlay-shell {
     flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .inventory-overlay-shell .inventory-overlay-main {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
   }
 
   .inventory-collectibles-special {
     width: 100%;
     max-height: 11rem;
+    flex: 0 0 auto;
   }
 
   .inventory-collectible-list {
@@ -8904,7 +8913,7 @@ button.level-up-stats-row:disabled {
     flex-direction: column;
     grid-template-columns: none;
     gap: 0.65rem;
-    flex: 1;
+    flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
   }
@@ -8923,18 +8932,29 @@ button.level-up-stats-row:disabled {
 
   .split-overlay.is-mobile-accordion .inventory-item-list {
     gap: 0.45rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: max(1.75rem, calc(var(--mobile-safe-bottom, 0px) + 1.25rem));
+    touch-action: pan-y;
   }
 
   .split-overlay.is-mobile-accordion .inventory-accordion-item {
+    flex: 0 0 auto;
     border-radius: 0.65rem;
     border: 1px solid rgba(197, 160, 89, 0.28);
     background: linear-gradient(180deg, rgba(22, 30, 38, 0.98), rgba(12, 18, 24, 0.99));
-    overflow: hidden;
+    overflow: visible;
   }
 
   .split-overlay.is-mobile-accordion .inventory-accordion-item.is-open {
     border-color: rgba(197, 160, 89, 0.75);
     box-shadow: 0 0 0 1px rgba(197, 160, 89, 0.2) inset;
+    scroll-margin-top: 0.75rem;
+    scroll-margin-bottom: 1.25rem;
   }
 
   .split-overlay.is-mobile-accordion .inventory-accordion-item .inventory-list-row {
@@ -8951,7 +8971,7 @@ button.level-up-stats-row:disabled {
   }
 
   .split-overlay.is-mobile-accordion .inventory-accordion-body {
-    padding: 0 0.8rem 0.85rem;
+    padding: 0 0.8rem 1rem;
     border-top: 1px solid rgba(197, 160, 89, 0.22);
   }
 
@@ -8959,6 +8979,7 @@ button.level-up-stats-row:disabled {
     margin-top: 0.75rem;
     display: grid;
     gap: 0.45rem;
+    padding-bottom: 0.15rem;
   }
 
   .split-overlay.is-mobile-accordion .inventory-accordion-actions .gold-btn,

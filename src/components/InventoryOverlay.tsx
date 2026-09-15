@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getDevilFruit } from "../data/devilFruits";
 import { getItemDefinition } from "../data/items";
 import { useIsMobile } from "../hooks/useMediaQuery";
@@ -58,6 +58,7 @@ export function InventoryOverlay({
   const [category, setCategory] = useState<InventoryCategory>("ALL");
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
+  const inventoryListRef = useRef<HTMLUListElement | null>(null);
   const [confirm, setConfirm] = useState<null | { kind: "eat"; fruitId: string }>(null);
   const [pendingTarget, setPendingTarget] = useState<null | {
     kind: "item" | "fruit";
@@ -90,9 +91,36 @@ export function InventoryOverlay({
   };
 
   const selectFirstInView = (cat: InventoryCategory) => {
+    if (isMobile) {
+      setSelectedId(null);
+      return;
+    }
     const nextList = packItems(run.player.inventory, cat);
     setSelectedId(nextList[0] ? itemKey(nextList[0]) : null);
   };
+
+  useEffect(() => {
+    if (!isMobile || !selectedId) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      const list = inventoryListRef.current;
+      const item = list?.querySelector<HTMLElement>(`[data-inventory-id="${selectedId}"]`);
+      if (!list || !item) {
+        return;
+      }
+      const listRect = list.getBoundingClientRect();
+      const itemRect = item.getBoundingClientRect();
+      const bottomGap = 16;
+      const topGap = 12;
+      if (itemRect.bottom > listRect.bottom - bottomGap) {
+        list.scrollTop += itemRect.bottom - listRect.bottom + bottomGap;
+      } else if (itemRect.top < listRect.top + topGap) {
+        list.scrollTop -= listRect.top + topGap - itemRect.top;
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isMobile, selectedId]);
 
   return (
     <div className="overlay-scrim">
@@ -208,6 +236,7 @@ export function InventoryOverlay({
                           ? "inventory-item-list"
                           : "split-grid ledger-grid inventory-grid"
                       }
+                      ref={isMobile ? inventoryListRef : undefined}
                     >
                       {list.map((item) => {
                         const id = itemKey(item);
@@ -225,6 +254,7 @@ export function InventoryOverlay({
                         return (
                           <li
                             className={selectedRow && isMobile ? "inventory-accordion-item is-open" : "inventory-accordion-item"}
+                            data-inventory-id={id}
                             key={`${id}-${item.weaponDefinitionId ?? item.fruitId ?? ""}`}
                           >
                             {isMobile ? (
