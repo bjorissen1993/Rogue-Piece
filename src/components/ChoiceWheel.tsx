@@ -33,12 +33,25 @@ function wrapIndex(index: number, length: number): number {
   return ((index % length) + length) % length;
 }
 
-function bridgeOffsets(count: number, vertical: boolean, soloFocus: boolean): number[] {
+function bridgeOffsets(
+  count: number,
+  vertical: boolean,
+  soloFocus: boolean,
+  tripleFocus: boolean,
+  motion: number,
+): number[] {
   if (count <= 1 || soloFocus) {
     return [0];
   }
-  // Vertical combat wheel: exactly 3 visible slots (prev / focus / next).
-  if (vertical) {
+  // Vertical / mobile triple: 3 visible slots; during slide, mount the incoming neighbor
+  // so it enters from the opposite side (right-swipe ← new from left, and vice versa).
+  if (vertical || tripleFocus) {
+    if (motion > 0) {
+      return [-1, 0, 1, 2];
+    }
+    if (motion < 0) {
+      return [-2, -1, 0, 1];
+    }
     return [-1, 0, 1];
   }
   return [-2, -1, 0, 1, 2];
@@ -66,6 +79,8 @@ type ChoiceWheelProps = {
   showBadges?: boolean;
   /** Mobile: only render the focused option; keep L/R arrows to cycle. */
   soloFocus?: boolean;
+  /** Mobile combat: show prev / focus / next with slide-in neighbors. */
+  tripleFocus?: boolean;
   /** Solo-focus Confirm chip above the wheel (combat). Off when a separate Choose/Select exists. */
   showConfirmButton?: boolean;
   /** Horizontal focus badge alignment inside the wheel slot. */
@@ -84,6 +99,7 @@ export function ChoiceWheel({
   orientation = "horizontal",
   showBadges = true,
   soloFocus = false,
+  tripleFocus = false,
   showConfirmButton,
   alignFocus = "bottom",
   showFocusLabel = false,
@@ -166,16 +182,16 @@ export function ChoiceWheel({
     rotate(event.deltaY > 0 ? 1 : -1);
   };
 
-  const offsets = bridgeOffsets(options.length, vertical, soloFocus);
+  const offsets = bridgeOffsets(options.length, vertical, soloFocus, tripleFocus, motion);
   const focusedOption = options[wrapIndex(focus, options.length)];
   const pocket = arcPoint(0);
   // Fixed pocket: confirm stays left of the active slot and does not travel with the arc.
   const selectPos = { x: pocket.x - 5.85, y: pocket.y };
-  const renderTopConfirm = showConfirmButton ?? (!vertical && soloFocus);
+  const renderTopConfirm = showConfirmButton ?? (!vertical && (soloFocus || tripleFocus));
 
   return (
     <div
-      className={`combat-choice-wheel-wrap ${multi ? "has-arrows" : "is-single"} ${vertical ? "is-vertical" : "is-horizontal"} ${soloFocus ? "is-solo-focus" : ""} ${className}`.trim()}
+      className={`combat-choice-wheel-wrap ${multi ? "has-arrows" : "is-single"} ${vertical ? "is-vertical" : "is-horizontal"} ${soloFocus ? "is-solo-focus" : ""} ${tripleFocus ? "is-triple-focus" : ""} ${className}`.trim()}
     >
       {showBadges ? (
         focusedOption?.badges?.length ? (
@@ -255,26 +271,39 @@ export function ChoiceWheel({
               ? isFocus
                 ? 1
                 : WHEEL_VERTICAL_SIDE_SCALE
-              : isFocus
-                ? 1
-                : absVisual >= 1.5
-                  ? 0.62
-                  : WHEEL_SIDE_SCALE;
+              : tripleFocus
+                ? isFocus
+                  ? 1
+                  : absVisual >= 1.5
+                    ? 0.58
+                    : 0.78
+                : isFocus
+                  ? 1
+                  : absVisual >= 1.5
+                    ? 0.62
+                    : WHEEL_SIDE_SCALE;
             const opacity = vertical
               ? absVisual >= 1.35
                 ? 0
                 : Math.max(0.28, 1 - absVisual * 0.32)
-              : isFocus
-                ? 1
-                : absVisual >= 1.5
-                  ? 0.4
-                  : 0.78;
-            // Solo focus (mobile crewmate picker): keep the badge vertically centered in its slot.
-            const drift = vertical || soloFocus ? 0 : isFocus ? 0.45 : 0.95;
+              : tripleFocus
+                ? absVisual >= 2.05
+                  ? 0
+                  : isFocus
+                    ? 1
+                    : Math.max(0.35, 1 - absVisual * 0.38)
+                : isFocus
+                  ? 1
+                  : absVisual >= 1.5
+                    ? 0.4
+                    : 0.78;
+            // Solo/triple (mobile): keep badges vertically centered in the slot.
+            const compactHorizontal = soloFocus || tripleFocus;
+            const drift = vertical || compactHorizontal ? 0 : isFocus ? 0.45 : 0.95;
             const point = arcPoint(visual);
             const transform = vertical
               ? `translate(${point.x}rem, ${point.y}rem) translate(-50%, -50%) scale(${scale})`
-              : soloFocus
+              : compactHorizontal
                 ? alignFocus === "center"
                   ? `translateX(${visual * slotStep}rem) translateY(-50%) scale(${scale})`
                   : `translateX(${visual * slotStep}rem) scale(${scale})`
@@ -336,10 +365,10 @@ export function ChoiceWheel({
                 type="button"
               >
                 <span className="combat-wheel-icon">{option.icon}</span>
-                {soloFocus && !showFocusLabel ? null : (
+                {compactHorizontal && !showFocusLabel ? null : (
                   <span className="combat-wheel-label">{option.title}</span>
                 )}
-                {isFocus && !soloFocus ? <span className="combat-wheel-cost">{option.costLabel}</span> : null}
+                {isFocus && !compactHorizontal ? <span className="combat-wheel-cost">{option.costLabel}</span> : null}
               </button>
             );
           })}

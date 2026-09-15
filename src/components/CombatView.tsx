@@ -940,8 +940,10 @@ export function CombatView({
             options={menuOptions}
             orientation={isMobile ? "horizontal" : "vertical"}
             showBadges={false}
-            soloFocus={isMobile}
-            stepRem={isMobile ? 9 : undefined}
+            showConfirmButton={isMobile}
+            soloFocus={false}
+            stepRem={isMobile ? 4.35 : undefined}
+            tripleFocus={isMobile}
           />
         </div>
       ) : null}
