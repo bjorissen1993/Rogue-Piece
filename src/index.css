@@ -1147,7 +1147,15 @@ img.run-glyph,
 }
 
 .faction-overview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   padding-right: 0.25rem;
+  padding-bottom: 1rem;
 }
 
 .faction-overview-grid {
@@ -8193,6 +8201,48 @@ button.level-up-stats-row:disabled {
     max-height: none;
     height: 100%;
     border-radius: 0.85rem;
+  }
+
+  /* Faction dossier: keep header/tabs fixed, scroll the tab body. */
+  .overlay-scrim-elevated .overlay-body:has(> .faction-overview) {
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .faction-overview {
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .faction-dossier-header {
+    gap: 0.75rem;
+    padding: 0.65rem 0.75rem;
+  }
+
+  .faction-dossier-logo-wrap {
+    width: 5.5rem;
+    height: 5.5rem;
+  }
+
+  .faction-dossier-logo {
+    width: 5rem !important;
+    height: 5rem !important;
+  }
+
+  .faction-dossier-name {
+    font-size: clamp(1.45rem, 6.5vw, 1.85rem);
+  }
+
+  .faction-overview-body,
+  .faction-overview-body.overlay-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    padding-bottom: max(1.25rem, var(--mobile-safe-bottom, 0px));
   }
 
   .combat-battlefield.has-side-wheel {
