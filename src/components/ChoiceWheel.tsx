@@ -66,6 +66,10 @@ type ChoiceWheelProps = {
   showBadges?: boolean;
   /** Mobile: only render the focused option; keep L/R arrows to cycle. */
   soloFocus?: boolean;
+  /** Solo-focus Confirm chip above the wheel (combat). Off when a separate Choose/Select exists. */
+  showConfirmButton?: boolean;
+  /** Horizontal focus badge alignment inside the wheel slot. */
+  alignFocus?: "bottom" | "center";
 };
 
 export function ChoiceWheel({
@@ -78,6 +82,8 @@ export function ChoiceWheel({
   orientation = "horizontal",
   showBadges = true,
   soloFocus = false,
+  showConfirmButton,
+  alignFocus = "bottom",
 }: ChoiceWheelProps) {
   const [focus, setFocus] = useState(0);
   const [motion, setMotion] = useState(0);
@@ -146,6 +152,7 @@ export function ChoiceWheel({
   const pocket = arcPoint(0);
   // Fixed pocket: confirm stays left of the active slot and does not travel with the arc.
   const selectPos = { x: pocket.x - 5.85, y: pocket.y };
+  const renderTopConfirm = showConfirmButton ?? (!vertical && soloFocus);
 
   return (
     <div
@@ -163,7 +170,7 @@ export function ChoiceWheel({
           <div aria-hidden="true" className="combat-wheel-badges is-spacer" />
         )
       ) : null}
-      {!vertical && soloFocus && focusedOption ? (
+      {renderTopConfirm && focusedOption ? (
         <button
           aria-label={`Confirm ${focusedOption.title}`}
           className="combat-wheel-confirm-btn"
@@ -249,7 +256,9 @@ export function ChoiceWheel({
             const transform = vertical
               ? `translate(${point.x}rem, ${point.y}rem) translate(-50%, -50%) scale(${scale})`
               : soloFocus
-                ? `translateX(${visual * slotStep}rem) scale(${scale})`
+                ? alignFocus === "center"
+                  ? `translateX(${visual * slotStep}rem) translateY(-50%) scale(${scale})`
+                  : `translateX(${visual * slotStep}rem) scale(${scale})`
                 : `translateX(${visual * slotStep}rem) translateY(${drift}rem) scale(${scale})`;
             const optionClass = `combat-wheel-option ${isFocus ? "is-focus" : ""} ${instant ? "is-instant" : ""} ${option.disabled ? "is-disabled" : ""} ${option.selected ? "is-picked" : ""} ${vertical && !isFocus ? "is-side-only" : ""}`;
             const optionStyle = {

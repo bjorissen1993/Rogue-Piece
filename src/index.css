@@ -9434,7 +9434,8 @@ button.level-up-stats-row:disabled {
 
   .choice-participant-overlay.is-mobile-compact .combat-choice-wheel-row {
     align-items: center;
-    height: auto;
+    height: 100%;
+    min-height: 6.6rem;
   }
 
   /* Hug the badge; options are bottom-anchored, so a tall wheel left empty space above. */
@@ -9443,9 +9444,11 @@ button.level-up-stats-row:disabled {
     width: min(18rem, 78vw);
     height: 6.6rem;
     min-height: 6.6rem;
+    place-items: center;
   }
 
-  .choice-participant-overlay.is-mobile-compact .combat-wheel-badges {
+  .choice-participant-overlay.is-mobile-compact .combat-wheel-badges,
+  .choice-participant-overlay.is-mobile-compact .combat-wheel-confirm-btn {
     display: none;
   }
 
@@ -9454,6 +9457,7 @@ button.level-up-stats-row:disabled {
     margin-left: -4.25rem;
     top: 50%;
     bottom: auto;
+    margin-top: 0;
   }
 
   .choice-participant-overlay.is-mobile-compact .choice-participant-wheel .combat-wheel-icon .hud-icon,
