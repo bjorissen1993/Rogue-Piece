@@ -10639,8 +10639,8 @@ button.level-up-stats-row:disabled {
   .combat-battlefield.has-mobile-wheel .combat-wheel-option {
     position: absolute;
     left: 50%;
-    top: auto;
-    bottom: 0.1rem;
+    top: 50%;
+    bottom: auto;
     width: 3.4rem;
     height: 3.2rem;
     margin: 0 0 0 -1.7rem;
