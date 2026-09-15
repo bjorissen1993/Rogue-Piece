@@ -2224,6 +2224,15 @@ img.run-glyph,
   color: var(--color-parchment-dim);
 }
 
+.inventory-list-qty {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-size: 0.9rem;
+  color: var(--color-parchment-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 .item-target-roster {
   list-style: none;
   margin: 0.85rem 0 0;
