@@ -390,6 +390,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
               />
             </div>
           </section>
+          {renderSkillset(run.player.id)}
           <section className="detail-section">
             <p className="detail-label">Stats</p>
             <ul className="detail-stat-list">
@@ -409,7 +410,6 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
               <p className="text-sm text-parchment-dim">No weapon equipped.</p>
             )}
           </section>
-          {renderSkillset(run.player.id)}
         </>
       );
     }
@@ -447,6 +447,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
               ) : null}
             </div>
           </section>
+          {renderSkillset(selectedId)}
           <section className="detail-section">
             <p className="detail-label">Stats</p>
             <ul className="detail-stat-list">
@@ -469,7 +470,6 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
               <p className="text-sm text-parchment-dim">No weapon equipped.</p>
             )}
           </section>
-          {renderSkillset(selectedId)}
         </>
       );
     }
