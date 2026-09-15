@@ -6,8 +6,27 @@ import type {
   TargetingSpec,
   Technique,
   TechniqueEffect,
+  TechniqueSource,
 } from "../models/types";
+import { techniqueToAbility } from "./techniqueAbility";
 import { abilityTechniqueEffects, targetingSummary } from "../services/TargetResolutionService";
+
+const TECHNIQUE_SOURCES: TechniqueSource[] = [
+  "WEAPON",
+  "FIGHTING_STYLE",
+  "DEVIL_FRUIT",
+  "RACE",
+  "HAKI",
+];
+
+function isTechniqueSource(
+  source: Ability | Technique | (Partial<Ability> & { name?: string }),
+): source is Technique {
+  return (
+    typeof (source as Technique).source === "string" &&
+    TECHNIQUE_SOURCES.includes((source as Technique).source)
+  );
+}
 
 export type SkillBadgeDefinition = {
   id: SkillBadgeId;
@@ -388,22 +407,25 @@ export function resolveSkillBadges(
     return source.badges.slice(0, MAX_VISIBLE_BADGES);
   }
 
+  // Raw Technique defs often omit tags/targeting; normalize like combat does.
+  const normalized = isTechniqueSource(source) ? techniqueToAbility(source) : source;
+
   const map = new Map<SkillBadgeId, SkillBadgeRef>();
-  const asAbility = source as Ability;
+  const asAbility = normalized as Ability;
   if (asAbility.techniqueEffects?.length || asAbility.targeting || asAbility.tags) {
     for (const effect of abilityTechniqueEffects(asAbility)) {
       deriveFromEffect(map, effect);
     }
-  } else if (source.targeting) {
-    deriveFromTargeting(map, source.targeting);
+  } else if (normalized.targeting) {
+    deriveFromTargeting(map, normalized.targeting);
   }
 
   deriveFromTagsAndEffects(map, {
-    tags: source.tags,
-    effects: source.effects,
-    applyEffect: source.applyEffect,
-    animationType: "animationType" in source ? source.animationType : undefined,
-    devilFruitSkill: "devilFruitSkill" in source ? source.devilFruitSkill : undefined,
+    tags: normalized.tags,
+    effects: normalized.effects,
+    applyEffect: normalized.applyEffect,
+    animationType: "animationType" in normalized ? normalized.animationType : undefined,
+    devilFruitSkill: "devilFruitSkill" in normalized ? normalized.devilFruitSkill : undefined,
   });
 
   return finalize(map);

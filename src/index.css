@@ -9748,27 +9748,61 @@ button.level-up-stats-row:disabled {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   justify-content: flex-start;
   align-self: flex-start;
   margin: 0;
-  gap: 0.35rem;
+  gap: 0.3rem;
+  min-width: 2.75rem;
 }
+
+.technique-offer-badges .technique-offer-skill-badges {
+  gap: 0.28rem;
+}
+
 .technique-offer-badges .skill-badge,
 .technique-offer-scale-icon {
-  width: var(--badge-size, 64px);
-  height: var(--badge-size, 64px);
+  width: var(--badge-size, 52px);
+  height: var(--badge-size, 52px);
 }
+
 .technique-offer-scale-icon {
   display: inline-grid;
   place-items: center;
+  flex-shrink: 0;
 }
+
 .technique-offer-scale-icon .stat-icon,
 .technique-offer-scale-icon .hud-art,
 .technique-offer-scale-icon .hud-icon,
 .technique-offer-scale-icon img {
-  width: 64px !important;
-  height: 64px !important;
+  width: var(--badge-size, 52px) !important;
+  height: var(--badge-size, 52px) !important;
+}
+
+@media (max-width: 767px) {
+  .technique-offer-btn.has-side {
+    min-height: 12.5rem;
+  }
+
+  .technique-offer-badges {
+    gap: 0.22rem;
+    min-width: 2.5rem;
+  }
+
+  .technique-offer-badges .skill-badge,
+  .technique-offer-scale-icon {
+    width: var(--badge-size, 44px);
+    height: var(--badge-size, 44px);
+  }
+
+  .technique-offer-scale-icon .stat-icon,
+  .technique-offer-scale-icon .hud-art,
+  .technique-offer-scale-icon .hud-icon,
+  .technique-offer-scale-icon img {
+    width: var(--badge-size, 44px) !important;
+    height: var(--badge-size, 44px) !important;
+  }
 }
 
 .skill-badge-legend-backdrop {
