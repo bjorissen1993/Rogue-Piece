@@ -10620,7 +10620,7 @@ button.level-up-stats-row:disabled {
     width: min(7rem, 30vw);
     height: 3.4rem;
     min-height: 3.4rem;
-    overflow: hidden;
+    overflow: visible;
     -webkit-mask-image: none;
     mask-image: none;
   }
@@ -10635,14 +10635,15 @@ button.level-up-stats-row:disabled {
     z-index: 6;
   }
 
+  /* Keep absolute centering — relative + overflow clip made solo-focus icons slide away. */
   .combat-battlefield.has-mobile-wheel .combat-wheel-option {
-    position: relative !important;
-    left: auto !important;
-    top: auto !important;
-    bottom: auto !important;
-    width: auto !important;
-    height: 3.2rem !important;
-    margin: 0 !important;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    bottom: auto;
+    width: 3.4rem;
+    height: 3.2rem;
+    margin: 0 0 0 -1.7rem;
     filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.5));
   }
 
