@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 
 type OverlayFrameProps = {
@@ -5,11 +6,16 @@ type OverlayFrameProps = {
   eyebrow?: string;
   onClose: () => void;
   children: ReactNode;
+  /**
+   * Render above mobile sheets / bottom nav by portaling to document.body
+   * with an elevated z-index (e.g. faction dossier over the Factions tab).
+   */
+  elevate?: boolean;
 };
 
-export function OverlayFrame({ title, eyebrow, onClose, children }: OverlayFrameProps) {
-  return (
-    <div className="overlay-scrim">
+export function OverlayFrame({ title, eyebrow, onClose, children, elevate = false }: OverlayFrameProps) {
+  const node = (
+    <div className={`overlay-scrim${elevate ? " overlay-scrim-elevated" : ""}`}>
       <section className="overlay-panel">
         <header className="overlay-head">
           <div>
@@ -24,4 +30,9 @@ export function OverlayFrame({ title, eyebrow, onClose, children }: OverlayFrame
       </section>
     </div>
   );
+
+  if (elevate && typeof document !== "undefined") {
+    return createPortal(node, document.body);
+  }
+  return node;
 }

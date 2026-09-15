@@ -50,7 +50,7 @@ export function FactionOverview({ run, factionId, onClose }: FactionOverviewProp
   };
 
   return (
-    <OverlayFrame eyebrow="Faction Dossier" onClose={onClose}>
+    <OverlayFrame elevate eyebrow="Faction Dossier" onClose={onClose}>
       <div className="faction-overview">
         <FactionHeader factionId={factionId} run={run} />
 
