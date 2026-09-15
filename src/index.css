@@ -2108,6 +2108,125 @@ img.run-glyph,
   flex-shrink: 0;
 }
 
+.inventory-filter-mobile {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 4;
+}
+
+.inventory-filter-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(197, 160, 89, 0.4);
+  background: rgba(12, 18, 24, 0.95);
+  color: var(--color-gold);
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.inventory-filter-trigger .tab-badge {
+  margin-left: 0.45rem;
+}
+
+.inventory-filter-menu {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0.35rem;
+  display: grid;
+  gap: 0.25rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(197, 160, 89, 0.35);
+  background: rgba(8, 12, 16, 0.98);
+  max-height: min(50vh, 22rem);
+  overflow-y: auto;
+}
+
+.inventory-filter-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.45rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-parchment);
+  text-align: left;
+}
+
+.inventory-filter-option.is-selected {
+  border-color: rgba(197, 160, 89, 0.55);
+  background: rgba(197, 160, 89, 0.12);
+  color: var(--color-gold);
+}
+
+.inventory-item-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.15rem 0 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.inventory-list-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.65rem;
+  row-gap: 0.15rem;
+  align-items: center;
+  min-height: 3.1rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(197, 160, 89, 0.28);
+  background: linear-gradient(180deg, rgba(22, 30, 38, 0.98), rgba(12, 18, 24, 0.99));
+  color: var(--color-parchment);
+  text-align: left;
+}
+
+.inventory-list-row.is-selected {
+  border-color: rgba(197, 160, 89, 0.75);
+  box-shadow: 0 0 0 1px rgba(197, 160, 89, 0.2) inset;
+}
+
+.inventory-list-name {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 1.05rem;
+  color: var(--color-gold);
+}
+
+.inventory-list-meta {
+  grid-column: 1;
+  grid-row: 2;
+  font-size: 0.72rem;
+  color: var(--color-parchment-dim);
+}
+
+.inventory-list-qty {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-gold);
+  font-size: 0.9rem;
+}
+
 .inventory-grid .inventory-card-tip {
   display: flex;
   flex: 1;
@@ -3707,6 +3826,13 @@ html.battle-result-open .game-shell {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .battle-setup-format,
@@ -3759,6 +3885,10 @@ html.battle-result-open .game-shell {
 .battle-setup-actions {
   display: grid;
   gap: 0.45rem;
+  position: sticky;
+  bottom: 0;
+  padding-top: 0.35rem;
+  background: linear-gradient(180deg, rgba(12, 16, 22, 0) 0%, rgba(12, 16, 22, 0.92) 28%, rgba(12, 16, 22, 0.98) 100%);
 }
 
 .combat-unit.is-selectable {
@@ -8562,19 +8692,78 @@ button.level-up-stats-row:disabled {
     box-shadow: none;
   }
 
+  /* Bag + Crew live on the bottom nav — drop duplicates from the sheet. */
+  .mobile-sheet-body .backpack-preview,
+  .mobile-sheet-body .hud-pack-row {
+    display: none !important;
+  }
+
   .mobile-sheet-body .faction-hud {
-    display: block !important;
+    display: flex !important;
+    flex-direction: column;
     max-height: none;
+    height: 100%;
+    min-height: 0;
     border: 0;
     padding: 0;
     background: transparent;
     box-shadow: none;
+    overflow: auto;
   }
 
-  .mobile-sheet-body .tube-row {
-    flex-wrap: wrap;
-    justify-content: center;
+  .mobile-sheet-body .faction-hud .hud-kicker {
+    display: none;
+  }
+
+  .mobile-sheet-body .tube-row,
+  .mobile-sheet-full .tube-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 0.65rem;
+    flex-wrap: unset;
+    justify-content: stretch;
+    align-items: start;
+  }
+
+  .mobile-sheet-body .tube-wrap {
+    width: 100%;
+    margin: 0;
+  }
+
+  .mobile-sheet-body .tube-instrument,
+  .mobile-sheet-body .tube-column {
+    max-width: 100%;
+  }
+
+  .mobile-sheet-body .tube-icon .faction-icon-img,
+  .mobile-sheet-body .tube-icon .hud-art {
+    width: 2.6rem !important;
+    height: 2.6rem !important;
+  }
+
+  .mobile-sheet-body .faction-lore {
+    margin-top: auto;
+  }
+
+  .split-overlay.is-mobile-inventory {
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
     gap: 0.65rem;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .split-overlay.is-mobile-inventory .split-pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .split-overlay.is-mobile-inventory .detail-panel {
+    flex: 0 0 auto;
+    height: auto;
+    max-height: min(42vh, 18rem);
   }
 
   .mobile-more-list {

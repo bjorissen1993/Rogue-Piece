@@ -397,7 +397,7 @@ export function GamePage() {
             setMobileNav("game");
           }}
           open={factionsSheetOpen}
-          size="tall"
+          size="full"
           title="Factions"
         >
           <FactionTubes run={run} />

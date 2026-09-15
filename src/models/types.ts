@@ -1717,7 +1717,7 @@ export type EncounterCondition =
   | { type: "PLAYER_FRUIT"; fruitId: string }
   | { type: "FRUIT_STATUS"; fruitId: string; status: DevilFruitStatus }
   | { type: "ANY_UNCLAIMED_FRUIT" }
-  | { type: "NPC_TAGS"; tags: string[]; alive?: boolean; negate?: boolean }
+  | { type: "NPC_TAGS"; tags: string[]; alive?: boolean; negate?: boolean; recruitableOnly?: boolean }
   | { type: "PLAYER_RACE"; raceId: string; negate?: boolean }
   | { type: "REGION"; regionId: RegionId }
   | { type: "LOCATION"; locationId: string }

@@ -172,11 +172,36 @@ export const WorldService = {
     pushNews(state, text);
   },
 
-  findNpcByTags(state: RunState, tags: string[], alive = true): WorldCharacter | undefined {
-    return state.world.characters.find(
-      (character) =>
-        (!alive || character.alive) && tags.every((tag) => character.tags.includes(tag)),
-    );
+  findNpcByTags(
+    state: RunState,
+    tags: string[],
+    alive = true,
+    options?: { recruitableOnly?: boolean },
+  ): WorldCharacter | undefined {
+    return state.world.characters.find((character) => {
+      if (alive && !character.alive) {
+        return false;
+      }
+      if (!tags.every((tag) => character.tags.includes(tag))) {
+        return false;
+      }
+      if (options?.recruitableOnly) {
+        const alreadyCrew =
+          character.id === state.player.id ||
+          character.id === "player" ||
+          state.crew.some((entry) => entry.characterId === character.id) ||
+          (state.fleet ?? []).some((entry) => entry.characterId === character.id);
+        if (alreadyCrew) {
+          return false;
+        }
+      }
+      return true;
+    });
+  },
+
+  /** First living tagged NPC who can still be offered a crew join. */
+  findRecruitableNpcByTags(state: RunState, tags: string[]): WorldCharacter | undefined {
+    return this.findNpcByTags(state, tags, true, { recruitableOnly: true });
   },
 
   upsertNpc(state: RunState, npc: WorldCharacter): void {

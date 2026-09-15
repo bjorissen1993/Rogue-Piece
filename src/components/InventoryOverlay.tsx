@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { getDevilFruit } from "../data/devilFruits";
 import { getItemDefinition } from "../data/items";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import type { InventoryCategory, InventoryItem, RunState } from "../models/types";
 import {
   carriedCollectibleStacks,
@@ -48,7 +49,9 @@ export function InventoryOverlay({
   onEquipWeapon,
   onUnequipWeapon,
 }: InventoryOverlayProps) {
+  const isMobile = useIsMobile();
   const [category, setCategory] = useState<InventoryCategory>("ALL");
+  const [filterOpen, setFilterOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
   const [confirm, setConfirm] = useState<null | { kind: "eat"; fruitId: string }>(null);
 
@@ -128,47 +131,105 @@ export function InventoryOverlay({
 
           <div className="overlay-body inventory-overlay-layout">
             {fruit ? <p className="inventory-fruit-note text-sm text-gold">Eaten: {fruit.name}</p> : null}
-            <div className="inventory-tabs">
-              {INVENTORY_CATEGORIES.map((cat) => (
+            {isMobile ? (
+              <div className="inventory-filter-mobile">
                 <button
-                  className={`tab-btn ${category === cat ? "is-selected" : ""}`}
-                  key={cat}
-                  onClick={() => {
-                    setCategory(cat);
-                    selectFirstInView(cat);
-                  }}
+                  aria-expanded={filterOpen}
+                  className="inventory-filter-trigger"
+                  onClick={() => setFilterOpen((open) => !open)}
                   type="button"
                 >
-                  {INVENTORY_CATEGORY_LABELS[cat]}
-                  <span className="tab-badge">{tabBadgeCount(run.player.inventory, cat)}</span>
+                  <span>
+                    Filter · {INVENTORY_CATEGORY_LABELS[category]}
+                    <span className="tab-badge">{tabBadgeCount(run.player.inventory, category)}</span>
+                  </span>
+                  <span aria-hidden="true">{filterOpen ? "▴" : "▾"}</span>
                 </button>
-              ))}
-            </div>
+                {filterOpen ? (
+                  <ul className="inventory-filter-menu">
+                    {INVENTORY_CATEGORIES.map((cat) => (
+                      <li key={cat}>
+                        <button
+                          className={`inventory-filter-option ${category === cat ? "is-selected" : ""}`}
+                          onClick={() => {
+                            setCategory(cat);
+                            selectFirstInView(cat);
+                            setFilterOpen(false);
+                          }}
+                          type="button"
+                        >
+                          {INVENTORY_CATEGORY_LABELS[cat]}
+                          <span className="tab-badge">{tabBadgeCount(run.player.inventory, cat)}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : (
+              <div className="inventory-tabs">
+                {INVENTORY_CATEGORIES.map((cat) => (
+                  <button
+                    className={`tab-btn ${category === cat ? "is-selected" : ""}`}
+                    key={cat}
+                    onClick={() => {
+                      setCategory(cat);
+                      selectFirstInView(cat);
+                    }}
+                    type="button"
+                  >
+                    {INVENTORY_CATEGORY_LABELS[cat]}
+                    <span className="tab-badge">{tabBadgeCount(run.player.inventory, cat)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {run.player.inventory.length === 0 ? (
               <p className="text-parchment-dim">The pack is empty.</p>
             ) : list.length === 0 && collectibles.length === 0 ? (
               <p className="text-parchment-dim">Nothing in {INVENTORY_CATEGORY_LABELS[category]}.</p>
             ) : (
-              <div className="split-overlay">
+              <div className={`split-overlay ${isMobile ? "is-mobile-inventory" : ""}`}>
                 <div className="split-pane">
                   {list.length > 0 ? (
-                    <ul className="split-grid ledger-grid inventory-grid">
+                    <ul
+                      className={
+                        isMobile
+                          ? "inventory-item-list"
+                          : "split-grid ledger-grid inventory-grid"
+                      }
+                    >
                       {list.map((item) => {
                         const id = itemKey(item);
                         const qty = item.type === "WEAPON" ? "×1" : `×${item.quantity ?? 1}`;
                         const ownerLabel = item.weaponDefinitionId
                           ? WeaponService.weaponOwnerLabel(run, item)
                           : undefined;
+                        const selectedRow = selectedId === id || selected?.id === item.id;
                         return (
                           <li key={`${id}-${item.weaponDefinitionId ?? item.fruitId ?? ""}`}>
-                            <InventoryCard
-                              name={item.name}
-                              onClick={() => setSelectedId(id)}
-                              quantityLabel={qty}
-                              selected={selectedId === id || selected?.id === item.id}
-                              subtitle={ownerLabel}
-                            />
+                            {isMobile ? (
+                              <button
+                                className={`inventory-list-row ${selectedRow ? "is-selected" : ""}`}
+                                onClick={() => setSelectedId(id)}
+                                type="button"
+                              >
+                                <span className="inventory-list-name font-display">{item.name}</span>
+                                {ownerLabel ? (
+                                  <span className="inventory-list-meta">{ownerLabel}</span>
+                                ) : null}
+                                <span className="inventory-list-qty">{qty}</span>
+                              </button>
+                            ) : (
+                              <InventoryCard
+                                name={item.name}
+                                onClick={() => setSelectedId(id)}
+                                quantityLabel={qty}
+                                selected={selectedRow}
+                                subtitle={ownerLabel}
+                              />
+                            )}
                           </li>
                         );
                       })}

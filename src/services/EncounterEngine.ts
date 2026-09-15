@@ -108,7 +108,9 @@ export function conditionMet(condition: EncounterCondition, run: RunState): bool
     case "ANY_UNCLAIMED_FRUIT":
       return run.world.devilFruits.some((entry) => entry.status === "UNCLAIMED");
     case "NPC_TAGS": {
-      const found = WorldService.findNpcByTags(run, condition.tags, condition.alive ?? true);
+      const found = WorldService.findNpcByTags(run, condition.tags, condition.alive ?? true, {
+        recruitableOnly: condition.recruitableOnly,
+      });
       return Boolean(found) !== Boolean(condition.negate);
     }
     case "PLAYER_RACE":
@@ -338,10 +340,55 @@ function availableChoices(encounter: Encounter, run: RunState): EncounterChoice[
   return encounter.choices.filter((choice) => conditionsMet(choice.conditions, run));
 }
 
+/** True when any choice outcome tries to recruit / offer joining the crew. */
+function encounterOffersCrewJoin(encounter: Encounter): boolean {
+  return encounter.choices.some(
+    (choice) => Boolean(choice.outcome.acceptRecruitment) || Boolean(choice.outcome.offerRecruitment),
+  );
+}
+
+/**
+ * Resolve who a join-offer encounter would target. Existing crew / fleet are never
+ * valid — those characters stay fully out of the join rotation.
+ */
+function resolveJoinTargetId(encounter: Encounter, run: RunState): string | null {
+  for (const choice of encounter.choices) {
+    const explicit =
+      choice.outcome.acceptRecruitment?.characterId ?? choice.outcome.offerRecruitment?.characterId;
+    if (explicit) {
+      return explicit;
+    }
+  }
+  if (encounter.bindCharacterId) {
+    return encounter.bindCharacterId;
+  }
+  if (encounter.bindNpcTags?.length) {
+    return WorldService.findRecruitableNpcByTags(run, encounter.bindNpcTags)?.id ?? null;
+  }
+  if (run.currentBoundNpcId) {
+    return run.currentBoundNpcId;
+  }
+  return null;
+}
+
+function joinEncounterAvailable(encounter: Encounter, run: RunState): boolean {
+  if (!encounterOffersCrewJoin(encounter)) {
+    return true;
+  }
+  const targetId = resolveJoinTargetId(encounter, run);
+  if (!targetId) {
+    return false;
+  }
+  return CrewService.canOfferRecruitment(run, targetId);
+}
+
 function effectiveWeight(encounter: Encounter, run: RunState): number {
   const location = getLocation(run.currentLocationId);
   const regions = encounter.regions ?? ["EAST_BLUE"];
   if (location && !regions.includes(location.regionId)) {
+    return 0;
+  }
+  if (!joinEncounterAvailable(encounter, run)) {
     return 0;
   }
   let weight = encounter.weight;
@@ -373,7 +420,10 @@ function bindEncounter(run: RunState, encounter: Encounter, rng: RandomService):
   run.currentBoundNpcId = null;
 
   if (encounter.bindNpcTags?.length) {
-    const npc = WorldService.findNpcByTags(run, encounter.bindNpcTags, true);
+    const preferRecruitable = encounterOffersCrewJoin(encounter);
+    const npc = preferRecruitable
+      ? WorldService.findRecruitableNpcByTags(run, encounter.bindNpcTags)
+      : WorldService.findNpcByTags(run, encounter.bindNpcTags, true);
     if (npc) {
       run.currentBoundNpcId = npc.id;
       if (npc.devilFruitId) {
@@ -385,7 +435,9 @@ function bindEncounter(run: RunState, encounter: Encounter, rng: RandomService):
   if (encounter.bindCharacterId) {
     const npc = CharacterService.getCharacter(run, encounter.bindCharacterId);
     if (npc?.alive) {
-      run.currentBoundNpcId = npc.id;
+      if (!encounterOffersCrewJoin(encounter) || CrewService.canOfferRecruitment(run, npc.id)) {
+        run.currentBoundNpcId = npc.id;
+      }
     }
   }
 
@@ -578,14 +630,18 @@ function applyStoryAndCharacterOutcomes(run: RunState, outcome: EncounterOutcome
 
   const recruitId = resolveCharacterId(run, outcome.acceptRecruitment?.characterId);
   if (outcome.acceptRecruitment && recruitId) {
-    ensureRecruitNpc(run, recruitId);
-    const result = CrewService.resolveRecruitment(
-      run,
-      recruitId,
-      outcome.acceptRecruitment.role ?? "FIGHTER",
-      outcome.acceptRecruitment.membership,
-    );
-    lines.push(result.message);
+    if (!CrewService.canOfferRecruitment(run, recruitId)) {
+      lines.push(CrewService.alreadyOnTeamMessage(run, recruitId));
+    } else {
+      ensureRecruitNpc(run, recruitId);
+      const result = CrewService.resolveRecruitment(
+        run,
+        recruitId,
+        outcome.acceptRecruitment.role ?? "FIGHTER",
+        outcome.acceptRecruitment.membership,
+      );
+      lines.push(result.message);
+    }
   }
 
   if (outcome.offerFactionRecruitment) {
