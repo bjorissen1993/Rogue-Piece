@@ -5,6 +5,7 @@ import {
   presentationDurationMs,
   type CombatPresentationBeat,
 } from "../game/combatPresentation";
+import { getItemDefinition } from "../data/items";
 import type { Ability, CombatHit, CombatState, CombatantState, InventoryItem } from "../models/types";
 import { CombatPreviewService } from "../services/CombatPreviewService";
 import { ItemService } from "../services/ItemService";
@@ -20,6 +21,7 @@ import {
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { EffectTooltip } from "./EffectTooltip";
 import { HpBar } from "./HpBar";
+import { ItemTargetPicker } from "./ItemTargetPicker";
 import { ResourceBar } from "./ResourceBar";
 import { ActionIcon } from "./StatIcon";
 import { ChoiceWheel, CHOICE_WHEEL_ICON_SIZE, type ChoiceWheelOption } from "./ChoiceWheel";
@@ -44,7 +46,7 @@ type CombatViewProps = {
     targetId?: string,
     targetIds?: string[],
   ) => void;
-  onUseItem: (itemId: string) => void;
+  onUseItem: (itemId: string, targetCharacterId?: string) => void;
   onResolveEnemyTurn: () => void;
   onFinishPresentation: () => void;
   zoanForms?: Array<{ id: string; label: string; description: string }>;
@@ -251,6 +253,7 @@ export function CombatView({
   const [choicePhase, setChoicePhase] = useState<"open" | "closing" | null>(null);
   const [focusedOption, setFocusedOption] = useState<ChoiceWheelOption | null>(null);
   const [targeting, setTargeting] = useState<Targeting>(null);
+  const [pendingItemUse, setPendingItemUse] = useState<null | { itemId: string; label: string }>(null);
   const [hoverTargetId, setHoverTargetId] = useState<string | null>(null);
   const [logOpen, setLogOpen] = useState(false);
   const [actionHint, setActionHint] = useState<string | null>(null);
@@ -741,7 +744,14 @@ export function CombatView({
       icon: <ActionIcon name="item" size={WHEEL_ICON_SIZE} />,
       onConfirm: () => {
         closeMenu();
-        onUseItem(defId);
+        const def = getItemDefinition(defId);
+        const escapeOnly = def?.effects.some((effect) => effect.type === "GUARANTEE_ESCAPE");
+        const living = PartyCombatService.livingAllies(combat);
+        if (escapeOnly || living.length <= 1) {
+          onUseItem(defId, living[0]?.id ?? combat.playerCombatant.id);
+          return;
+        }
+        setPendingItemUse({ itemId: defId, label: item.name });
       },
     };
   });
@@ -1246,6 +1256,24 @@ export function CombatView({
         <div className="combat-log-fullscreen" role="dialog" aria-label="Combat log">
           {combatLogModal}
         </div>
+      ) : null}
+
+      {pendingItemUse ? (
+        <ItemTargetPicker
+          itemLabel={pendingItemUse.label}
+          onCancel={() => setPendingItemUse(null)}
+          onPick={(characterId) => {
+            const itemId = pendingItemUse.itemId;
+            setPendingItemUse(null);
+            onUseItem(itemId, characterId);
+          }}
+          options={PartyCombatService.livingAllies(combat).map((ally) => ({
+            id: ally.id,
+            name: ally.name,
+            detail: `HP ${ally.hp}/${ally.maxHp}`,
+          }))}
+          prompt="Who should this item be used on?"
+        />
       ) : null}
     </section>
   );

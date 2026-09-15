@@ -58,6 +58,7 @@ export function GamePage() {
     confirmLevelUp,
     selectTechnique,
     fruitInventoryAction,
+    giveFruitToCrew,
     resolveLootBackpack,
     resolveLootAssign,
     assignStashWeapon,
@@ -589,9 +590,10 @@ export function GamePage() {
           onClose={closeOverlay}
           onEquipWeapon={equipWeapon}
           onFruitAction={fruitInventoryAction}
+          onGiveFruitToCrew={giveFruitToCrew}
           onUnequipWeapon={unequipWeapon}
-          onUse={(itemId) => {
-            useInventoryItem(itemId);
+          onUse={(itemId, targetCharacterId) => {
+            useInventoryItem(itemId, targetCharacterId);
           }}
           run={run}
         />

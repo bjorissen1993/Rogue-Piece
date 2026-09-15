@@ -1578,6 +1578,9 @@ export interface CrewMember {
   inSupportSlot?: boolean;
   /** Blocking activity — source of truth for availability. */
   currentAssignment?: CharacterAssignment | null;
+  /** Persistent fight vitals between battles (defaults to full when unset). */
+  hp?: number;
+  mp?: number;
 }
 
 export interface Weapon {

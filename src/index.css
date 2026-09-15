@@ -2219,12 +2219,30 @@ img.run-glyph,
   color: var(--color-parchment-dim);
 }
 
-.inventory-list-qty {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-gold);
-  font-size: 0.9rem;
+.item-target-roster {
+  list-style: none;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.item-target-roster .choice-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  text-align: left;
+}
+
+.item-target-detail {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--color-parchment-dim);
+}
+
+.item-target-scrim {
+  z-index: 80;
 }
 
 .inventory-grid .inventory-card-tip {

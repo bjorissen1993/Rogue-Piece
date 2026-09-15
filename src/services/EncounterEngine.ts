@@ -45,6 +45,7 @@ import { SparringService, needsBattleSetup } from "./SparringService";
 import { MedicalRecoveryService } from "./MedicalRecoveryService";
 import { RunEndResolutionService } from "./RunEndResolutionService";
 import { MpService } from "./MpService";
+import { PartyCombatService } from "./PartyCombatService";
 import {
   choiceNeedsParticipants,
   participantBounds,
@@ -519,9 +520,18 @@ function applyMp(run: RunState, change: number | undefined): void {
 }
 
 function syncCombatResources(run: RunState): void {
-  if (run.combat) {
-    run.player.hp = run.combat.playerCombatant.hp;
-    run.player.mp = run.combat.playerCombatant.mp;
+  if (!run.combat) {
+    return;
+  }
+  run.player.hp = run.combat.playerCombatant.hp;
+  run.player.mp = run.combat.playerCombatant.mp;
+  for (const ally of run.combat.party?.allyCombatants ?? []) {
+    const member = run.crew.find((entry) => entry.characterId === ally.id);
+    if (!member) {
+      continue;
+    }
+    member.hp = ally.hp;
+    member.mp = ally.mp ?? member.mp;
   }
 }
 
@@ -1356,6 +1366,7 @@ export const EncounterEngine = {
   useCombatItem(
     profile: ProfileSave,
     itemId: string,
+    targetCharacterId?: string,
     rng = createRng(requireRun(profile).seed),
   ): ProfileSave {
     const next = cloneProfile(profile);
@@ -1371,11 +1382,18 @@ export const EncounterEngine = {
       return next;
     }
     const defId = item.itemId || item.id;
-    const used = ItemService.useOnPlayer(run.player, defId, "COMBAT");
+    const targetId =
+      targetCharacterId ??
+      PartyCombatService.getActiveCombatant(run.combat)?.id ??
+      run.player.id;
+    const used = ItemService.useOnTarget(run, defId, targetId, "COMBAT");
     if (!used.ok) {
+      if (used.message) {
+        run.lastFeedback = used.message;
+      }
       return next;
     }
-    run.combat = CombatEngine.applyItemResult(run.combat, used, rng, run);
+    run.combat = CombatEngine.applyItemResult(run.combat, used, rng, run, targetId);
     applyCombatHpFeedback(run);
     if (used.message) {
       run.lastFeedback = used.message;
@@ -1518,18 +1536,25 @@ export const EncounterEngine = {
     return next;
   },
 
-  useOutOfCombatItem(profile: ProfileSave, itemId: string): ProfileSave {
+  useOutOfCombatItem(
+    profile: ProfileSave,
+    itemId: string,
+    targetCharacterId?: string,
+  ): ProfileSave {
     const next = cloneProfile(profile);
     const run = requireRun(next);
     if (run.combat && !run.combat.finished) {
       return next;
     }
-    const used = ItemService.useOnPlayer(run.player, itemId, "OUT_OF_COMBAT");
+    const targetId = targetCharacterId ?? run.player.id;
+    const used = ItemService.useOnTarget(run, itemId, targetId, "OUT_OF_COMBAT");
     if (used.ok && used.message) {
       run.lastFeedback = used.message;
-      if (used.hpHealed > 0) {
+      if (used.hpHealed > 0 && (targetId === run.player.id || targetId === "player")) {
         run.lastHpChange = used.hpHealed;
       }
+    } else if (used.message) {
+      run.lastFeedback = used.message;
     }
     refreshStats(next);
     return next;

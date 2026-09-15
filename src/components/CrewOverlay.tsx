@@ -339,17 +339,15 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                 {rosterSlots.map((member, index) => renderRosterSlot(member, index))}
               </ul>
             </div>
-            {stashFruits.length > 0 ? (
+            {isMobile || stashFruits.length === 0 ? null : (
               <section className="crew-stash crew-stash-compact">
-                <p className="detail-label">
-                  {isMobile ? "Devil Fruits in pack" : "Devil Fruits in pack — drag onto a crewmate"}
-                </p>
+                <p className="detail-label">Devil Fruits in pack — drag onto a crewmate</p>
                 <ul className="crew-stash-grid">
                   {stashFruits.map((item) => (
                     <li key={item.id}>
                       <button
                         className="crew-stash-chip"
-                        draggable={!isMobile}
+                        draggable
                         onDragStart={(event) =>
                           handleDragStart(event, { kind: "devil_fruit", fruitId: item.fruitId! })
                         }
@@ -362,7 +360,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                   ))}
                 </ul>
               </section>
-            ) : null}
+            )}
           </div>
 
           <aside className="detail-panel panel crew-side-panel">
