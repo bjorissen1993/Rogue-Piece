@@ -3,7 +3,7 @@ import type { Ability, RunState, StatName } from "../models/types";
 import { getAbilitiesForCrewmember, getAbilitiesForPlayer } from "../data/abilities";
 import { getDevilFruit } from "../data/devilFruits";
 import { getWeapon } from "../data/weapons";
-import { CORE_CREW_CAP } from "../game/constants";
+import { CORE_CREW_CAP, MAX_ACTIVE_FIGHTERS } from "../game/constants";
 import { resolveSkillBadges } from "../game/skillBadges";
 import { techniqueHitChancePercent } from "../game/techniquePower";
 import { useIsMobile } from "../hooks/useMediaQuery";
@@ -17,7 +17,7 @@ import { AuthorityService } from "../services/AuthorityService";
 import { FleetService } from "../services/FleetService";
 import { RaceService } from "../services/RaceService";
 import { LootDispositionService } from "../services/LootDispositionService";
-import { WeaponService } from "../services/WeaponService";
+import { WeaponService, type EquipSlot } from "../services/WeaponService";
 import { MedicalRecoveryService } from "../services/MedicalRecoveryService";
 import {
   TargetResolutionService,
@@ -36,7 +36,7 @@ import { WeaponStatsBlock } from "./WeaponStatsBlock";
 type CrewOverlayProps = {
   run: RunState;
   onClose: () => void;
-  onAssignStashWeapon?: (instanceId: string, characterId: string) => void;
+  onAssignStashWeapon?: (instanceId: string, characterId: string, slot?: EquipSlot) => void;
   onAssignStashFruit?: (fruitId: string, characterId: string) => void;
 };
 
@@ -45,12 +45,11 @@ type DragPayload =
   | { kind: "devil_fruit"; fruitId: string };
 
 type CrewTab = "CORE" | "APPRENTICES" | "FLEET" | "COMMAND";
-type SidePanelMode = "character" | "weapons";
 
 const STAT_ORDER: StatName[] = ["strength", "defense", "speed", "willpower", "charisma", "intelligence"];
 const EXTENDED_TABS: CrewTab[] = ["APPRENTICES", "FLEET", "COMMAND"];
-const BATTLE_FORMATION_ROWS = 2;
-const BATTLE_FORMATION_SLOTS = BATTLE_FORMATION_ROWS * 2;
+/** Top row only: captain + up to 4 crewmates. */
+const BATTLE_FORMATION_SLOTS = 5;
 
 function portraitInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -76,19 +75,18 @@ function crewStatsFor(character: ReturnType<typeof CharacterService.getCharacter
 export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFruit }: CrewOverlayProps) {
   const isMobile = useIsMobile();
   const [tab, setTab] = useState<CrewTab>("CORE");
-  const [sidePanel, setSidePanel] = useState<SidePanelMode>("character");
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [selectedWeaponId, setSelectedWeaponId] = useState<string | null>(null);
   const crew = CrewService.list(run);
   const captain = CrewService.captainEntry(run);
   const captainFruit = run.player.devilFruitId ? getDevilFruit(run.player.devilFruitId) : undefined;
-  const captainWeaponInstance = WeaponService.equippedInstanceFor(run, run.player.id);
-  const captainWeapon = captainWeaponInstance?.name ?? CrewService.captainWeaponName(run);
+  const captainPrimary = WeaponService.equippedInstanceFor(run, run.player.id, "primary");
+  const captainWeapon = captainPrimary?.name ?? CrewService.captainWeaponName(run);
   const crewLabel = AffiliationService.getCrewLabel(run);
   const leaderLabel = AffiliationService.getLeaderLabel(run);
   const affiliation = AffiliationService.summary(run);
   const authority = AuthorityService.get(run);
-  CrewCombatService.ensurePartyConfig(run);
+  const partyConfig = CrewCombatService.ensurePartyConfig(run);
   const fleet = FleetService.list(run);
   const apprentices = FleetService.listApprentices(run);
   const showExtendedTabs =
@@ -105,74 +103,149 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
     (item) => item.type === "DEVIL_FRUIT" || item.fruitId,
   );
 
+  const orderedCrew = useMemo(() => {
+    const activeIds = partyConfig.activeFighterIds.slice(0, MAX_ACTIVE_FIGHTERS);
+    const activeSet = new Set(activeIds);
+    const activeMembers = activeIds
+      .map((id) => crew.find((entry) => entry.member.characterId === id))
+      .filter((entry): entry is (typeof crew)[number] => Boolean(entry));
+    const benchMembers = crew.filter((entry) => !activeSet.has(entry.member.characterId));
+    return [...activeMembers, ...benchMembers];
+  }, [crew, partyConfig.activeFighterIds]);
+
   const roster = useMemo(() => {
     const playerProgress = ProgressionService.getProgression(run, "player");
     const playerXp = ProgressionService.xpProgress(playerProgress);
     MpService.ensurePlayer(run.player);
 
-    return [
+    const toRow = (
+      id: string,
+      name: string,
+      hp: { current: number; max: number },
+      vitals: {
+        hp: { current: number; max: number };
+        mp: { current: number; max: number };
+        xp: { current: number; max: number };
+      },
+      extras: {
+        isCaptain: boolean;
+        fruit: string | null;
+        statusLine: string | null;
+        entry?: (typeof crew)[number];
+      },
+    ) => {
+      const primary = WeaponService.equippedInstanceFor(run, id, "primary");
+      const secondary = WeaponService.equippedInstanceFor(run, id, "secondary");
+      const legacyWeaponId = extras.entry?.character.weaponIds?.[0];
+      const legacyName =
+        !primary && legacyWeaponId ? getWeapon(legacyWeaponId)?.name ?? null : null;
+      return {
+        id,
+        name,
+        hp,
+        vitals,
+        weapon: primary?.name ?? (id === run.player.id ? captainWeapon : legacyName),
+        weaponInstanceId: primary?.id ?? null,
+        secondaryWeapon: secondary?.name ?? null,
+        secondaryWeaponInstanceId: secondary?.id ?? null,
+        fruit: extras.fruit,
+        isCaptain: extras.isCaptain,
+        entry: extras.entry,
+        statusLine: extras.statusLine,
+      };
+    };
+
+    const captainRow = toRow(
+      run.player.id,
+      captain.name,
+      { current: captain.hp, max: captain.maxHp },
       {
-        id: run.player.id,
-        name: captain.name,
         hp: { current: captain.hp, max: captain.maxHp },
-        vitals: {
-          hp: { current: captain.hp, max: captain.maxHp },
-          mp: {
-            current: run.player.mp ?? MpService.maxMpFor(run.player),
-            max: run.player.maxMp ?? MpService.maxMpFor(run.player),
-          },
-          xp: { current: playerXp.current, max: playerXp.needed },
+        mp: {
+          current: run.player.mp ?? MpService.maxMpFor(run.player),
+          max: run.player.maxMp ?? MpService.maxMpFor(run.player),
         },
-        weapon: captainWeapon,
-        weaponInstanceId: captainWeaponInstance?.id ?? null,
-        fruit: captainFruit?.name ?? null,
+        xp: { current: playerXp.current, max: playerXp.needed },
+      },
+      {
         isCaptain: true,
-        isActiveFighter: true,
+        fruit: captainFruit?.name ?? null,
         statusLine: MedicalRecoveryService.recoverySummary(run, "player"),
       },
-      ...crew.map((entry) => {
-        const hp = CrewService.estimatedHp(entry.character);
-        const weaponInstance = WeaponService.equippedInstanceFor(run, entry.member.characterId);
-        const weaponId = weaponInstance?.weaponDefinitionId ?? entry.character.weaponIds?.[0];
-        const weapon = weaponId ? getWeapon(weaponId) : undefined;
-        const fruit = entry.character.devilFruitId ? getDevilFruit(entry.character.devilFruitId) : undefined;
-        const progression = ProgressionService.getProgression(run, entry.member.characterId);
-        const xp = ProgressionService.xpProgress(progression);
-        const stats = crewStatsFor(entry.character, entry.character.strength);
-        const maxMp = MpService.maxMpForStats(stats);
-        return {
-          id: entry.member.characterId,
-          name: entry.character.name,
-          hp: { current: hp.hp, max: hp.maxHp },
-          vitals: {
-            hp: { current: hp.hp, max: hp.maxHp },
-            mp: { current: maxMp, max: maxMp },
-            xp: { current: xp.current, max: xp.needed },
-          },
-          weapon: weaponInstance?.name ?? weapon?.name ?? null,
-          weaponInstanceId: weaponInstance?.id ?? null,
-          fruit: fruit?.name ?? null,
-          isCaptain: false,
-          entry,
-          statusLine: MedicalRecoveryService.recoverySummary(run, entry.member.characterId),
-        };
-      }),
-    ];
-  }, [captain, captainFruit, captainWeapon, captainWeaponInstance, crew, run]);
+    );
 
-  const rosterSlots = useMemo(
-    () => Array.from({ length: CORE_CREW_CAP }, (_, index) => roster[index] ?? null),
-    [roster],
-  );
+    const crewRows = orderedCrew.map((entry) => {
+      const hp = CrewService.estimatedHp(entry.character);
+      const fruit = entry.character.devilFruitId ? getDevilFruit(entry.character.devilFruitId) : undefined;
+      const progression = ProgressionService.getProgression(run, entry.member.characterId);
+      const xp = ProgressionService.xpProgress(progression);
+      const stats = crewStatsFor(entry.character, entry.character.strength);
+      const maxMp = MpService.maxMpForStats(stats);
+      return toRow(
+        entry.member.characterId,
+        entry.character.name,
+        { current: hp.hp, max: hp.maxHp },
+        {
+          hp: { current: hp.hp, max: hp.maxHp },
+          mp: { current: maxMp, max: maxMp },
+          xp: { current: xp.current, max: xp.needed },
+        },
+        {
+          isCaptain: false,
+          fruit: fruit?.name ?? null,
+          statusLine: MedicalRecoveryService.recoverySummary(run, entry.member.characterId),
+          entry,
+        },
+      );
+    });
+
+    const activeCount = Math.min(MAX_ACTIVE_FIGHTERS, partyConfig.activeFighterIds.length);
+    const activeRows = crewRows.slice(0, activeCount);
+    const benchRows = crewRows.slice(activeCount);
+
+    // Fixed layout: top row = captain + 4 battle slots; bottom row = bench.
+    const slots: Array<(typeof captainRow) | null> = Array.from({ length: CORE_CREW_CAP }, () => null);
+    slots[0] = captainRow;
+    for (let i = 0; i < MAX_ACTIVE_FIGHTERS; i++) {
+      slots[1 + i] = activeRows[i] ?? null;
+    }
+    for (let i = 0; i < benchRows.length && BATTLE_FORMATION_SLOTS + i < CORE_CREW_CAP; i++) {
+      slots[BATTLE_FORMATION_SLOTS + i] = benchRows[i] ?? null;
+    }
+    return slots;
+  }, [
+    captain,
+    captainFruit,
+    captainWeapon,
+    orderedCrew,
+    partyConfig.activeFighterIds.length,
+    run,
+  ]);
+
+  const rosterSlots = roster;
+
+  // Top row (slots 1–4 after captain) drives activeParty.
+  useEffect(() => {
+    const battleCrewIds = rosterSlots
+      .slice(1, BATTLE_FORMATION_SLOTS)
+      .map((member) => member?.id)
+      .filter((id): id is string => Boolean(id));
+    const current = partyConfig.activeFighterIds.slice(0, MAX_ACTIVE_FIGHTERS);
+    if (
+      battleCrewIds.length !== current.length ||
+      battleCrewIds.some((id, index) => id !== current[index])
+    ) {
+      CrewCombatService.setActiveFighters(run, battleCrewIds);
+    }
+  }, [partyConfig.activeFighterIds, rosterSlots, run]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selectedCharacterWeaponInstance =
-    selectedId === run.player.id
-      ? captainWeaponInstance
-      : selectedId
-        ? WeaponService.equippedInstanceFor(run, selectedId)
-        : undefined;
-  const selectedCharacterWeaponView = WeaponService.resolveWeaponView(selectedCharacterWeaponInstance);
+  const selectedPrimary =
+    selectedId ? WeaponService.equippedInstanceFor(run, selectedId, "primary") : undefined;
+  const selectedSecondary =
+    selectedId ? WeaponService.equippedInstanceFor(run, selectedId, "secondary") : undefined;
+  const selectedPrimaryView = WeaponService.resolveWeaponView(selectedPrimary);
+  const selectedSecondaryView = WeaponService.resolveWeaponView(selectedSecondary);
   const selectedCrew =
     selectedId && selectedId !== run.player.id ? CrewService.getMember(run, selectedId) : null;
   const selectedCharacter =
@@ -206,6 +279,17 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
     }
   };
 
+  const assignWeapon = (instanceId: string, characterId: string, slot?: EquipSlot) => {
+    const resolved =
+      slot ??
+      (characterId === run.player.id
+        ? WeaponService.findEquippedInstance(run.player, "primary")
+          ? "secondary"
+          : "primary"
+        : WeaponService.preferredCrewEquipSlot(run, characterId));
+    onAssignStashWeapon?.(instanceId, characterId, resolved);
+  };
+
   const handleDropOnMember = (event: DragEvent<HTMLButtonElement>, characterId: string) => {
     event.preventDefault();
     setDropTargetId(null);
@@ -214,7 +298,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
       return;
     }
     if (payload.kind === "weapon") {
-      onAssignStashWeapon?.(payload.instanceId, characterId);
+      assignWeapon(payload.instanceId, characterId);
       return;
     }
     onAssignStashFruit?.(payload.fruitId, characterId);
@@ -259,7 +343,6 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
             onClick={() => {
               setSelectedId(member.id);
               setSelectedWeaponId(null);
-              setSidePanel("character");
             }}
             onDragLeave={() => setDropTargetId((current) => (current === member.id ? null : current))}
             onDragOver={(event) => {
@@ -272,6 +355,8 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
             }
             portraitInitials={portraitInitials(member.name)}
             primaryWeapon={member.weapon}
+            secondaryWeapon={member.secondaryWeapon}
+            secondaryWeaponInstanceId={member.secondaryWeaponInstanceId}
             selected={selectedId === member.id}
             statusLine={
               isMobile && isBattleSlot
@@ -355,6 +440,28 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
     );
   };
 
+  const renderEquippedWeapons = () => (
+    <section className="detail-section">
+      <p className="detail-label">Equipped weapons</p>
+      {selectedPrimaryView ? (
+        <div className="crew-equipped-weapon-block">
+          <p className="detail-value text-sm text-gold">Primary</p>
+          <WeaponStatsBlock weapon={selectedPrimaryView} />
+        </div>
+      ) : (
+        <p className="text-sm text-parchment-dim">No primary weapon.</p>
+      )}
+      {selectedSecondaryView ? (
+        <div className="crew-equipped-weapon-block mt-3">
+          <p className="detail-value text-sm text-gold">Secondary</p>
+          <WeaponStatsBlock weapon={selectedSecondaryView} />
+        </div>
+      ) : (
+        <p className="text-sm text-parchment-dim mt-2">No secondary weapon.</p>
+      )}
+    </section>
+  );
+
   const renderCharacterDetail = () => {
     if (selectedId === null) {
       return <p className="text-parchment-dim">Select a crewmate to view details.</p>;
@@ -402,14 +509,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
               ))}
             </ul>
           </section>
-          <section className="detail-section">
-            <p className="detail-label">Equipped weapon</p>
-            {selectedCharacterWeaponView ? (
-              <WeaponStatsBlock weapon={selectedCharacterWeaponView} />
-            ) : (
-              <p className="text-sm text-parchment-dim">No weapon equipped.</p>
-            )}
-          </section>
+          {isMobile ? renderEquippedWeapons() : null}
         </>
       );
     }
@@ -462,14 +562,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
               })}
             </ul>
           </section>
-          <section className="detail-section">
-            <p className="detail-label">Equipped weapon</p>
-            {selectedCharacterWeaponView ? (
-              <WeaponStatsBlock weapon={selectedCharacterWeaponView} />
-            ) : (
-              <p className="text-sm text-parchment-dim">No weapon equipped.</p>
-            )}
-          </section>
+          {isMobile ? renderEquippedWeapons() : null}
         </>
       );
     }
@@ -480,10 +573,12 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
     <div className="crew-weapons-panel">
       <p className="detail-label">
         {mode === "mobile"
-          ? selectedWeaponId
-            ? "Tap a weapon again to clear, or tap another to equip on this crewmate"
-            : "Tap a weapon to equip it on this crewmate"
-          : "Drag weapons onto crew cards — click to inspect stats"}
+          ? selectedId
+            ? "Equip primary or secondary on this crewmate"
+            : "Select a crewmate, then equip a weapon"
+          : selectedId
+            ? "Equip primary / secondary — or drag onto a card"
+            : "Select a crewmate, or drag weapons onto cards"}
       </p>
       {weaponRows.length === 0 ? (
         <p className="text-sm text-parchment-dim">No weapons in the crew pack.</p>
@@ -491,31 +586,48 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
         <ul className="crew-weapon-list">
           {weaponRows.map(({ instance, ownerLabel, ownerName }) => (
             <li key={instance.id}>
-              <button
-                className={`crew-weapon-row ${selectedWeaponId === instance.id ? "is-selected" : ""}`}
-                draggable={mode === "desktop"}
-                onClick={() => {
-                  if (mode === "mobile" && selectedId) {
-                    if (selectedWeaponId === instance.id) {
-                      setSelectedWeaponId(null);
-                      return;
-                    }
-                    onAssignStashWeapon?.(instance.id, selectedId);
-                    setSelectedWeaponId(instance.id);
-                    return;
-                  }
-                  setSelectedWeaponId((current) => (current === instance.id ? null : instance.id));
-                }}
-                onDragStart={(event) => handleDragStart(event, { kind: "weapon", instanceId: instance.id })}
-                type="button"
-              >
-                <span className="crew-weapon-row-name font-display">{instance.name}</span>
-                {ownerName ? (
-                  <span className="crew-weapon-row-owner">{ownerName}</span>
-                ) : (
-                  <span className="crew-weapon-row-meta">{ownerLabel}</span>
-                )}
-              </button>
+              <div className={`crew-weapon-row-wrap ${selectedWeaponId === instance.id ? "is-selected" : ""}`}>
+                <button
+                  className={`crew-weapon-row ${selectedWeaponId === instance.id ? "is-selected" : ""}`}
+                  draggable={mode === "desktop"}
+                  onClick={() => {
+                    setSelectedWeaponId((current) => (current === instance.id ? null : instance.id));
+                  }}
+                  onDragStart={(event) => handleDragStart(event, { kind: "weapon", instanceId: instance.id })}
+                  type="button"
+                >
+                  <span className="crew-weapon-row-name font-display">{instance.name}</span>
+                  {ownerName ? (
+                    <span className="crew-weapon-row-owner">{ownerName}</span>
+                  ) : (
+                    <span className="crew-weapon-row-meta">{ownerLabel}</span>
+                  )}
+                </button>
+                {selectedId ? (
+                  <div className="crew-weapon-slot-actions">
+                    <button
+                      className="ghost-btn py-1"
+                      onClick={() => {
+                        assignWeapon(instance.id, selectedId, "primary");
+                        setSelectedWeaponId(instance.id);
+                      }}
+                      type="button"
+                    >
+                      Primary
+                    </button>
+                    <button
+                      className="ghost-btn py-1"
+                      onClick={() => {
+                        assignWeapon(instance.id, selectedId, "secondary");
+                        setSelectedWeaponId(instance.id);
+                      }}
+                      type="button"
+                    >
+                      Secondary
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>
@@ -526,11 +638,12 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
         </div>
       ) : (
         <p className="text-sm text-parchment-dim mt-3">
-          {mode === "mobile"
-            ? "Select a weapon to see its stats and equip it."
-            : "Select a weapon to see damage, speed, and other stats. Drag onto a crewmate to assign."}
+          Select a weapon to inspect damage, speed, and grip rules.
         </p>
       )}
+      {selectedId && !isMobile ? (
+        <div className="crew-equipped-summary mt-3">{renderEquippedWeapons()}</div>
+      ) : null}
     </div>
   );
 
@@ -563,13 +676,19 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
           className={[
             "split-overlay",
             "crew-split-overlay",
-            isMobile ? "is-mobile-crew" : "",
+            isMobile ? "is-mobile-crew" : "is-desktop-crew",
             showMobileDetail ? "is-mobile-detail" : "",
             showMobileList ? "is-mobile-list-only" : "",
           ]
             .filter(Boolean)
             .join(" ")}
         >
+          {!isMobile ? (
+            <aside className="detail-panel panel crew-stats-pane">
+              {renderCharacterDetail()}
+            </aside>
+          ) : null}
+
           {!showMobileDetail ? (
             <div className="split-pane crew-roster-pane">
               {fleetUnlockLine ? (
@@ -611,50 +730,28 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
             </div>
           ) : null}
 
-          {!showMobileList ? (
-            <aside className="detail-panel panel crew-side-panel">
-              {showMobileDetail ? (
-                <div className="crew-mobile-detail-head">
-                  <button
-                    className="ghost-btn py-2"
-                    onClick={() => {
-                      setSelectedId(null);
-                      setSelectedWeaponId(null);
-                    }}
-                    type="button"
-                  >
-                    ← Crew list
-                  </button>
-                </div>
-              ) : (
-                <div className="crew-side-toggle" role="tablist" aria-label="Crew detail">
-                  <button
-                    className={sidePanel === "character" ? "crew-side-toggle-btn is-active" : "crew-side-toggle-btn"}
-                    onClick={() => setSidePanel("character")}
-                    type="button"
-                  >
-                    Crewmate
-                  </button>
-                  <button
-                    className={sidePanel === "weapons" ? "crew-side-toggle-btn is-active" : "crew-side-toggle-btn"}
-                    onClick={() => setSidePanel("weapons")}
-                    type="button"
-                  >
-                    Weapons
-                  </button>
-                </div>
-              )}
+          {!isMobile ? (
+            <aside className="detail-panel panel crew-weapons-pane">{renderWeaponsAssignList("desktop")}</aside>
+          ) : null}
 
-              {showMobileDetail ? (
-                <div className="crew-mobile-detail-body">
-                  <div className="crew-mobile-detail-stats">{renderCharacterDetail()}</div>
-                  <div className="crew-mobile-detail-weapons">{renderWeaponsAssignList("mobile")}</div>
-                </div>
-              ) : sidePanel === "weapons" ? (
-                renderWeaponsAssignList("desktop")
-              ) : (
-                renderCharacterDetail()
-              )}
+          {showMobileDetail ? (
+            <aside className="detail-panel panel crew-side-panel">
+              <div className="crew-mobile-detail-head">
+                <button
+                  className="ghost-btn py-2"
+                  onClick={() => {
+                    setSelectedId(null);
+                    setSelectedWeaponId(null);
+                  }}
+                  type="button"
+                >
+                  ← Crew list
+                </button>
+              </div>
+              <div className="crew-mobile-detail-body">
+                <div className="crew-mobile-detail-stats">{renderCharacterDetail()}</div>
+                <div className="crew-mobile-detail-weapons">{renderWeaponsAssignList("mobile")}</div>
+              </div>
             </aside>
           ) : null}
         </div>

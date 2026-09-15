@@ -61,10 +61,10 @@
   --encounter-face-max: min(17.5rem, 22vh);
   --diamond-size-token: clamp(5.4rem, 3.9vw + 1.65rem, 9rem);
 
-  /* Overlays */
-  --overlay-max-w: min(92.5rem, calc(100vw - 2.5rem));
-  --overlay-max-h: min(57.5rem, calc(100dvh - 2.5rem));
-  --overlay-pad: clamp(1rem, 1.2vw, 1.8rem);
+  /* Overlays — near full-viewport; narrow panels keep their own width */
+  --overlay-max-w: calc(100vw - max(0.5rem, env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px)));
+  --overlay-max-h: calc(100dvh - max(0.5rem, env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)));
+  --overlay-pad: clamp(0.85rem, 1.1vw, 1.35rem);
 
   /* Combat */
   --combat-action-w: clamp(7.5rem, 8vw, 10.6rem);
@@ -1434,9 +1434,13 @@ img.run-glyph,
   inset: 0;
   z-index: 40;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(0.75rem, 3vh, 2.5rem) clamp(0.75rem, 3vw, 2.5rem);
+  align-items: stretch;
+  justify-content: stretch;
+  padding:
+    max(0.25rem, env(safe-area-inset-top, 0px))
+    max(0.25rem, env(safe-area-inset-right, 0px))
+    max(0.25rem, env(safe-area-inset-bottom, 0px))
+    max(0.25rem, env(safe-area-inset-left, 0px));
   background: rgba(4, 8, 12, 0.88);
 }
 
@@ -1456,8 +1460,11 @@ html.battle-result-open .overlay-scrim {
 }
 
 .overlay-panel {
-  width: var(--overlay-max-w);
-  height: var(--overlay-max-h);
+  width: 100%;
+  max-width: var(--overlay-max-w);
+  height: 100%;
+  max-height: var(--overlay-max-h);
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1466,13 +1473,18 @@ html.battle-result-open .overlay-scrim {
   background:
     linear-gradient(180deg, rgba(26, 36, 44, 0.97), rgba(14, 20, 26, 0.97));
   border: 1px solid rgba(212, 179, 106, 0.35);
-  border-radius: 1rem;
+  border-radius: 0.55rem;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
 }
 
 .overlay-panel-narrow {
   width: min(420px, 92vw);
+  max-width: min(420px, 92vw);
   height: auto;
+  max-height: var(--overlay-max-h);
+  flex: 0 0 auto;
+  margin: auto;
+  border-radius: 1rem;
 }
 
 .overlay-head {
@@ -6007,9 +6019,9 @@ html.battle-result-open .battler-card.is-down {
   align-items: stretch;
   gap: clamp(0.65rem, 1vw, 1rem);
   width: var(--overlay-max-w);
-  max-width: calc(100vw - 2rem);
+  max-width: 100%;
   height: var(--overlay-max-h);
-  max-height: calc(100dvh - 2rem);
+  max-height: 100%;
 }
 
 .inventory-overlay-shell.has-collectibles {
@@ -6147,7 +6159,18 @@ html.battle-result-open .battler-card.is-down {
 }
 
 .split-overlay.crew-split-overlay {
-  grid-template-columns: minmax(0, 1.75fr) minmax(220px, 0.38fr);
+  grid-template-columns: minmax(220px, var(--sidebar-left-width)) minmax(0, 1fr) minmax(220px, var(--sidebar-left-width));
+}
+
+.split-overlay.crew-split-overlay.is-desktop-crew {
+  gap: 0.85rem;
+}
+
+.crew-stats-pane,
+.crew-weapons-pane {
+  min-height: 0;
+  overflow: auto;
+  padding: 0.9rem 1rem;
 }
 
 .crew-roster-pane {
@@ -6157,15 +6180,15 @@ html.battle-result-open .battler-card.is-down {
 .crew-roster-wrap {
   --battle-label-block: 1.65rem;
   --roster-pad-top: 0.45rem;
-  --roster-pad-x: 0.85rem;
+  --roster-pad-x: 0.55rem;
   --roster-pad-bottom: 0.5rem;
-  --roster-gap: 0.5rem;
-  --roster-rows: 5;
-  --battle-rows: 2;
-  --marker-outset-x: 0.6rem;
-  --marker-outset-top: 0.55rem;
-  --marker-outset-bottom: 0.55rem;
-  --roster-battle-extra-gap: 0.45rem;
+  --roster-gap: 0.45rem;
+  --roster-rows: 2;
+  --battle-rows: 1;
+  --marker-outset-x: 0.45rem;
+  --marker-outset-top: 0.45rem;
+  --marker-outset-bottom: 0.45rem;
+  --roster-battle-extra-gap: 0.55rem;
   --roster-row-height: calc(
     (
         100% - var(--battle-label-block) - var(--roster-pad-top) - var(--roster-pad-bottom) -
@@ -6199,7 +6222,7 @@ html.battle-result-open .battler-card.is-down {
   left: calc(var(--roster-pad-x) - var(--marker-outset-x));
   right: calc(var(--roster-pad-x) - var(--marker-outset-x));
   height: calc(
-    var(--marker-outset-top) + var(--roster-row-height) * 2 + var(--roster-gap) + var(--marker-outset-bottom)
+    var(--marker-outset-top) + var(--roster-row-height) * var(--battle-rows) + var(--marker-outset-bottom)
   );
   border-radius: 0.9rem;
   border: 1px solid rgba(196, 92, 82, 0.58);
@@ -6301,8 +6324,8 @@ html.battle-result-open .battler-card.is-down {
   margin: 0;
   padding: var(--roster-pad-top) var(--roster-pad-x) var(--roster-pad-bottom);
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: var(--roster-gap);
   flex: 1;
   min-height: 0;
@@ -6318,8 +6341,7 @@ html.battle-result-open .battler-card.is-down {
   display: flex;
 }
 
-.crew-roster-grid li:nth-child(3),
-.crew-roster-grid li:nth-child(4) {
+.crew-roster-grid li:nth-child(5) {
   margin-bottom: var(--roster-battle-extra-gap);
 }
 
@@ -6343,27 +6365,28 @@ html.battle-result-open .battler-card.is-down {
 }
 
 .crew-roster-grid .character-card-compact .character-card-equipment {
-  gap: 0.32rem;
+  gap: 0.28rem;
+  grid-template-columns: 1fr;
 }
 
 .crew-roster-grid .character-card-compact .character-card-name {
-  font-size: 1.5rem;
+  font-size: 1.15rem;
   line-height: 1.08;
 }
 
 .crew-roster-grid .character-card-compact .mini-vital-bar {
-  height: 1.45rem;
-  min-height: 1.45rem;
+  height: 1.15rem;
+  min-height: 1.15rem;
 }
 
 .crew-roster-grid .character-card-compact .mini-vital-value {
-  font-size: 0.92rem;
+  font-size: 0.78rem;
 }
 
 .crew-roster-grid .character-card-compact .equip-slot {
-  min-height: 2rem;
-  padding: 0.28rem 0.3rem;
-  font-size: 0.88rem;
+  min-height: 1.7rem;
+  padding: 0.2rem 0.28rem;
+  font-size: 0.72rem;
   border-radius: 0.32rem;
 }
 
@@ -6588,6 +6611,39 @@ html.battle-result-open .battler-card.is-down {
   border-color: var(--color-gold);
   color: var(--color-gold);
   background: rgba(212, 179, 106, 0.12);
+}
+
+.crew-weapon-row-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  padding: 0.15rem;
+}
+
+.crew-weapon-row-wrap.is-selected {
+  border-color: rgba(212, 179, 106, 0.4);
+  background: rgba(212, 179, 106, 0.06);
+}
+
+.crew-weapon-slot-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.crew-weapon-slot-actions .ghost-btn {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  min-height: 2rem;
+}
+
+.crew-equipped-weapon-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .crew-weapon-stats {
@@ -7783,8 +7839,8 @@ button.level-up-stats-row:disabled {
     --sidebar-right-width: 0px;
     --choice-card-h: clamp(10.5rem, 26vh, 13.5rem);
     --choice-card-h-compact: clamp(9.5rem, 22vh, 12rem);
-    --overlay-max-w: calc(100vw - 0.5rem);
-    --overlay-max-h: calc(100dvh - var(--mobile-safe-top) - var(--mobile-safe-bottom) - 0.5rem);
+    --overlay-max-w: calc(100vw - max(0.35rem, var(--mobile-safe-left) + var(--mobile-safe-right)));
+    --overlay-max-h: calc(100dvh - max(0.35rem, var(--mobile-safe-top) + var(--mobile-safe-bottom)));
     --overlay-pad: 0.85rem;
     --combat-side-wheel-w: min(11rem, 38vw);
     --combat-action-w: clamp(3.1rem, 15.5vw, 3.75rem);
@@ -8181,8 +8237,7 @@ button.level-up-stats-row:disabled {
     display: block;
   }
 
-  .crew-roster-grid.is-mobile-list li:nth-child(3),
-  .crew-roster-grid.is-mobile-list li:nth-child(4) {
+  .crew-roster-grid.is-mobile-list li:nth-child(5) {
     margin-bottom: 0;
   }
 
@@ -10195,18 +10250,38 @@ button.level-up-stats-row:disabled {
   padding: 1.1rem 1.25rem 1.35rem;
 }
 
-.weapon-shop-in-overlay {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
+/* Full-viewport gunsmith shell — shop-specific so crew overlay token work stays isolated. */
+.weapon-shop-scrim {
+  z-index: 120;
 }
 
-.weapon-shop-in-overlay .weapon-shop-list {
-  max-height: min(22rem, 38vh);
+.weapon-shop-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: var(--overlay-max-w);
+  height: var(--overlay-max-h);
+  max-width: calc(100vw - 0.5rem);
+  max-height: calc(100dvh - var(--mobile-safe-top, 0px) - var(--mobile-safe-bottom, 0px) - 0.5rem);
+  min-height: 0;
+  margin: 0;
+  padding: clamp(0.75rem, 1.2vw, 1.25rem) clamp(0.75rem, 1.2vw, 1.25rem) 0;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(26, 36, 44, 0.97), rgba(14, 20, 26, 0.97));
+  border: 1px solid rgba(212, 179, 106, 0.35);
+  border-radius: 1rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.weapon-shop-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
 }
 
 .weapon-shop-head {
@@ -10215,6 +10290,7 @@ button.level-up-stats-row:disabled {
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-start;
+  flex-shrink: 0;
 }
 
 .weapon-shop-proprietor {
@@ -10246,7 +10322,9 @@ button.level-up-stats-row:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(min(100%, 16rem), 0.85fr);
   gap: clamp(0.65rem, 1vw, 1rem);
-  align-items: start;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 
 .weapon-shop-layout.is-trade {
@@ -10255,6 +10333,7 @@ button.level-up-stats-row:disabled {
 
 .weapon-shop-column {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -10297,8 +10376,14 @@ button.level-up-stats-row:disabled {
   display: flex;
   flex-direction: column;
   gap: clamp(0.35rem, 0.7vh, 0.45rem);
-  max-height: min(28rem, 52vh);
+  flex: 1;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
+}
+
+.weapon-shop-shell .weapon-shop-list {
+  max-height: none;
 }
 
 .weapon-shop-row {
@@ -10351,6 +10436,9 @@ button.level-up-stats-row:disabled {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
   padding: 0.85rem;
   border-radius: 0.65rem;
   border: 1px solid rgba(212, 179, 106, 0.22);
@@ -10423,10 +10511,59 @@ button.level-up-stats-row:disabled {
   gap: 0.45rem;
 }
 
+.weapon-shop-actions-sticky {
+  flex-shrink: 0;
+  z-index: 2;
+  margin: 0 calc(-1 * clamp(0.75rem, 1.2vw, 1.25rem));
+  padding:
+    0.65rem clamp(0.75rem, 1.2vw, 1.25rem)
+    max(0.75rem, var(--mobile-safe-bottom, 0px));
+  border-top: 1px solid rgba(212, 179, 106, 0.28);
+  background:
+    linear-gradient(180deg, rgba(18, 24, 30, 0.92), rgba(12, 16, 22, 0.98));
+  backdrop-filter: blur(8px);
+}
+
 @media (max-width: 52rem) {
+  .weapon-shop-shell {
+    width: calc(100vw - 0.5rem);
+    height: calc(100dvh - var(--mobile-safe-top, 0px) - var(--mobile-safe-bottom, 0px) - 0.5rem);
+    max-width: none;
+    max-height: none;
+    border-radius: 0.75rem;
+  }
+
+  .weapon-shop-body {
+    overflow: auto;
+  }
+
   .weapon-shop-layout,
   .weapon-shop-layout.is-trade {
     grid-template-columns: 1fr;
+    align-items: start;
+    flex: none;
+  }
+
+  .weapon-shop-column {
+    flex: none;
+  }
+
+  .weapon-shop-list {
+    flex: none;
+    max-height: min(16rem, 36vh);
+  }
+
+  .weapon-shop-aside {
+    overflow: visible;
+  }
+
+  .weapon-shop-actions-sticky {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .weapon-shop-actions-sticky .ghost-btn {
+    grid-column: 1 / -1;
   }
 
   .weapon-shop-row {

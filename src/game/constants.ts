@@ -2,7 +2,8 @@ export const SAVE_VERSION = 17;
 
 /** Core roster cap including the player character. */
 export const CORE_CREW_CAP = 10;
-export const MAX_ACTIVE_FIGHTERS = 3;
+/** Max crew IDs in the fighting line (captain is always added → 5 fighters total). */
+export const MAX_ACTIVE_FIGHTERS = 4;
 export const MAX_SUPPORT_SLOTS = 3;
 
 /**

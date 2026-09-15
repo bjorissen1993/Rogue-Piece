@@ -134,7 +134,7 @@ type GameStoreValue = {
   giveWeaponToCrew: (instanceId: string, characterId: string) => void;
   resolveLootBackpack: () => void;
   resolveLootAssign: (characterId: string) => void;
-  assignStashWeapon: (instanceId: string, characterId: string) => void;
+  assignStashWeapon: (instanceId: string, characterId: string, slot?: "primary" | "secondary") => void;
   assignStashFruit: (fruitId: string, characterId: string) => void;
   dismissFeedback: () => void;
   returnToProfileMenu: () => void;
@@ -723,7 +723,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   );
 
   const assignStashWeapon = useCallback(
-    (instanceId: string, characterId: string) => {
+    (instanceId: string, characterId: string, slot?: "primary" | "secondary") => {
       if (!profile?.activeRun) return;
       const next = structuredClone(profile);
       const run = next.activeRun!;
@@ -736,7 +736,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           return;
         }
       }
-      run.lastFeedback = LootDispositionService.assignWeaponFromStash(run, instanceId, targetId);
+      run.lastFeedback = LootDispositionService.assignWeaponFromStash(run, instanceId, targetId, slot);
       persist(next);
     },
     [profile, persist],

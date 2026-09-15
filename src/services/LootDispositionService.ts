@@ -51,18 +51,23 @@ export const LootDispositionService = {
     return `${entry.label} stored in the shared backpack.`;
   },
 
-  resolveWeapon(run: RunState, instanceId: string, characterId: string): string {
+  resolveWeapon(
+    run: RunState,
+    instanceId: string,
+    characterId: string,
+    slot?: "primary" | "secondary",
+  ): string {
     const entry = this.shift(run);
     if (!entry || entry.kind !== "weapon") {
       return "";
     }
     if (characterId === run.player.id) {
-      if (WeaponService.equipInstance(run, instanceId, run.player.id)) {
+      if (WeaponService.equipInstance(run, instanceId, run.player.id, slot ?? "primary")) {
         return `${entry.label} equipped.`;
       }
       return "Could not equip that weapon.";
     }
-    const result = WeaponService.assignToCrew(run, instanceId, characterId);
+    const result = WeaponService.assignToCrew(run, instanceId, characterId, slot);
     return result.reason;
   },
 
@@ -77,13 +82,20 @@ export const LootDispositionService = {
     return DevilFruitService.giveToCrew(run, fruitId, characterId);
   },
 
-  assignWeaponFromStash(run: RunState, instanceId: string, characterId: string): string {
+  assignWeaponFromStash(
+    run: RunState,
+    instanceId: string,
+    characterId: string,
+    slot?: "primary" | "secondary",
+  ): string {
     if (characterId === run.player.id) {
-      return WeaponService.equipInstance(run, instanceId, run.player.id)
+      const resolved =
+        slot ?? (WeaponService.findEquippedInstance(run.player, "primary") ? "secondary" : "primary");
+      return WeaponService.equipInstance(run, instanceId, run.player.id, resolved)
         ? "Weapon equipped."
-        : "Could not equip.";
+        : run.lastFeedback ?? "Could not equip.";
     }
-    return WeaponService.assignToCrew(run, instanceId, characterId).reason;
+    return WeaponService.assignToCrew(run, instanceId, characterId, slot).reason;
   },
 
   assignFruitFromStash(run: RunState, fruitId: string, characterId: string): string {

@@ -16,6 +16,8 @@ type CharacterCardProps = {
   };
   primaryWeapon?: string | null;
   weaponInstanceId?: string | null;
+  secondaryWeapon?: string | null;
+  secondaryWeaponInstanceId?: string | null;
   fruitName?: string | null;
   isCaptain?: boolean;
   isActiveFighter?: boolean;
@@ -54,12 +56,58 @@ function MiniVitalBar({
   );
 }
 
+function WeaponSlot({
+  compact,
+  emptyTitle,
+  instanceId,
+  label,
+  onWeaponDragStart,
+  title,
+}: {
+  compact?: boolean;
+  emptyTitle: string;
+  instanceId?: string | null;
+  label?: string | null;
+  onWeaponDragStart?: (event: DragEvent<HTMLSpanElement>, instanceId: string) => void;
+  title: string;
+}) {
+  if (instanceId && label) {
+    return (
+      <span
+        className="equip-slot equip-slot-weapon equip-draggable"
+        draggable
+        onClick={(event) => event.stopPropagation()}
+        onDragStart={(event) => {
+          event.stopPropagation();
+          onWeaponDragStart?.(event, instanceId);
+        }}
+        title={`Drag to reassign ${label}`}
+      >
+        <span className="equip-slot-icon" aria-hidden="true">
+          <HudIcon name="blade" size={compact ? 18 : 20} />
+        </span>
+        <span className="equip-slot-label">{label}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="equip-slot equip-slot-weapon equip-slot-empty" title={emptyTitle}>
+      <span className="equip-slot-icon" aria-hidden="true">
+        <HudIcon name="blade" size={compact ? 18 : 20} />
+      </span>
+      <span className="equip-slot-label">{title}</span>
+    </span>
+  );
+}
+
 export function CharacterCard({
   portraitInitials,
   name,
   vitals,
   primaryWeapon,
   weaponInstanceId,
+  secondaryWeapon,
+  secondaryWeaponInstanceId,
   fruitName,
   isCaptain,
   isActiveFighter,
@@ -120,30 +168,22 @@ export function CharacterCard({
               </span>
               <span className="equip-slot-label">{fruitName ?? "—"}</span>
             </span>
-            {weaponInstanceId && primaryWeapon ? (
-              <span
-                className="equip-slot equip-slot-weapon equip-draggable"
-                draggable
-                onClick={(event) => event.stopPropagation()}
-                onDragStart={(event) => {
-                  event.stopPropagation();
-                  onWeaponDragStart?.(event, weaponInstanceId);
-                }}
-                title={`Drag to reassign ${primaryWeapon}`}
-              >
-                <span className="equip-slot-icon" aria-hidden="true">
-                  <HudIcon name="blade" size={compact ? 18 : 20} />
-                </span>
-                <span className="equip-slot-label">{primaryWeapon}</span>
-              </span>
-            ) : (
-              <span className="equip-slot equip-slot-weapon equip-slot-empty" title="No weapon">
-                <span className="equip-slot-icon" aria-hidden="true">
-                  <HudIcon name="blade" size={compact ? 18 : 20} />
-                </span>
-                <span className="equip-slot-label">—</span>
-              </span>
-            )}
+            <WeaponSlot
+              compact={compact}
+              emptyTitle="No primary weapon"
+              instanceId={weaponInstanceId}
+              label={primaryWeapon}
+              onWeaponDragStart={onWeaponDragStart}
+              title="—"
+            />
+            <WeaponSlot
+              compact={compact}
+              emptyTitle="No secondary weapon"
+              instanceId={secondaryWeaponInstanceId}
+              label={secondaryWeapon}
+              onWeaponDragStart={onWeaponDragStart}
+              title="—"
+            />
           </div>
         </div>
       </div>

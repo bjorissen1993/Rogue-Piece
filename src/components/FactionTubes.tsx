@@ -78,7 +78,9 @@ export function FactionTubes({ run }: FactionTubesProps) {
             const fill = fillPercent(rel.value);
             const status = relationshipStatus(rel.value);
             const careerId = RELATION_TO_CAREER[faction.id];
-            const isMember = careerId ? AffiliationService.belongsToFaction(run, careerId) : false;
+            const isMember =
+              faction.id !== "CIVILIANS" &&
+              Boolean(careerId && AffiliationService.belongsToFaction(run, careerId));
             return (
               <button
                 aria-label={`${faction.name}: ${signedValue(rel.value)} ${status}${isMember ? ", member" : ""}. Open faction overview.`}

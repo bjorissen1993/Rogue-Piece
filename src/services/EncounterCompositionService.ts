@@ -35,7 +35,7 @@ export const BATTLE_FORMATS: Record<BattleFormatId, BattleFormat> = {
   TEAM: {
     id: "TEAM",
     minPlayerFighters: 1,
-    maxPlayerFighters: 4,
+    maxPlayerFighters: 5,
     minEnemies: 1,
     maxEnemies: 4,
     playerChoosesParticipants: false,
@@ -71,7 +71,7 @@ export const BATTLE_FORMATS: Record<BattleFormatId, BattleFormat> = {
   BOSS_RAID: {
     id: "BOSS_RAID",
     minPlayerFighters: 1,
-    maxPlayerFighters: 4,
+    maxPlayerFighters: 5,
     minEnemies: 1,
     maxEnemies: 3,
     playerChoosesParticipants: false,
@@ -83,7 +83,7 @@ export const BATTLE_FORMATS: Record<BattleFormatId, BattleFormat> = {
   CUSTOM: {
     id: "CUSTOM",
     minPlayerFighters: 1,
-    maxPlayerFighters: 4,
+    maxPlayerFighters: 5,
     minEnemies: 1,
     maxEnemies: 4,
     playerChoosesParticipants: false,

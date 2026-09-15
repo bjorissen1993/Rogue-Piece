@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyProfile, createRunState } from "../game/createGame";
+import { MAX_ACTIVE_FIGHTERS } from "../game/constants";
 import type { RunState } from "../models/types";
 import { createRng } from "./RandomService";
 import {
@@ -13,6 +14,8 @@ import { CombatEngine } from "./CombatEngine";
 import { SparringService, needsBattleSetup } from "./SparringService";
 import { WorldCombatProgressionService } from "./WorldCombatProgressionService";
 import { PartyCombatService } from "./PartyCombatService";
+import { CharacterService } from "./CharacterService";
+import { CrewCombatService } from "./CrewCombatService";
 
 function freshRun(): RunState {
   const profile = createEmptyProfile("combat_overhaul_test", "NORMAL");
@@ -181,6 +184,33 @@ describe("Battle formats", () => {
   it("2v2 format locks max fighters to 2", () => {
     expect(BATTLE_FORMATS.SKIRMISH_2V2.maxPlayerFighters).toBe(2);
     expect(BATTLE_FORMATS.DUEL_1V1.maxPlayerFighters).toBe(1);
+  });
+
+  it("crew battle formats allow five fighters on the field", () => {
+    expect(BATTLE_FORMATS.TEAM.maxPlayerFighters).toBe(5);
+    expect(BATTLE_FORMATS.BOSS_RAID.maxPlayerFighters).toBe(5);
+    expect(BATTLE_FORMATS.CUSTOM.maxPlayerFighters).toBe(5);
+  });
+
+  it("active party accepts up to four crew fighters", () => {
+    expect(MAX_ACTIVE_FIGHTERS).toBe(4);
+    const run = freshRun();
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const character = CharacterService.getOrCreateCharacter(run, {
+        name: `Mate ${i}`,
+        faction: "PIRATE",
+        strength: 5,
+        tags: ["test"],
+        alive: true,
+      });
+      CharacterService.acceptRecruitment(run, character.id, "FIGHTER", "PERMANENT");
+      ids.push(character.id);
+    }
+    CrewCombatService.setActiveFighters(run, ids);
+    const party = CrewCombatService.ensurePartyConfig(run);
+    expect(party.activeFighterIds).toHaveLength(4);
+    expect(party.activeFighterIds).toEqual(ids.slice(0, 4));
   });
 
   it("cancel setup clears pending without starting combat", () => {

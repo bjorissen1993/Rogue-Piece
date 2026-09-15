@@ -321,22 +321,8 @@ export const WeaponService = {
       return false;
     }
 
-    // Crew / non-player owners still use a single equipped weapon.
     if (ownerCharacterId !== run.player.id) {
-      for (const item of run.player.inventory) {
-        if (
-          isWeaponItem(item) &&
-          item.equipped &&
-          item.ownerCharacterId === ownerCharacterId &&
-          item.id !== instanceId
-        ) {
-          item.equipped = false;
-          item.ownerCharacterId = run.player.id;
-        }
-      }
-      instance.equipped = true;
-      instance.ownerCharacterId = ownerCharacterId;
-      return true;
+      return this.equipCrewInstance(run, instance, ownerCharacterId, slot, view);
     }
 
     if (slot === "secondary") {
@@ -363,6 +349,7 @@ export const WeaponService = {
       if (previous) {
         previous.equipped = false;
         previous.ownerCharacterId = run.player.id;
+        previous.equipSlot = undefined;
       }
     }
 
@@ -374,6 +361,7 @@ export const WeaponService = {
         if (secondary) {
           secondary.equipped = false;
           secondary.ownerCharacterId = run.player.id;
+          secondary.equipSlot = undefined;
         }
         run.player.equipment.secondaryWeaponId = null;
       }
@@ -381,6 +369,7 @@ export const WeaponService = {
 
     instance.equipped = true;
     instance.ownerCharacterId = ownerCharacterId;
+    instance.equipSlot = slot;
     if (slot === "primary") {
       run.player.equipment.primaryWeaponId = instance.id;
     } else {
@@ -389,12 +378,103 @@ export const WeaponService = {
     return true;
   },
 
+  equipCrewInstance(
+    run: RunState,
+    instance: InventoryItem,
+    ownerCharacterId: string,
+    slot: EquipSlot,
+    view: WeaponView,
+  ): boolean {
+    const character = run.world.characters.find((entry) => entry.id === ownerCharacterId);
+    if (!character || !run.crew.some((member) => member.characterId === ownerCharacterId)) {
+      return false;
+    }
+
+    if (slot === "secondary") {
+      const primary = this.equippedInstanceFor(run, ownerCharacterId, "primary");
+      const primaryView = this.resolveWeaponView(primary);
+      const check = canEquipAsSecondary(primaryView, view);
+      if (!check.ok) {
+        run.lastFeedback = check.reason;
+        return false;
+      }
+    }
+
+    // Clear player equipment pointers if this instance was on the captain.
+    if (run.player.equipment?.primaryWeaponId === instance.id) {
+      run.player.equipment.primaryWeaponId = null;
+    }
+    if (run.player.equipment?.secondaryWeaponId === instance.id) {
+      run.player.equipment.secondaryWeaponId = null;
+    }
+
+    // Unequip previous weapon in the target slot.
+    for (const item of run.player.inventory) {
+      if (
+        isWeaponItem(item) &&
+        item.equipped &&
+        item.ownerCharacterId === ownerCharacterId &&
+        item.id !== instance.id &&
+        this.crewEquipSlotOf(item) === slot
+      ) {
+        item.equipped = false;
+        item.equipSlot = undefined;
+        item.ownerCharacterId = run.player.id;
+      }
+    }
+
+    // Moving between slots on the same crewmate.
+    if (instance.equipped && instance.ownerCharacterId === ownerCharacterId && this.crewEquipSlotOf(instance) !== slot) {
+      instance.equipSlot = slot;
+    }
+
+    // Two-hand primary clears secondary.
+    if (slot === "primary" && view.grip === "TWO_HAND") {
+      for (const item of run.player.inventory) {
+        if (
+          isWeaponItem(item) &&
+          item.equipped &&
+          item.ownerCharacterId === ownerCharacterId &&
+          item.id !== instance.id &&
+          this.crewEquipSlotOf(item) === "secondary"
+        ) {
+          item.equipped = false;
+          item.equipSlot = undefined;
+          item.ownerCharacterId = run.player.id;
+        }
+      }
+    }
+
+    instance.equipped = true;
+    instance.ownerCharacterId = ownerCharacterId;
+    instance.equipSlot = slot;
+    this.syncCrewWeaponIds(run, ownerCharacterId);
+    return true;
+  },
+
+  crewEquipSlotOf(item: InventoryItem): EquipSlot {
+    return item.equipSlot === "secondary" ? "secondary" : "primary";
+  },
+
+  syncCrewWeaponIds(run: RunState, characterId: string): void {
+    const character = CharacterService.getCharacter(run, characterId);
+    if (!character) {
+      return;
+    }
+    const equipped = this.findEquippedInstancesForCharacter(run, characterId);
+    character.weaponIds = equipped
+      .map((item) => item.weaponDefinitionId ?? item.generatedWeapon?.archetypeId)
+      .filter((id): id is string => Boolean(id));
+  },
+
   unequipInstance(run: RunState, instanceId: string): boolean {
     const instance = this.findInstance(run.player, instanceId);
     if (!instance?.equipped) {
       return false;
     }
+    const previousOwner = instance.ownerCharacterId ?? run.player.id;
     instance.equipped = false;
+    instance.equipSlot = undefined;
     instance.ownerCharacterId = run.player.id;
     if (run.player.equipment?.primaryWeaponId === instanceId) {
       run.player.equipment.primaryWeaponId = null;
@@ -402,9 +482,8 @@ export const WeaponService = {
     if (run.player.equipment?.secondaryWeaponId === instanceId) {
       run.player.equipment.secondaryWeaponId = null;
     }
-    const character = run.world.characters.find((entry) => entry.weaponIds?.includes(instance.weaponDefinitionId!));
-    if (character && character.weaponIds?.[0] === instance.weaponDefinitionId) {
-      character.weaponIds = [];
+    if (previousOwner !== run.player.id) {
+      this.syncCrewWeaponIds(run, previousOwner);
     }
     return true;
   },
@@ -448,8 +527,13 @@ export const WeaponService = {
     return this.equipInstance(run, created.id);
   },
 
-  /** Give a weapon instance to a crewmate (unequips previous crew weapon back to backpack). */
-  assignToCrew(run: RunState, instanceId: string, characterId: string): { ok: boolean; reason: string } {
+  /** Give a weapon instance to a crewmate (unequips previous weapon in that slot back to backpack). */
+  assignToCrew(
+    run: RunState,
+    instanceId: string,
+    characterId: string,
+    slot?: EquipSlot,
+  ): { ok: boolean; reason: string } {
     const instance = this.findInstance(run.player, instanceId);
     if (!instance?.weaponDefinitionId && !instance?.generatedWeapon) {
       return { ok: false, reason: "That weapon is not in your pack." };
@@ -466,34 +550,44 @@ export const WeaponService = {
       return { ok: false, reason: `${character.name} is not in your crew.` };
     }
 
-    // Return previous crew-owned weapon to backpack
-    for (const item of run.player.inventory) {
-      if (isWeaponItem(item) && item.ownerCharacterId === characterId && item.id !== instanceId) {
-        item.ownerCharacterId = run.player.id;
-        item.equipped = false;
-      }
-    }
+    const resolvedSlot =
+      slot ??
+      (this.equippedInstanceFor(run, characterId, "primary") ? "secondary" : "primary");
 
-    if (instance.equipped && run.player.equipment?.primaryWeaponId === instance.id) {
-      run.player.equipment.primaryWeaponId = null;
+    if (!this.equipInstance(run, instanceId, characterId, resolvedSlot)) {
+      return { ok: false, reason: run.lastFeedback ?? `Could not equip ${weapon.name}.` };
     }
-    instance.equipped = true;
-    instance.ownerCharacterId = characterId;
-    character.weaponIds = [instance.weaponDefinitionId ?? weapon.id];
-    return { ok: true, reason: `${character.name} now carries the ${weapon.name}.` };
+    const slotLabel = resolvedSlot === "secondary" ? "secondary" : "primary";
+    return { ok: true, reason: `${character.name} now carries the ${weapon.name} (${slotLabel}).` };
   },
 
-  equippedInstanceFor(run: RunState, characterId: string): InventoryItem | undefined {
-    const owned = run.player.inventory.find(
+  equippedInstanceFor(
+    run: RunState,
+    characterId: string,
+    slot: EquipSlot = "primary",
+  ): InventoryItem | undefined {
+    if (characterId === run.player.id) {
+      return this.findEquippedInstance(run.player, slot);
+    }
+
+    const owned = run.player.inventory.filter(
       (item) =>
         isWeaponItem(item) &&
         item.equipped &&
         (item.ownerCharacterId ?? run.player.id) === characterId,
     );
-    if (owned) {
-      return owned;
+    const slotted = owned.find((item) => this.crewEquipSlotOf(item) === slot);
+    if (slotted) {
+      return slotted;
     }
-    // Legacy / spawn loadout: weaponIds on the character without an inventory link.
+
+    // Legacy / spawn loadout: weaponIds on the character without an inventory link (primary only).
+    if (slot !== "primary") {
+      return undefined;
+    }
+    if (owned.length === 1 && !owned[0]!.equipSlot) {
+      return owned[0];
+    }
     const character = CharacterService.getCharacter(run, characterId);
     const definitionId = character?.weaponIds?.[0];
     if (!definitionId) {
@@ -507,12 +601,31 @@ export const WeaponService = {
     );
   },
 
+  findEquippedInstancesForCharacter(run: RunState, characterId: string): InventoryItem[] {
+    if (characterId === run.player.id) {
+      return this.findEquippedInstances(run.player);
+    }
+    const primary = this.equippedInstanceFor(run, characterId, "primary");
+    const secondary = this.equippedInstanceFor(run, characterId, "secondary");
+    const list: InventoryItem[] = [];
+    if (primary) list.push(primary);
+    if (secondary && secondary.id !== primary?.id) list.push(secondary);
+    return list;
+  },
+
   /** Resolve equipped weapon view for a crewmate (inventory first, then catalog weaponIds). */
-  getEquippedWeaponForCharacter(run: RunState, characterId: string): WeaponView | undefined {
-    const instance = this.equippedInstanceFor(run, characterId);
+  getEquippedWeaponForCharacter(
+    run: RunState,
+    characterId: string,
+    slot: EquipSlot = "primary",
+  ): WeaponView | undefined {
+    const instance = this.equippedInstanceFor(run, characterId, slot);
     const fromInstance = this.resolveWeaponView(instance);
     if (fromInstance) {
       return fromInstance;
+    }
+    if (slot !== "primary") {
+      return undefined;
     }
     const character = CharacterService.getCharacter(run, characterId);
     const definitionId = character?.weaponIds?.[0];
@@ -521,6 +634,22 @@ export const WeaponService = {
     }
     const catalog = getWeapon(definitionId);
     return catalog ? viewFromCatalog(catalog) : undefined;
+  },
+
+  getEquippedWeaponsForCharacter(run: RunState, characterId: string): WeaponView[] {
+    const fromInventory = this.findEquippedInstancesForCharacter(run, characterId)
+      .map((item) => this.resolveWeaponView(item))
+      .filter((weapon): weapon is WeaponView => Boolean(weapon));
+    if (fromInventory.length > 0) {
+      return fromInventory;
+    }
+    // Legacy / spawn loadout: character.weaponIds with no inventory instances.
+    const catalog = this.getEquippedWeaponForCharacter(run, characterId, "primary");
+    return catalog ? [catalog] : [];
+  },
+
+  preferredCrewEquipSlot(run: RunState, characterId: string): EquipSlot {
+    return this.equippedInstanceFor(run, characterId, "primary") ? "secondary" : "primary";
   },
 
   listCrewWeapons(run: RunState): Array<{ instance: InventoryItem; ownerLabel: string; ownerName: string | null }> {
@@ -694,8 +823,8 @@ export const WeaponService = {
 
   techniquesForCharacter(run: RunState, characterId: string): Ability[] {
     const abilities: Ability[] = [];
-    const weapon = this.getEquippedWeaponForCharacter(run, characterId);
-    const equippedTypes = weapon ? [weapon.weaponType] : [];
+    const weapons = this.getEquippedWeaponsForCharacter(run, characterId);
+    const equippedTypes = equippedWeaponTypes(weapons);
     const pushTech = (tech: ReturnType<typeof getTechnique>) => {
       if (!tech || abilities.some((entry) => entry.id === tech.id)) {
         return;
@@ -706,7 +835,7 @@ export const WeaponService = {
       abilities.push(techniqueToAbility(tech));
     };
 
-    if (weapon) {
+    for (const weapon of weapons) {
       for (const techId of weapon.techniqueIds) {
         pushTech(getTechnique(techId));
       }
@@ -730,6 +859,23 @@ export const WeaponService = {
       }
     }
 
+    for (const dual of DUAL_WIELD_TECHNIQUES) {
+      if (abilities.some((entry) => entry.id === dual.id)) continue;
+      if (!dual.requiredWeaponTypes.every((type) => equippedTypes.includes(type))) continue;
+      abilities.push({
+        id: dual.id,
+        name: dual.name,
+        description: dual.description,
+        power: dual.power,
+        powerLevel: dual.powerLevel,
+        scalingStat: dual.scalingStat,
+        accuracyMod: dual.accuracyMod,
+        mpCost: dual.mpCost,
+        tags: dual.tags,
+        requiredWeaponTypes: [...dual.requiredWeaponTypes],
+      });
+    }
+
     return abilities;
   },
 
@@ -739,8 +885,7 @@ export const WeaponService = {
   },
 
   canUseBasicMeleeForCharacter(run: RunState, characterId: string): boolean {
-    const weapon = this.getEquippedWeaponForCharacter(run, characterId);
-    const types = weapon ? [weapon.weaponType] : [];
+    const types = equippedWeaponTypes(this.getEquippedWeaponsForCharacter(run, characterId));
     return this.canUseBasicMeleeWithTypes(types);
   },
 

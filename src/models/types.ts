@@ -411,7 +411,7 @@ export interface BattleResultReport {
 }
 
 export interface ActivePartyConfig {
-  /** Up to 3 crew character ids in the fighting line (player always fights). */
+  /** Up to 4 crew character ids in the fighting line (player always fights → 5 total). */
   activeFighterIds: string[];
   /** Up to 3 crew ids providing off-field support. */
   supportSlotIds: string[];
@@ -901,6 +901,8 @@ export interface InventoryItem {
   generatedWeapon?: GeneratedWeapon;
   ownerCharacterId?: string | null;
   equipped?: boolean;
+  /** Hand slot when equipped on a crewmate (player uses Equipment instead). */
+  equipSlot?: "primary" | "secondary";
   category?: InventoryCategory;
 }
 
