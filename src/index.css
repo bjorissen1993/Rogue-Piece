@@ -7120,6 +7120,20 @@ button.level-up-stats-row:disabled {
   .level-up-stat-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  /* Technique learn: no side stats — give the offer list the full sheet. */
+  .level-up-shell.is-technique-offer.is-mobile-technique {
+    width: min(100%, 26rem);
+    max-height: min(92dvh, 52rem);
+    overflow: hidden;
+  }
+
+  .level-up-shell.is-technique-offer.is-mobile-technique .level-up-overlay {
+    width: 100%;
+    max-height: inherit;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 @media (max-width: 560px) {

@@ -4,6 +4,7 @@ import { getStyleTechnique } from "../data/fightingStyles";
 import { resolvePowerLevel, techniqueToAbility } from "../game/techniqueAbility";
 import { techniqueHitChancePercent } from "../game/techniquePower";
 import { resolveSkillBadges } from "../game/skillBadges";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import type { PendingTechniqueChoice, PlayerStats, RunState, Technique } from "../models/types";
 import {
   estimateTechniqueDamageRange,
@@ -58,6 +59,7 @@ export function TechniqueOpportunityOverlay({
   pending,
   onSelect,
 }: TechniqueOpportunityOverlayProps) {
+  const isMobile = useIsMobile();
   const [selected, setSelected] = useState<string | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
   const name = ProgressionService.getDisplayName(run, pending.characterId);
@@ -65,7 +67,7 @@ export function TechniqueOpportunityOverlay({
   const characterLevel = ProgressionService.getProgression(run, pending.characterId).level;
 
   return (
-    <div className="level-up-shell">
+    <div className={`level-up-shell is-technique-offer${isMobile ? " is-mobile-technique" : ""}`}>
       <section className="level-up-overlay panel">
         <header className="level-up-header">
           <div className="level-up-header-top">
@@ -173,33 +175,35 @@ export function TechniqueOpportunityOverlay({
         </button>
       </section>
 
-      <aside className="level-up-stats-panel panel" aria-label={`${name} current stats`}>
-        <p className="level-up-stats-kicker">Current stats</p>
-        <h3 className="level-up-stats-name font-display">{name}</h3>
-        <p className="level-up-stats-level text-parchment-dim">LV {characterLevel}</p>
-        <ul className="level-up-stats-list">
-          {(Object.keys(STAT_LABELS) as Array<keyof typeof STAT_LABELS>).map((stat) => {
-            const value = stats[stat];
-            const isRelevant = pending.techniqueIds.some(
-              (id) => resolveTechnique(id)?.scalingStat === stat,
-            );
-            const isSelectedScale =
-              selected != null && resolveTechnique(selected)?.scalingStat === stat;
-            return (
-              <li
-                className={`level-up-stats-row${isSelectedScale ? " is-selected" : ""}${isRelevant ? " is-relevant" : ""}`}
-                key={stat}
-              >
-                <span className="level-up-stats-icon">
-                  <StatIcon showTooltip={false} size={40} stat={stat} />
-                </span>
-                <span className="level-up-stats-label">{STAT_LABELS[stat]}</span>
-                <span className="level-up-stats-value">{value}</span>
-              </li>
-            );
-          })}
-        </ul>
-      </aside>
+      {isMobile ? null : (
+        <aside className="level-up-stats-panel panel" aria-label={`${name} current stats`}>
+          <p className="level-up-stats-kicker">Current stats</p>
+          <h3 className="level-up-stats-name font-display">{name}</h3>
+          <p className="level-up-stats-level text-parchment-dim">LV {characterLevel}</p>
+          <ul className="level-up-stats-list">
+            {(Object.keys(STAT_LABELS) as Array<keyof typeof STAT_LABELS>).map((stat) => {
+              const value = stats[stat];
+              const isRelevant = pending.techniqueIds.some(
+                (id) => resolveTechnique(id)?.scalingStat === stat,
+              );
+              const isSelectedScale =
+                selected != null && resolveTechnique(selected)?.scalingStat === stat;
+              return (
+                <li
+                  className={`level-up-stats-row${isSelectedScale ? " is-selected" : ""}${isRelevant ? " is-relevant" : ""}`}
+                  key={stat}
+                >
+                  <span className="level-up-stats-icon">
+                    <StatIcon showTooltip={false} size={40} stat={stat} />
+                  </span>
+                  <span className="level-up-stats-label">{STAT_LABELS[stat]}</span>
+                  <span className="level-up-stats-value">{value}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </aside>
+      )}
 
       <SkillBadgeLegend onClose={() => setLegendOpen(false)} open={legendOpen} />
     </div>
