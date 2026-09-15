@@ -1,26 +1,182 @@
 import type { Island, IslandArchetype, RegionId, RunState } from "../models/types";
 import { createId } from "../utils/ids";
+import { getLocation } from "../data/locations";
 import type { RandomService } from "./RandomService";
 
+/** Word banks for procedural East Blue–flavoured island names. */
 const PREFIXES: Record<IslandArchetype, string[]> = {
-  TROPICAL: ["Palm", "Coral", "Sun", "Lagoon", "Trade"],
-  JUNGLE: ["Moss", "Vine", "Canopy", "Green", "Hidden"],
-  DESERT: ["Sand", "Dune", "Dry", "Mirage", "Scorch"],
-  PIRATE_HAVEN: ["Rum", "Black", "Cutlass", "Smuggler", "Free"],
-  MARINE_FORTRESS: ["Garrison", "Iron", "Watch", "Signal", "Harbor"],
-  FISHING: ["Net", "Tide", "Catch", "Salt", "Hook"],
-  TRADING: ["Market", "Coin", "Merchant", "Dock", "Exchange"],
+  TROPICAL: [
+    "Palm",
+    "Coral",
+    "Sun",
+    "Lagoon",
+    "Trade",
+    "Coco",
+    "Pearl",
+    "Amber",
+    "Saffron",
+    "Mango",
+    "Azure",
+    "Shell",
+    "Breeze",
+    "Lantern",
+    "Honey",
+  ],
+  JUNGLE: [
+    "Moss",
+    "Vine",
+    "Canopy",
+    "Green",
+    "Hidden",
+    "Fern",
+    "Orchid",
+    "Mist",
+    "Thorn",
+    "Cedar",
+    "Wild",
+    "Rain",
+    "Emerald",
+    "Root",
+    "Shade",
+  ],
+  DESERT: [
+    "Sand",
+    "Dune",
+    "Dry",
+    "Mirage",
+    "Scorch",
+    "Copper",
+    "Dust",
+    "Sunbake",
+    "Ochre",
+    "Saltflat",
+    "Bone",
+    "Glass",
+    "Cinder",
+    "Hollow",
+    "Bleach",
+  ],
+  PIRATE_HAVEN: [
+    "Rum",
+    "Black",
+    "Cutlass",
+    "Smuggler",
+    "Free",
+    "Rogue",
+    "Skull",
+    "Grog",
+    "Jolly",
+    "Noose",
+    "Corsair",
+    "Mutiny",
+    "Redflag",
+    "Night",
+    "Broken",
+  ],
+  MARINE_FORTRESS: [
+    "Garrison",
+    "Iron",
+    "Watch",
+    "Signal",
+    "Harbor",
+    "Justice",
+    "Anchor",
+    "Banner",
+    "White",
+    "Order",
+    "Fort",
+    "Beacon",
+    "Duty",
+    "Canon",
+    "Law",
+  ],
+  FISHING: [
+    "Net",
+    "Tide",
+    "Catch",
+    "Salt",
+    "Hook",
+    "Kelp",
+    "Herring",
+    "Foam",
+    "Pier",
+    "Current",
+    "Cod",
+    "Spray",
+    "Buoy",
+    "Drift",
+    "Barnacle",
+  ],
+  TRADING: [
+    "Market",
+    "Coin",
+    "Merchant",
+    "Dock",
+    "Exchange",
+    "Silk",
+    "Ledger",
+    "Spice",
+    "Caravan",
+    "Scale",
+    "Bargain",
+    "Quill",
+    "Cargo",
+    "Fairwind",
+    "Guild",
+  ],
 };
 
 const SUFFIXES: Record<IslandArchetype, string[]> = {
-  TROPICAL: ["Cove", "Atoll", "Bay", "Isle", "Reef"],
-  JUNGLE: ["Hollow", "Reach", "Mire", "Canopy", "Deep"],
-  DESERT: ["Barrens", "Flats", "Spire", "Waste", "Ring"],
-  PIRATE_HAVEN: ["Port", "Den", "Haven", "Hideout", "Anchor"],
-  MARINE_FORTRESS: ["Base", "Keep", "Outpost", "Battery", "Station"],
-  FISHING: ["Shoals", "Harbor", "Wharf", "Creek", "Sound"],
-  TRADING: ["Exchange", "Crossing", "Quay", "Mart", "Terminus"],
+  TROPICAL: ["Cove", "Atoll", "Bay", "Isle", "Reef", "Keys", "Shores", "Haven", "Point", "Strand"],
+  JUNGLE: ["Hollow", "Reach", "Mire", "Canopy", "Deep", "Grove", "Wilds", "Thicket", "Falls", "Glade"],
+  DESERT: ["Barrens", "Flats", "Spire", "Waste", "Ring", "Dunes", "Expanse", "Mesa", "Wastes", "Crown"],
+  PIRATE_HAVEN: ["Port", "Den", "Haven", "Hideout", "Anchor", "Roost", "Wharf", "Berth", "Hole", "Rest"],
+  MARINE_FORTRESS: ["Base", "Keep", "Outpost", "Battery", "Station", "Yard", "Watch", "Quay", "Dock", "Post"],
+  FISHING: ["Shoals", "Harbor", "Wharf", "Creek", "Sound", "Banks", "Landing", "Jetty", "Inlet", "Pool"],
+  TRADING: ["Exchange", "Crossing", "Quay", "Mart", "Terminus", "Bazaar", "Yard", "Pier", "Gate", "Plaza"],
 };
+
+/**
+ * Full handcrafted island names (used occasionally so places feel less formulaic).
+ * Keep East Blue–adjacent: coastal, quirky, nautical — not major canon locations.
+ */
+export const CURATED_ISLAND_NAMES: readonly string[] = [
+  "Saffron Quay",
+  "Twin Lantern Isle",
+  "Broken Compass Bay",
+  "Kelpwhisper Atoll",
+  "Red Hook Landing",
+  "Mirage Salt Flats",
+  "Cinder Reef",
+  "Gullcry Point",
+  "Orchid Mist Reach",
+  "Noose & Net Port",
+  "White Banner Watch",
+  "Honeycomb Cove",
+  "Driftwood Sound",
+  "Copper Mirage Isle",
+  "Stormglass Keys",
+  "Barnacle Bend",
+  "Silk Ledger Crossing",
+  "Thorncanopy Deep",
+  "Rumrunner's Roost",
+  "Quiet Buoy Harbor",
+  "Ashen Dune Spire",
+  "Pearl Basket Bay",
+  "Iron Signal Keep",
+  "Foghook Creek",
+  "Jolly Anchor Den",
+  "Saffron Bazaar Quay",
+  "Mossfall Hollow",
+  "Cutlass Rest",
+  "Tidepurse Shoals",
+  "Lawbinder Outpost",
+  "Mango Wind Strand",
+  "Boneglass Barrens",
+  "Free Flag Hideout",
+  "Cedar Rain Grove",
+  "Fairwind Cargo Yard",
+];
 
 const ARCHETYPE_BY_BIOME: Record<string, IslandArchetype> = {
   tropical: "TROPICAL",
@@ -55,7 +211,16 @@ export function generateIslandName(options: {
     "TROPICAL";
   const prefixes = PREFIXES[archetype];
   const suffixes = SUFFIXES[archetype];
-  for (let attempt = 0; attempt < 24; attempt += 1) {
+  const curatedForPick = CURATED_ISLAND_NAMES.filter((name) => !options.usedNames.includes(name));
+
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    // ~25% chance to use a curated full name when any remain.
+    if (curatedForPick.length > 0 && options.rng.next() < 0.25) {
+      const name = options.rng.pick([...curatedForPick]);
+      if (!options.usedNames.includes(name)) {
+        return name;
+      }
+    }
     const name = `${options.rng.pick(prefixes)} ${options.rng.pick(suffixes)}`;
     if (!options.usedNames.includes(name)) {
       return name;
@@ -71,6 +236,31 @@ export const IslandService = {
 
   defaultUsedNames(): string[] {
     return [];
+  },
+
+  /** Resolve a stored island/location id to a player-facing place name. */
+  displayName(run: RunState, islandOrLocationId?: string | null): string {
+    if (!islandOrLocationId) {
+      const current = this.getCurrentIsland(run);
+      if (current?.name) {
+        return current.name;
+      }
+      const loc = getLocation(run.currentLocationId);
+      return loc?.name ?? "unknown shores";
+    }
+    const byIsland = run.islands.find((island) => island.id === islandOrLocationId);
+    if (byIsland?.name) {
+      return byIsland.name;
+    }
+    const loc = getLocation(islandOrLocationId);
+    if (loc?.name) {
+      return loc.name;
+    }
+    // Never surface raw procedural ids like island_d2699ca1.
+    if (/^island[_-]/i.test(islandOrLocationId)) {
+      return this.getCurrentIsland(run)?.name ?? "a nearby island clinic";
+    }
+    return islandOrLocationId;
   },
 
   createIsland(

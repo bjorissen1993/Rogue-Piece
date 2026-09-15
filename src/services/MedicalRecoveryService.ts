@@ -12,6 +12,7 @@ import type {
 import { TIME_OF_DAY_ORDER } from "../game/constants";
 import { CharacterScheduleService } from "./CharacterScheduleService";
 import { CharacterService } from "./CharacterService";
+import { IslandService } from "./IslandService";
 import { PartyCombatService } from "./PartyCombatService";
 import { ProgressionService } from "./ProgressionService";
 
@@ -22,7 +23,15 @@ function daysToSlots(days: number): number {
 }
 
 function locationLabel(run: RunState): string {
-  return run.currentIslandId ?? run.currentLocationId ?? "unknown shores";
+  return IslandService.displayName(run, run.currentIslandId ?? run.currentLocationId);
+}
+
+/** Prefer a human place name; rewrite leftover raw island_* ids from older saves. */
+function placeLabel(run: RunState, storedName?: string | null, fallbackId?: string | null): string {
+  if (storedName && !/^island[_-]/i.test(storedName)) {
+    return storedName;
+  }
+  return IslandService.displayName(run, fallbackId ?? storedName);
 }
 
 export const MedicalRecoveryService = {
@@ -271,7 +280,7 @@ export const MedicalRecoveryService = {
           characterId,
           "WAS_HOSPITALIZED",
           4,
-          meta.hospitalizedLocationName ?? locationLabel(run),
+          placeLabel(run, meta.hospitalizedLocationName, run.currentIslandId),
         );
       }
       if (input.combatKind === "BOSS") {
@@ -290,7 +299,7 @@ export const MedicalRecoveryService = {
 
     if (hospitalized) {
       lines.push(
-        `${input.name} needs a bed — hospitalized at ${meta.hospitalizedLocationName} (~${days} days).`,
+        `${input.name} needs a bed — hospitalized at ${placeLabel(run, meta.hospitalizedLocationName, run.currentIslandId)} (~${days} days).`,
       );
     } else if (treatedBy) {
       lines.push(
@@ -330,7 +339,7 @@ export const MedicalRecoveryService = {
     const daysLeft = Math.max(1, assignment.endDay - run.day + (assignment.endSlot > 0 ? 1 : 0));
     const days = meta?.daysRemaining ?? daysLeft;
     if (assignment.type === "HOSPITALIZED") {
-      return `HOSPITALIZED · ${meta?.hospitalizedLocationName ?? assignment.locationId ?? "clinic"} · ~${days}d`;
+      return `HOSPITALIZED · ${placeLabel(run, meta?.hospitalizedLocationName, assignment.islandId ?? assignment.locationId)} · ~${days}d`;
     }
     const doc = meta?.treatedByCharacterId
       ? ProgressionService.getDisplayName(run, meta.treatedByCharacterId)
