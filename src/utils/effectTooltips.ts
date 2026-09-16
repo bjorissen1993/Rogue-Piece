@@ -260,6 +260,18 @@ export function itemGrantTip(itemId: string, player?: Player | null): string {
       }
     } else if (effect.type === "GUARANTEE_ESCAPE") {
       effectParts.push("Guarantees escape from combat when used.");
+    } else if (effect.type === "REVIVE") {
+      const bits: string[] = [];
+      if (effect.hpAmount) {
+        bits.push(`+${effect.hpAmount}`);
+      }
+      if (effect.percentMaxHp) {
+        bits.push(`+${effect.percentMaxHp}% max HP`);
+      }
+      const floor = bits.length ? bits.join(" ") : "a spark of life";
+      effectParts.push(
+        `Revives a knocked-out ally with ${floor}. Useless on anyone still standing.`,
+      );
     }
   }
 

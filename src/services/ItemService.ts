@@ -1,4 +1,4 @@
-import { computeHealAmount, computeMpRestoreAmount, getItemDefinition } from "../data/items";
+import { computeHealAmount, computeMpRestoreAmount, computeReviveHp, getItemDefinition } from "../data/items";
 import type {
   InventoryCategory,
   InventoryItem,
@@ -21,6 +21,7 @@ export type ItemUseResult = {
   hpHealed: number;
   mpRestored: number;
   guaranteeEscape: boolean;
+  revived: boolean;
   itemName: string;
 };
 
@@ -375,6 +376,29 @@ export const ItemService = {
     return { before: current, after, total, label };
   },
 
+  previewRevive(
+    player: Player,
+    itemId: string,
+  ): { before: number; after: number; total: number; label: string } | null {
+    const def = getItemDefinition(itemId);
+    const revive = def?.effects.find((effect) => effect.type === "REVIVE");
+    if (!revive || revive.type !== "REVIVE") {
+      return null;
+    }
+    const total = computeReviveHp(revive, player.maxHp);
+    const parts: string[] = [];
+    if (revive.hpAmount) {
+      parts.push(`+${revive.hpAmount}`);
+    }
+    if (revive.percentMaxHp) {
+      parts.push(`+${revive.percentMaxHp}% max HP`);
+    }
+    const label = parts.length
+      ? `Revives with ${parts.join(" ")} (${total} HP)`
+      : `Revives with ${total} HP`;
+    return { before: player.hp, after: total, total, label };
+  },
+
   /** Center-stage combat hint for an inventory item. */
   combatHint(
     itemId: string,
@@ -444,6 +468,7 @@ export const ItemService = {
       hpHealed: 0,
       mpRestored: 0,
       guaranteeEscape: false,
+      revived: false,
       itemName: def?.name ?? "item",
     });
     if (!def) {
@@ -463,11 +488,27 @@ export const ItemService = {
       return fail("This cannot be used here.");
     }
 
+    const hasRevive = def.effects.some((effect) => effect.type === "REVIVE");
+    if (hasRevive && player.hp > 0) {
+      return fail(`${def.name} is only for the fallen — you are still standing.`);
+    }
+    if (!hasRevive && player.hp <= 0) {
+      return fail(`${def.name} cannot wake the fallen — you need a revive.`);
+    }
+
     MpService.ensurePlayer(player);
     let hpHealed = 0;
     let mpRestored = 0;
     let guaranteeEscape = false;
+    let revived = false;
     for (const effect of def.effects) {
+      if (effect.type === "REVIVE") {
+        const targetHp = computeReviveHp(effect, player.maxHp);
+        const before = player.hp;
+        player.hp = clamp(targetHp, 1, player.maxHp);
+        hpHealed += player.hp - before;
+        revived = true;
+      }
       if (effect.type === "HEAL") {
         const before = player.hp;
         const total = computeHealAmount(effect.amount, effect.percentMaxHp, player.maxHp);
@@ -496,7 +537,9 @@ export const ItemService = {
     }
 
     const parts: string[] = [];
-    if (hpHealed > 0) {
+    if (revived) {
+      parts.push(`${def.name} pulls you back from the brink (+${hpHealed} HP).`);
+    } else if (hpHealed > 0) {
       parts.push(`${def.name} restored ${hpHealed} HP.`);
     } else if (def.effects.some((effect) => effect.type === "HEAL") && hpHealed === 0) {
       parts.push(`${def.name} did nothing for HP — you are already at full health.`);
@@ -521,6 +564,7 @@ export const ItemService = {
       hpHealed,
       mpRestored,
       guaranteeEscape,
+      revived,
       itemName: def.name,
     };
   },
@@ -552,6 +596,7 @@ export const ItemService = {
       hpHealed: 0,
       mpRestored: 0,
       guaranteeEscape: false,
+      revived: false,
       itemName: def?.name ?? "item",
     });
     if (!def) {
@@ -583,13 +628,30 @@ export const ItemService = {
       ? run.combat?.party?.allyCombatants.find((ally) => ally.id === targetCharacterId)
       : undefined;
 
+    const hasRevive = def.effects.some((effect) => effect.type === "REVIVE");
     let hpHealed = 0;
     let mpRestored = 0;
+    let revived = false;
     let targetName = CharacterService.getCharacter(run, targetCharacterId)?.name ?? "crewmate";
 
     if (inCombat && allyCombatant) {
       targetName = allyCombatant.name;
+      const knockedOut =
+        allyCombatant.hp <= 0 || allyCombatant.condition === "KNOCKED_OUT";
+      if (hasRevive && !knockedOut) {
+        return fail(`${def.name} is only for the fallen — ${targetName} is still standing.`);
+      }
+      if (!hasRevive && knockedOut) {
+        return fail(`${def.name} cannot wake the fallen — ${targetName} needs a revive.`);
+      }
+
       for (const effect of def.effects) {
+        if (effect.type === "REVIVE") {
+          const targetHp = computeReviveHp(effect, allyCombatant.maxHp);
+          const before = allyCombatant.hp;
+          hpHealed += Math.max(0, targetHp - before);
+          revived = true;
+        }
         if (effect.type === "HEAL") {
           const total = computeHealAmount(effect.amount, effect.percentMaxHp, allyCombatant.maxHp);
           const before = allyCombatant.hp;
@@ -605,31 +667,63 @@ export const ItemService = {
         }
       }
     } else {
-      let plannedHp = 0;
-      let plannedMp = 0;
-      for (const effect of def.effects) {
-        if (effect.type === "HEAL") {
-          const vitals = CrewService.ensureMemberVitals(run, targetCharacterId);
-          if (!vitals) {
-            return fail("That crewmate is not sailing with you.");
-          }
-          plannedHp += computeHealAmount(effect.amount, effect.percentMaxHp, vitals.maxHp);
-        }
-        if (effect.type === "RESTORE_MP") {
-          const vitals = CrewService.ensureMemberVitals(run, targetCharacterId);
-          if (!vitals) {
-            return fail("That crewmate is not sailing with you.");
-          }
-          plannedMp += computeMpRestoreAmount(effect.amount, effect.percentMaxMp, vitals.maxMp);
-        }
-      }
-      const applied = CrewService.applyMemberHeal(run, targetCharacterId, plannedHp, plannedMp);
-      if (!applied) {
+      const vitals = CrewService.ensureMemberVitals(run, targetCharacterId);
+      if (!vitals) {
         return fail("That crewmate is not sailing with you.");
       }
-      hpHealed = applied.hpHealed;
-      mpRestored = applied.mpRestored;
-      targetName = applied.name;
+      targetName = vitals.name;
+      const knockedOut = vitals.hp <= 0;
+      if (hasRevive && !knockedOut) {
+        return fail(`${def.name} is only for the fallen — ${targetName} is still standing.`);
+      }
+      if (!hasRevive && knockedOut) {
+        return fail(`${def.name} cannot wake the fallen — ${targetName} needs a revive.`);
+      }
+
+      if (hasRevive) {
+        const reviveEffect = def.effects.find((effect) => effect.type === "REVIVE");
+        if (reviveEffect && reviveEffect.type === "REVIVE") {
+          const targetHp = computeReviveHp(reviveEffect, vitals.maxHp);
+          const member = run.crew.find((entry) => entry.characterId === targetCharacterId);
+          if (!member) {
+            return fail("That crewmate is not sailing with you.");
+          }
+          const before = member.hp ?? 0;
+          member.hp = clamp(targetHp, 1, vitals.maxHp);
+          hpHealed = (member.hp ?? targetHp) - before;
+          revived = true;
+        }
+        let plannedMp = 0;
+        for (const effect of def.effects) {
+          if (effect.type === "RESTORE_MP") {
+            plannedMp += computeMpRestoreAmount(effect.amount, effect.percentMaxMp, vitals.maxMp);
+          }
+        }
+        if (plannedMp > 0) {
+          const applied = CrewService.applyMemberHeal(run, targetCharacterId, 0, plannedMp);
+          if (applied) {
+            mpRestored = applied.mpRestored;
+          }
+        }
+      } else {
+        let plannedHp = 0;
+        let plannedMp = 0;
+        for (const effect of def.effects) {
+          if (effect.type === "HEAL") {
+            plannedHp += computeHealAmount(effect.amount, effect.percentMaxHp, vitals.maxHp);
+          }
+          if (effect.type === "RESTORE_MP") {
+            plannedMp += computeMpRestoreAmount(effect.amount, effect.percentMaxMp, vitals.maxMp);
+          }
+        }
+        const applied = CrewService.applyMemberHeal(run, targetCharacterId, plannedHp, plannedMp);
+        if (!applied) {
+          return fail("That crewmate is not sailing with you.");
+        }
+        hpHealed = applied.hpHealed;
+        mpRestored = applied.mpRestored;
+        targetName = applied.name;
+      }
     }
 
     let consumed = false;
@@ -642,7 +736,9 @@ export const ItemService = {
     }
 
     const parts: string[] = [];
-    if (hpHealed > 0) {
+    if (revived) {
+      parts.push(`${def.name} pulls ${targetName} back from the brink (+${hpHealed} HP).`);
+    } else if (hpHealed > 0) {
       parts.push(`${def.name} restored ${hpHealed} HP to ${targetName}.`);
     } else if (def.effects.some((effect) => effect.type === "HEAL")) {
       parts.push(`${def.name} did nothing for HP — ${targetName} is already at full health.`);
@@ -664,6 +760,7 @@ export const ItemService = {
       hpHealed,
       mpRestored,
       guaranteeEscape: false,
+      revived,
       itemName: def.name,
     };
   },

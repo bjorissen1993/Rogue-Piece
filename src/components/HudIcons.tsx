@@ -278,8 +278,20 @@ export function itemGlyphName(item: InventoryItem): HudIconName {
   if (item.type === "DEVIL_FRUIT" || hay.includes("fruit")) return "fruit";
   if (item.type === "WEAPON" || item.weaponDefinitionId) return "blade";
   if (hay.includes("bomb") || hay.includes("smoke")) return "bomb";
-  if (hay.includes("medicine") || hay.includes("potion") || hay.includes("tincture")) return "potion";
-  if (hay.includes("meat") || hay.includes("ration") || hay.includes("food")) return "meat";
+  if (hay.includes("phoenix") || hay.includes("tear") || hay.includes("revive")) return "gem";
+  if (hay.includes("medicine") || hay.includes("potion") || hay.includes("tincture") || hay.includes("salve"))
+    return "potion";
+  if (
+    hay.includes("meat") ||
+    hay.includes("ration") ||
+    hay.includes("food") ||
+    hay.includes("biscuit") ||
+    hay.includes("rice") ||
+    hay.includes("fish") ||
+    hay.includes("meal") ||
+    hay.includes("feast")
+  )
+    return "meat";
   if (hay.includes("chart") || hay.includes("folio") || hay.includes("book") || hay.includes("map")) return "book";
   if (hay.includes("cutlass") || hay.includes("sword") || hay.includes("blade")) return "blade";
   if (hay.includes("plate") || hay.includes("armor") || hay.includes("breast")) return "armor";

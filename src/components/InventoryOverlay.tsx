@@ -311,13 +311,23 @@ export function InventoryOverlay({
                                       </section>
                                     ) : null}
                                     {itemDef?.effects.some(
-                                      (effect) => effect.type === "HEAL" || effect.type === "RESTORE_MP",
+                                      (effect) =>
+                                        effect.type === "HEAL" ||
+                                        effect.type === "RESTORE_MP" ||
+                                        effect.type === "REVIVE",
                                     ) ? (
                                       <section className="detail-section">
                                         <p className="detail-label">Effect</p>
                                         <p className="detail-value text-gold">
                                           {(() => {
                                             const lines: string[] = [];
+                                            const previewRevive = ItemService.previewRevive(
+                                              run.player,
+                                              item.itemId || item.id,
+                                            );
+                                            if (previewRevive) {
+                                              lines.push(previewRevive.label);
+                                            }
                                             const previewHeal = ItemService.previewHeal(
                                               run.player,
                                               item.itemId || item.id,
@@ -504,12 +514,22 @@ export function InventoryOverlay({
                         )}
                       </>
                     ) : null}
-                    {def?.effects.some((effect) => effect.type === "HEAL" || effect.type === "RESTORE_MP") ? (
+                    {def?.effects.some(
+                      (effect) =>
+                        effect.type === "HEAL" || effect.type === "RESTORE_MP" || effect.type === "REVIVE",
+                    ) ? (
                       <section className="detail-section">
                         <p className="detail-label">Effect</p>
                         <p className="detail-value text-gold">
                           {(() => {
                             const lines: string[] = [];
+                            const previewRevive = ItemService.previewRevive(
+                              run.player,
+                              selected.itemId || selected.id,
+                            );
+                            if (previewRevive) {
+                              lines.push(previewRevive.label);
+                            }
                             const previewHeal = ItemService.previewHeal(run.player, selected.itemId || selected.id);
                             if (previewHeal) {
                               lines.push(`${previewHeal.label}. Current ${previewHeal.before} → ${previewHeal.after}.`);

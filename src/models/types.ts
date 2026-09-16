@@ -812,6 +812,15 @@ export type WeaponType = "SWORD" | "SPEAR" | "CLUB" | "GUN" | "KICKS" | "FISTS";
 
 export type WeaponRarity = "COMMON" | "UNCOMMON" | "RARE" | "LEGENDARY";
 
+/** Consumable / loot rarity ladder (UI colors later). */
+export type ItemRarity =
+  | "POOR" // Grey — junk / inferior
+  | "COMMON" // White — normal
+  | "UNCOMMON" // Green
+  | "RARE" // Blue — magic
+  | "EPIC" // Purple — very rare
+  | "LEGENDARY"; // Orange / gold — unique / mythic
+
 export type WeaponCategory = "BLADE" | "POLEARM" | "BLUNT" | "RANGED" | "UNUSUAL";
 
 export type WeaponMaterial =
@@ -2321,6 +2330,8 @@ export type ItemEffect =
   | { type: "HEAL"; amount: number; percentMaxHp?: number }
   | { type: "RESTORE_MP"; amount: number; percentMaxMp?: number }
   | { type: "GUARANTEE_ESCAPE" }
+  /** Bring a knocked-out ally (or 0 HP captain) back into the fight. */
+  | { type: "REVIVE"; hpAmount?: number; percentMaxHp?: number }
   | { type: "NONE" };
 
 export interface ItemDefinition {
@@ -2334,6 +2345,8 @@ export interface ItemDefinition {
   effects: ItemEffect[];
   lore?: LoreEntryDefinition[];
   category?: InventoryCategory;
+  /** Optional rarity for consumables / loot (weapons use WeaponRarity). */
+  rarity?: ItemRarity;
   /** Weapon types this item can be equipped as (crew assignment checks). */
   weaponType?: WeaponType;
 }
