@@ -788,7 +788,18 @@ export const CombatEngine = {
         : null) ??
       PartyCombatService.getActiveCombatant(next) ??
       next.playerCombatant;
-    if (result.hpHealed > 0) {
+    if (result.revived) {
+      const reviveHp = clamp(
+        result.hpHealed > 0 ? result.hpHealed : 1,
+        1,
+        target.maxHp,
+      );
+      target.hp = reviveHp;
+      target.condition = "ACTIVE";
+      target.overkillDamage = 0;
+      target.defending = false;
+      recordHit(next, target, reviveHp, "HEAL");
+    } else if (result.hpHealed > 0) {
       target.hp = clamp(target.hp + result.hpHealed, 0, target.maxHp);
       recordHit(next, target, result.hpHealed, "HEAL");
     }
@@ -825,6 +836,7 @@ export const CombatEngine = {
         hpHealed: healAmount,
         mpRestored: 0,
         guaranteeEscape: false,
+        revived: false,
         itemName,
       },
       rng,

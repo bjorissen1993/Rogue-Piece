@@ -1330,21 +1330,21 @@ export const EXTENDED_ENCOUNTERS: Encounter[] = [
       },
       {
         id: "meat",
-        text: "Buy dried meat (฿40)",
-        conditions: [{ type: "MIN_BERRIES", value: 40 }],
+        text: "Buy dried meat (฿45)",
+        conditions: [{ type: "MIN_BERRIES", value: 45 }],
         outcome: {
           text: "Tough strips for the road.",
-          berriesChange: -40,
+          berriesChange: -45,
           grantItemIds: ["dried_meat"],
         },
       },
       {
         id: "fish",
-        text: "Buy cooked fish (฿55)",
-        conditions: [{ type: "MIN_BERRIES", value: 55 }],
+        text: "Buy cooked fish (฿70)",
+        conditions: [{ type: "MIN_BERRIES", value: 70 }],
         outcome: {
           text: "Still hot. Still yours.",
-          berriesChange: -55,
+          berriesChange: -70,
           grantItemIds: ["cooked_fish"],
         },
       },
@@ -1403,9 +1403,9 @@ export const EXTENDED_ENCOUNTERS: Encounter[] = [
       },
       {
         id: "tonic",
-        text: "Buy energy tonic (฿85)",
-        conditions: [{ type: "MIN_BERRIES", value: 85 }],
-        outcome: { text: "Bitter herbs, sharp focus.", berriesChange: -85, grantItemIds: ["energy_tonic"] },
+        text: "Buy energy tonic (฿110)",
+        conditions: [{ type: "MIN_BERRIES", value: 110 }],
+        outcome: { text: "Bitter herbs, sharp focus.", berriesChange: -110, grantItemIds: ["energy_tonic"] },
       },
       { id: "leave", text: "Leave", outcome: { text: "The bell over the door jingles behind you." } },
     ],
@@ -1439,6 +1439,23 @@ export const EXTENDED_ENCOUNTERS: Encounter[] = [
         outcome: { text: "A proper kit for serious wounds.", berriesChange: -180, grantItemIds: ["medical_kit"] },
       },
       {
+        id: "strong",
+        text: "Buy strong medicine (฿280)",
+        conditions: [{ type: "MIN_BERRIES", value: 280 }],
+        outcome: { text: "Clinic-grade. Burns going down.", berriesChange: -280, grantItemIds: ["strong_medicine"] },
+      },
+      {
+        id: "phoenix",
+        text: "Buy Phoenix Tear (฿3500)",
+        conditions: [{ type: "MIN_BERRIES", value: 3500 }],
+        flavour: "Legendary revive — only for the fallen.",
+        outcome: {
+          text: "The crystal is warm in your palm. One life, sealed.",
+          berriesChange: -3500,
+          grantItemIds: ["phoenix_tear"],
+        },
+      },
+      {
         id: "treat",
         text: "Pay for treatment (฿80)",
         conditions: [{ type: "MIN_BERRIES", value: 80 }],
@@ -1464,11 +1481,11 @@ export const EXTENDED_ENCOUNTERS: Encounter[] = [
     choices: [
       {
         id: "meal",
-        text: "Buy a hearty meal (฿90)",
-        conditions: [{ type: "MIN_BERRIES", value: 90 }],
+        text: "Buy a hearty meal (฿140)",
+        conditions: [{ type: "MIN_BERRIES", value: 140 }],
         outcome: {
           text: "Stew and bread. You pack the leftovers.",
-          berriesChange: -90,
+          berriesChange: -140,
           grantItemIds: ["hearty_meal"],
         },
       },
