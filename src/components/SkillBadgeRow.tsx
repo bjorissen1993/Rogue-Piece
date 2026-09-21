@@ -24,7 +24,7 @@ export function SkillBadgeIcon({ badge, size = 28 }: SkillBadgeIconProps) {
     >
       <HudArt
         className="skill-badge-art"
-        fallbackSrc={badge.id === "DEVIL_FRUIT" ? "/icons/Devil_Fruit.png" : undefined}
+        fallbackSrc={badge.id === "DEVIL_FRUIT" ? "/icons/Events/Devil_Fruit.png" : undefined}
         size={size}
         src={def.art}
       />

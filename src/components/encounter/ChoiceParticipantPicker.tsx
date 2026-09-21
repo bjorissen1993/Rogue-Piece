@@ -10,8 +10,8 @@ import { HudArt } from "../HudIcons";
 
 export { choiceNeedsParticipants, participantBounds } from "../../game/encounterParticipants";
 
-const LEADER_ART = "/icons/Leader.png";
-const CREWMATE_ART = "/icons/Crewmate.png";
+const LEADER_ART = "/icons/UI/Leader.png";
+const CREWMATE_ART = "/icons/UI/Crewmate.png";
 const STAT_ORDER: StatName[] = [
   "strength",
   "defense",

@@ -1,4 +1,6 @@
 import {
+  BATTLE_ROW_SLOTS,
+  CORE_CREW_CAP,
   MAX_ACTIVE_FIGHTERS,
   MAX_SUPPORT_SLOTS,
   XP_REWARDS,
@@ -47,9 +49,26 @@ export const SUPPORT_ABILITIES: CrewSupportAbility[] = [
   },
 ];
 
+function scheduleIdFor(run: RunState, characterId: string): string {
+  return characterId === run.player.id ? "player" : characterId;
+}
+
+function isBattleAvailable(run: RunState, characterId: string): boolean {
+  return CharacterScheduleService.isAvailable(run, scheduleIdFor(run, characterId));
+}
+
+function emptyFormation(): Array<string | null> {
+  return Array.from({ length: CORE_CREW_CAP }, () => null);
+}
+
+function rosterCharacterIds(run: RunState): string[] {
+  return [run.player.id, ...run.crew.map((member) => member.characterId)];
+}
+
 function defaultPartyConfig(run: RunState): ActivePartyConfig {
   const ready = run.crew.filter((m) => CharacterScheduleService.isAvailable(run, m.characterId));
   return {
+    formationSlots: emptyFormation(),
     activeFighterIds: ready.slice(0, MAX_ACTIVE_FIGHTERS).map((m) => m.characterId),
     supportSlotIds: ready.slice(MAX_ACTIVE_FIGHTERS, MAX_ACTIVE_FIGHTERS + MAX_SUPPORT_SLOTS).map((m) => m.characterId),
   };
@@ -94,35 +113,237 @@ function pickAiAction(mode: CrewAiMode): "ATTACK" | "DEFEND" | "SUPPORT" {
   }
 }
 
+/**
+ * Pack available members first (preserving their relative order), then unavailable /
+ * hospitalized directly after them, then empty slots. Used for initial layout and
+ * roster joins — never while the player is freely rearranging formation.
+ */
+function packAvailableThenUnavailable(run: RunState, slots: Array<string | null>): Array<string | null> {
+  const available: string[] = [];
+  const unavailable: string[] = [];
+  const seen = new Set<string>();
+  const roster = new Set(rosterCharacterIds(run));
+
+  for (const id of slots) {
+    if (!id || seen.has(id) || !roster.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    if (isBattleAvailable(run, id)) {
+      available.push(id);
+    } else {
+      unavailable.push(id);
+    }
+  }
+
+  const next = emptyFormation();
+  [...available, ...unavailable].forEach((id, index) => {
+    next[index] = id;
+  });
+  return next;
+}
+
+/** Insert a roster id right after the last available member (shifts the rest right). */
+function insertAfterLastAvailable(run: RunState, slots: Array<string | null>, id: string): void {
+  let lastAvailable = -1;
+  for (let i = 0; i < slots.length; i += 1) {
+    const slotId = slots[i];
+    if (slotId && isBattleAvailable(run, slotId)) {
+      lastAvailable = i;
+    }
+  }
+  const insertAt = Math.min(Math.max(lastAvailable + 1, 0), slots.length - 1);
+  // Drop the trailing empty so we can shift right without overflowing.
+  let free = -1;
+  for (let i = slots.length - 1; i >= insertAt; i -= 1) {
+    if (slots[i] == null) {
+      free = i;
+      break;
+    }
+  }
+  if (free < 0) {
+    const empty = slots.findIndex((slot) => slot == null);
+    if (empty >= 0) {
+      slots[empty] = id;
+    }
+    return;
+  }
+  for (let i = free; i > insertAt; i -= 1) {
+    slots[i] = slots[i - 1] ?? null;
+  }
+  slots[insertAt] = id;
+}
+
+/** Move one member to sit immediately after the last available crewmate. */
+function reparkMemberAfterAvailable(run: RunState, slots: Array<string | null>, characterId: string): void {
+  const from = slots.indexOf(characterId);
+  if (from >= 0) {
+    slots[from] = null;
+  }
+  insertAfterLastAvailable(run, slots, characterId);
+}
+
+function buildInitialFormation(run: RunState, config: ActivePartyConfig): Array<string | null> {
+  const slots = emptyFormation();
+  const used = new Set<string>();
+  let cursor = 0;
+  const place = (id: string) => {
+    if (used.has(id) || cursor >= CORE_CREW_CAP) {
+      return;
+    }
+    slots[cursor] = id;
+    used.add(id);
+    cursor += 1;
+  };
+
+  // Prefer previous active line, captain first when migrating old saves.
+  place(run.player.id);
+  for (const id of config.activeFighterIds) {
+    place(id);
+  }
+  for (const member of run.crew) {
+    place(member.characterId);
+  }
+  return packAvailableThenUnavailable(run, slots);
+}
+
+function syncDerivedFighters(run: RunState, config: ActivePartyConfig): void {
+  const slots = config.formationSlots ?? emptyFormation();
+  const battleRow = slots.slice(0, BATTLE_ROW_SLOTS).filter((id): id is string => Boolean(id));
+  const availableBattle = battleRow.filter((id) => isBattleAvailable(run, id));
+  config.activeFighterIds = availableBattle
+    .filter((id) => id !== run.player.id)
+    .slice(0, MAX_ACTIVE_FIGHTERS);
+  config.supportSlotIds = (config.supportSlotIds ?? [])
+    .filter(
+      (id) =>
+        id !== run.player.id &&
+        isBattleAvailable(run, id) &&
+        !config.activeFighterIds.includes(id) &&
+        !battleRow.includes(id),
+    )
+    .slice(0, MAX_SUPPORT_SLOTS);
+}
+
 export const CrewCombatService = {
   ensurePartyConfig(run: RunState): ActivePartyConfig {
     if (!run.activeParty) {
       run.activeParty = defaultPartyConfig(run);
     }
-    run.activeParty.activeFighterIds = run.activeParty.activeFighterIds
-      .filter((id) => CharacterScheduleService.isAvailable(run, id))
-      .slice(0, MAX_ACTIVE_FIGHTERS);
-    run.activeParty.supportSlotIds = run.activeParty.supportSlotIds
-      .filter(
-        (id) =>
-          CharacterScheduleService.isAvailable(run, id) &&
-          !run.activeParty!.activeFighterIds.includes(id),
-      )
-      .slice(0, MAX_SUPPORT_SLOTS);
+    const config = run.activeParty;
+    const rosterIds = new Set(rosterCharacterIds(run));
+
+    if (!config.formationSlots || config.formationSlots.length !== CORE_CREW_CAP) {
+      config.formationSlots = buildInitialFormation(run, config);
+    } else {
+      // Drop ids that left the roster. Newcomers insert after the last available member.
+      // Do NOT re-pack on every ensure — that glued unavailable crew to the leader on drag.
+      config.formationSlots = config.formationSlots.map((id) =>
+        id && rosterIds.has(id) ? id : null,
+      );
+      const present = new Set(config.formationSlots.filter(Boolean) as string[]);
+      for (const id of rosterIds) {
+        if (present.has(id)) {
+          continue;
+        }
+        insertAfterLastAvailable(run, config.formationSlots, id);
+      }
+
+      // Repair empty battle row left by the old "unavailable follows leader" bug.
+      const battleEmpty = config.formationSlots.slice(0, BATTLE_ROW_SLOTS).every((id) => !id);
+      const hasMembers = config.formationSlots.some(Boolean);
+      if (battleEmpty && hasMembers) {
+        config.formationSlots = packAvailableThenUnavailable(run, config.formationSlots);
+      }
+    }
+
+    syncDerivedFighters(run, config);
+
     for (const member of run.crew) {
-      member.inActiveParty = run.activeParty.activeFighterIds.includes(member.characterId);
-      member.inSupportSlot = run.activeParty.supportSlotIds.includes(member.characterId);
+      member.inActiveParty = config.activeFighterIds.includes(member.characterId);
+      member.inSupportSlot = config.supportSlotIds.includes(member.characterId);
       if (!member.aiMode) {
         member.aiMode = "BALANCED";
       }
     }
-    return run.activeParty;
+    return config;
+  },
+
+  getFormationSlots(run: RunState): Array<string | null> {
+    return [...(this.ensurePartyConfig(run).formationSlots ?? emptyFormation())];
+  },
+
+  /** True when the captain occupies an active-row slot (may still be unavailable). */
+  captainInActiveRow(run: RunState): boolean {
+    const slots = this.ensurePartyConfig(run).formationSlots ?? emptyFormation();
+    return slots.slice(0, BATTLE_ROW_SLOTS).includes(run.player.id);
+  },
+
+  moveFormationMember(run: RunState, fromIndex: number, toIndex: number): boolean {
+    const config = this.ensurePartyConfig(run);
+    const slots = [...(config.formationSlots ?? emptyFormation())];
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= CORE_CREW_CAP ||
+      toIndex >= CORE_CREW_CAP ||
+      fromIndex === toIndex
+    ) {
+      return false;
+    }
+    const fromId = slots[fromIndex];
+    if (!fromId) {
+      return false;
+    }
+    const toId = slots[toIndex];
+    slots[toIndex] = fromId;
+    slots[fromIndex] = toId ?? null;
+    // Player arrangement wins — do not auto-drag unavailable members along with the leader.
+    config.formationSlots = slots;
+    syncDerivedFighters(run, config);
+    for (const member of run.crew) {
+      member.inActiveParty = config.activeFighterIds.includes(member.characterId);
+      member.inSupportSlot = config.supportSlotIds.includes(member.characterId);
+    }
+    return true;
   },
 
   setActiveFighters(run: RunState, ids: string[]): void {
     const config = this.ensurePartyConfig(run);
-    config.activeFighterIds = ids.slice(0, MAX_ACTIVE_FIGHTERS);
+    const slots = emptyFormation();
+    let cursor = 0;
+    const place = (id: string) => {
+      if (cursor >= CORE_CREW_CAP || slots.includes(id)) {
+        return;
+      }
+      slots[cursor] = id;
+      cursor += 1;
+    };
+    place(run.player.id);
+    for (const id of ids.slice(0, MAX_ACTIVE_FIGHTERS)) {
+      place(id);
+    }
+    for (const member of run.crew) {
+      place(member.characterId);
+    }
+    config.formationSlots = packAvailableThenUnavailable(run, slots);
+    syncDerivedFighters(run, config);
     this.ensurePartyConfig(run);
+  },
+
+  /** After a crewmate becomes hospitalized/unavailable, park them after the last available member. */
+  parkUnavailableMember(run: RunState, characterId: string): void {
+    const config = this.ensurePartyConfig(run);
+    const slots = [...(config.formationSlots ?? emptyFormation())];
+    if (!slots.includes(characterId) && !rosterCharacterIds(run).includes(characterId)) {
+      return;
+    }
+    if (isBattleAvailable(run, characterId)) {
+      return;
+    }
+    reparkMemberAfterAvailable(run, slots, characterId);
+    config.formationSlots = slots;
+    syncDerivedFighters(run, config);
   },
 
   setSupportSlots(run: RunState, ids: string[]): void {
@@ -147,7 +368,9 @@ export const CrewCombatService = {
     const readyCrew = run.crew.filter((member) =>
       CharacterScheduleService.isAvailable(run, member.characterId),
     );
-    const maxPlayerFighters = options?.maxPlayerFighters ?? (options?.maxAllies !== undefined ? options.maxAllies + 1 : 1 + MAX_ACTIVE_FIGHTERS);
+    const maxPlayerFighters =
+      options?.maxPlayerFighters ??
+      (options?.maxAllies !== undefined ? options.maxAllies + 1 : BATTLE_ROW_SLOTS);
     const playerId = run.player.id;
     const forced = options?.forcedParticipantIds ?? [];
     const chosen = options?.participantIds ?? [];
@@ -178,20 +401,21 @@ export const CrewCombatService = {
         }
       }
     } else {
-      const crewLimit = Math.max(0, maxPlayerFighters - 1);
-      config.activeFighterIds = config.activeFighterIds
+      const battleRow = (config.formationSlots ?? emptyFormation())
+        .slice(0, BATTLE_ROW_SLOTS)
+        .filter((id): id is string => Boolean(id));
+      const availableRow = battleRow.filter((id) => isBattleAvailable(run, id));
+      includeCaptain = availableRow.includes(playerId);
+      if (!includeCaptain && availableRow.length === 0 && options?.allowCaptainSitOut !== true) {
+        // Nobody available in the active row — fall back to captain if they can fight.
+        includeCaptain = isBattleAvailable(run, playerId);
+      }
+      const crewLimit = Math.max(0, includeCaptain ? maxPlayerFighters - 1 : maxPlayerFighters);
+      fighterIds = availableRow
+        .filter((id) => id !== playerId)
         .filter((id) => readyCrew.some((member) => member.characterId === id))
         .slice(0, crewLimit);
-      for (const member of readyCrew) {
-        if (config.activeFighterIds.length >= crewLimit) {
-          break;
-        }
-        if (!config.activeFighterIds.includes(member.characterId)) {
-          config.activeFighterIds.push(member.characterId);
-        }
-      }
-      fighterIds = [...config.activeFighterIds];
-      includeCaptain = true;
+      // Do not auto-fill from bench — formation is intentional.
     }
 
     combat.playerCombatant.participating = includeCaptain;
@@ -221,9 +445,13 @@ export const CrewCombatService = {
       }
     }
 
-    this.ensurePartyConfig(run);
+    config.activeFighterIds = fighterIds;
+    for (const member of run.crew) {
+      member.inActiveParty = fighterIds.includes(member.characterId);
+      member.inSupportSlot = config.supportSlotIds.includes(member.characterId);
+    }
     const party: CombatPartyState = {
-      activeFighterIds: [...config.activeFighterIds],
+      activeFighterIds: [...fighterIds],
       supportSlotIds: options?.lockParticipants ? [] : [...config.supportSlotIds],
       allyCombatants: [],
       supportInterventionUsed: false,
@@ -241,7 +469,7 @@ export const CrewCombatService = {
       ],
     };
 
-    for (const characterId of config.activeFighterIds) {
+    for (const characterId of fighterIds) {
       const character = CharacterService.getCharacter(run, characterId);
       const member = run.crew.find((entry) => entry.characterId === characterId);
       if (!character || !member) {

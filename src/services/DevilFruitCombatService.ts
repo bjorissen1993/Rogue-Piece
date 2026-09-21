@@ -147,9 +147,25 @@ export const DevilFruitCombatService = {
 
       if (totalOk && specificOk) {
         player.unlockedFruitTechniques!.push(tech.id);
+        // Keep DEVIL_FRUIT mastery track aligned with use-count progression.
+        if (!player.weaponMastery) {
+          player.weaponMastery = {};
+        }
+        player.weaponMastery.DEVIL_FRUIT = Math.max(
+          player.weaponMastery.DEVIL_FRUIT ?? 0,
+          player.fruitTechniqueUses ?? 0,
+        );
         return `You learned ${tech.name} through the fruit's power.`;
       }
     }
+
+    if (!player.weaponMastery) {
+      player.weaponMastery = {};
+    }
+    player.weaponMastery.DEVIL_FRUIT = Math.max(
+      player.weaponMastery.DEVIL_FRUIT ?? 0,
+      player.fruitTechniqueUses ?? 0,
+    );
 
     return null;
   },

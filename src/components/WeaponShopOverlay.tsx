@@ -4,6 +4,7 @@ import { resolveWeaponGrip } from "../game/weaponClasses";
 import { WeaponService } from "../services/WeaponService";
 import { WeaponShopService } from "../services/WeaponShopService";
 import { WeaponStatsBlock } from "./WeaponStatsBlock";
+import { weaponRarityClass } from "../utils/weaponRarity";
 
 type WeaponShopOverlayProps = {
   run: RunState;
@@ -85,12 +86,14 @@ export function WeaponShopOverlay({
                           onClick={() => setSelectedId(listing.listingId)}
                           type="button"
                         >
-                          <span className="weapon-shop-row-name">
+                          <span className={`weapon-shop-row-name ${weaponRarityClass(listing.weapon.rarity, listing.weapon.material)}`}>
                             {listing.weapon.name}
                             {listing.weapon.isNamed ? <span className="weapon-shop-named">★</span> : null}
                           </span>
                           <span className="weapon-shop-row-type">{listing.weapon.archetypeId.replace(/_/g, " ")}</span>
-                          <span className="weapon-shop-row-rarity">{listing.weapon.rarity}</span>
+                          <span className={`weapon-shop-row-rarity ${weaponRarityClass(listing.weapon.rarity, listing.weapon.material)}`}>
+                            {listing.weapon.rarity}
+                          </span>
                           <span className="weapon-shop-row-price">฿{listing.weapon.price}</span>
                         </button>
                       </li>
@@ -117,7 +120,9 @@ export function WeaponShopOverlay({
                           onClick={() => setTradeInId((current) => (current === instance.id ? null : instance.id))}
                           type="button"
                         >
-                          <span className="weapon-shop-row-name">{view.name}</span>
+                          <span className={`weapon-shop-row-name ${weaponRarityClass(view.rarity, view.material)}`}>
+                            {view.name}
+                          </span>
                           <span className="weapon-shop-row-type">{ownerLabel}</span>
                           <span className="weapon-shop-row-price">Sell ฿{value}</span>
                         </button>

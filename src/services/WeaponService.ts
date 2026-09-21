@@ -16,6 +16,7 @@ import type {
   GeneratedWeapon,
   InventoryItem,
   MasteryRank,
+  MasteryTrackId,
   Player,
   RunState,
   Weapon,
@@ -98,7 +99,7 @@ export const WeaponService = {
     return { primaryWeaponId: null, secondaryWeaponId: null };
   },
 
-  defaultMastery(): Partial<Record<WeaponType, number>> {
+  defaultMastery(): Partial<Record<MasteryTrackId, number>> {
     return {};
   },
 
@@ -244,25 +245,37 @@ export const WeaponService = {
     return player.inventory.find((item) => item.id === instanceId && isWeaponItem(item));
   },
 
+  isPlayerOwnedWeapon(player: Player, item: InventoryItem): boolean {
+    return !item.ownerCharacterId || item.ownerCharacterId === player.id;
+  },
+
   findEquippedInstance(player: Player, slot: EquipSlot = "primary"): InventoryItem | undefined {
     const equipId =
       slot === "primary" ? player.equipment?.primaryWeaponId : player.equipment?.secondaryWeaponId;
     if (equipId) {
       const byId = this.findInstance(player, equipId);
-      if (byId) {
+      if (byId && this.isPlayerOwnedWeapon(player, byId)) {
         return byId;
       }
       if (slot === "primary") {
-        // Legacy: equipment stored definition id
+        // Legacy: equipment stored definition id (never match crew-owned gear).
         return player.inventory.find(
           (item) =>
             isWeaponItem(item) &&
-            (item.weaponDefinitionId === equipId || item.itemId === `weapon_${equipId}` || item.equipped),
+            item.equipped &&
+            this.isPlayerOwnedWeapon(player, item) &&
+            (item.weaponDefinitionId === equipId || item.itemId === `weapon_${equipId}`),
         );
       }
     }
     if (slot === "primary") {
-      return player.inventory.find((item) => isWeaponItem(item) && item.equipped);
+      return player.inventory.find(
+        (item) =>
+          isWeaponItem(item) &&
+          item.equipped &&
+          this.isPlayerOwnedWeapon(player, item) &&
+          this.crewEquipSlotOf(item) === "primary",
+      );
     }
     return undefined;
   },
@@ -400,6 +413,11 @@ export const WeaponService = {
       }
     }
 
+    const previousOwnerId =
+      instance.equipped && instance.ownerCharacterId && instance.ownerCharacterId !== ownerCharacterId
+        ? instance.ownerCharacterId
+        : null;
+
     // Clear player equipment pointers if this instance was on the captain.
     if (run.player.equipment?.primaryWeaponId === instance.id) {
       run.player.equipment.primaryWeaponId = null;
@@ -423,11 +441,6 @@ export const WeaponService = {
       }
     }
 
-    // Moving between slots on the same crewmate.
-    if (instance.equipped && instance.ownerCharacterId === ownerCharacterId && this.crewEquipSlotOf(instance) !== slot) {
-      instance.equipSlot = slot;
-    }
-
     // Two-hand primary clears secondary.
     if (slot === "primary" && view.grip === "TWO_HAND") {
       for (const item of run.player.inventory) {
@@ -449,6 +462,9 @@ export const WeaponService = {
     instance.ownerCharacterId = ownerCharacterId;
     instance.equipSlot = slot;
     this.syncCrewWeaponIds(run, ownerCharacterId);
+    if (previousOwnerId && previousOwnerId !== run.player.id) {
+      this.syncCrewWeaponIds(run, previousOwnerId);
+    }
     return true;
   },
 
@@ -550,9 +566,7 @@ export const WeaponService = {
       return { ok: false, reason: `${character.name} is not in your crew.` };
     }
 
-    const resolvedSlot =
-      slot ??
-      (this.equippedInstanceFor(run, characterId, "primary") ? "secondary" : "primary");
+    const resolvedSlot = slot ?? this.preferredCrewEquipSlot(run, characterId, weapon);
 
     if (!this.equipInstance(run, instanceId, characterId, resolvedSlot)) {
       return { ok: false, reason: run.lastFeedback ?? `Could not equip ${weapon.name}.` };
@@ -574,31 +588,20 @@ export const WeaponService = {
       (item) =>
         isWeaponItem(item) &&
         item.equipped &&
-        (item.ownerCharacterId ?? run.player.id) === characterId,
+        item.ownerCharacterId === characterId,
     );
     const slotted = owned.find((item) => this.crewEquipSlotOf(item) === slot);
     if (slotted) {
       return slotted;
     }
 
-    // Legacy / spawn loadout: weaponIds on the character without an inventory link (primary only).
-    if (slot !== "primary") {
-      return undefined;
-    }
-    if (owned.length === 1 && !owned[0]!.equipSlot) {
+    // Legacy pre-dual-wield saves: a single equipped item with no equipSlot is primary.
+    // Do not fall back to weaponIds → inventory matches (that mirrored secondaries / backpack
+    // gear into the primary slot and blocked drop targeting).
+    if (slot === "primary" && owned.length === 1 && !owned[0]!.equipSlot) {
       return owned[0];
     }
-    const character = CharacterService.getCharacter(run, characterId);
-    const definitionId = character?.weaponIds?.[0];
-    if (!definitionId) {
-      return undefined;
-    }
-    return run.player.inventory.find(
-      (item) =>
-        isWeaponItem(item) &&
-        item.weaponDefinitionId === definitionId &&
-        (item.ownerCharacterId === characterId || !item.ownerCharacterId || item.ownerCharacterId === run.player.id),
-    );
+    return undefined;
   },
 
   findEquippedInstancesForCharacter(run: RunState, characterId: string): InventoryItem[] {
@@ -624,7 +627,14 @@ export const WeaponService = {
     if (fromInstance) {
       return fromInstance;
     }
-    if (slot !== "primary") {
+    if (slot !== "primary" || characterId === run.player.id) {
+      return undefined;
+    }
+    // Catalog-only spawn loadout: never invent a primary when inventory already owns a slot.
+    const hasInventoryLoadout = run.player.inventory.some(
+      (item) => isWeaponItem(item) && item.equipped && item.ownerCharacterId === characterId,
+    );
+    if (hasInventoryLoadout) {
       return undefined;
     }
     const character = CharacterService.getCharacter(run, characterId);
@@ -648,8 +658,34 @@ export const WeaponService = {
     return catalog ? [catalog] : [];
   },
 
-  preferredCrewEquipSlot(run: RunState, characterId: string): EquipSlot {
-    return this.equippedInstanceFor(run, characterId, "primary") ? "secondary" : "primary";
+  preferredPlayerEquipSlot(player: Player, incoming?: WeaponView | null): EquipSlot {
+    const primary = this.findEquippedInstance(player, "primary");
+    if (!primary) {
+      return "primary";
+    }
+    if (incoming) {
+      const primaryView = this.resolveWeaponView(primary);
+      const check = canEquipAsSecondary(primaryView, incoming);
+      if (!check.ok) {
+        return "primary";
+      }
+    }
+    return "secondary";
+  },
+
+  preferredCrewEquipSlot(run: RunState, characterId: string, incoming?: WeaponView | null): EquipSlot {
+    const primary = this.equippedInstanceFor(run, characterId, "primary");
+    if (!primary) {
+      return "primary";
+    }
+    if (incoming) {
+      const primaryView = this.resolveWeaponView(primary);
+      const check = canEquipAsSecondary(primaryView, incoming);
+      if (!check.ok) {
+        return "primary";
+      }
+    }
+    return "secondary";
   },
 
   listCrewWeapons(run: RunState): Array<{ instance: InventoryItem; ownerLabel: string; ownerName: string | null }> {
@@ -737,7 +773,7 @@ export const WeaponService = {
     return types;
   },
 
-  addMastery(run: RunState, weaponType: WeaponType, amount = 1): number {
+  addMastery(run: RunState, weaponType: MasteryTrackId, amount = 1): number {
     if (!run.player.weaponMastery) {
       run.player.weaponMastery = this.defaultMastery();
     }
@@ -747,11 +783,11 @@ export const WeaponService = {
     return next;
   },
 
-  getMastery(player: Player, weaponType: WeaponType): number {
+  getMastery(player: Player, weaponType: MasteryTrackId): number {
     return player.weaponMastery?.[weaponType] ?? 0;
   },
 
-  getMasteryRank(player: Player, weaponType: WeaponType): MasteryRank {
+  getMasteryRank(player: Player, weaponType: MasteryTrackId): MasteryRank {
     const value = this.getMastery(player, weaponType);
     let rank: MasteryRank = "BEGINNER";
     for (const entry of MASTERY_RANK_ORDER) {
@@ -919,10 +955,13 @@ export const WeaponService = {
       for (const weapon of weapons) {
         this.addMastery(run, weapon.weaponType, 1);
       }
-    } else if (run.player.activeCombatStyle === "black_leg") {
-      this.addMastery(run, "KICKS", 1);
-    } else if (run.player.activeCombatStyle === "brawler") {
-      this.addMastery(run, "FISTS", 1);
+    } else {
+      this.addMastery(run, "UNARMED", 1);
+      if (run.player.activeCombatStyle === "black_leg") {
+        this.addMastery(run, "KICKS", 1);
+      } else if (run.player.activeCombatStyle === "brawler") {
+        this.addMastery(run, "FISTS", 1);
+      }
     }
   },
 
@@ -991,18 +1030,15 @@ export function weaponDisplayName(player: Player): string {
   return "Unarmed";
 }
 
-export function primaryMasteryDisplay(player: Player): { type: WeaponType; rank: MasteryRank } | null {
+export function primaryMasteryDisplay(player: Player): { type: MasteryTrackId; rank: MasteryRank } | null {
   const weapon = WeaponService.getEquippedWeapon(player);
-  const type =
+  const type: MasteryTrackId =
     weapon?.weaponType ??
     (player.activeCombatStyle === "black_leg"
       ? "KICKS"
       : player.activeCombatStyle === "brawler"
         ? "FISTS"
-        : null);
-  if (!type) {
-    return null;
-  }
+        : "UNARMED");
   return {
     type,
     rank: WeaponService.getMasteryRank(player, type),

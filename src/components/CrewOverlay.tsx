@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
-import type { Ability, RunState, StatName } from "../models/types";
+import type { Ability, RunState, StatName, WeaponType } from "../models/types";
 import { getAbilitiesForCrewmember, getAbilitiesForPlayer } from "../data/abilities";
 import { getDevilFruit } from "../data/devilFruits";
 import { getWeapon } from "../data/weapons";
-import { CORE_CREW_CAP, MAX_ACTIVE_FIGHTERS } from "../game/constants";
+import { CORE_CREW_CAP, BATTLE_ROW_SLOTS } from "../game/constants";
 import { resolveSkillBadges } from "../game/skillBadges";
 import { techniqueHitChancePercent } from "../game/techniquePower";
 import { useIsMobile } from "../hooks/useMediaQuery";
@@ -17,8 +17,11 @@ import { AuthorityService } from "../services/AuthorityService";
 import { FleetService } from "../services/FleetService";
 import { RaceService } from "../services/RaceService";
 import { LootDispositionService } from "../services/LootDispositionService";
+import { WeaponMasteryService } from "../services/WeaponMasteryService";
 import { WeaponService, type EquipSlot } from "../services/WeaponService";
 import { MedicalRecoveryService } from "../services/MedicalRecoveryService";
+import { AfflictionService } from "../services/AfflictionService";
+import { CharacterScheduleService } from "../services/CharacterScheduleService";
 import {
   TargetResolutionService,
   targetingSummary,
@@ -26,12 +29,14 @@ import {
 import { STAT_LABELS } from "../utils/text";
 import { ensurePlayerStats } from "../utils/stats";
 import { CharacterCard } from "./CharacterCard";
+import { factionPortraitSrc } from "./HudIcons";
 import { HpBar } from "./HpBar";
 import { ResourceBar } from "./ResourceBar";
 import { MpService } from "../services/MpService";
 import { OverlayFrame } from "./OverlayFrame";
 import { SkillBadgeRow } from "./SkillBadgeRow";
 import { WeaponStatsBlock } from "./WeaponStatsBlock";
+import { weaponRarityClass } from "../utils/weaponRarity";
 
 type CrewOverlayProps = {
   run: RunState;
@@ -42,14 +47,13 @@ type CrewOverlayProps = {
 
 type DragPayload =
   | { kind: "weapon"; instanceId: string }
-  | { kind: "devil_fruit"; fruitId: string };
+  | { kind: "devil_fruit"; fruitId: string }
+  | { kind: "crew"; characterId: string; fromIndex: number };
 
 type CrewTab = "CORE" | "APPRENTICES" | "FLEET" | "COMMAND";
 
 const STAT_ORDER: StatName[] = ["strength", "defense", "speed", "willpower", "charisma", "intelligence"];
 const EXTENDED_TABS: CrewTab[] = ["APPRENTICES", "FLEET", "COMMAND"];
-/** Top row only: captain + up to 4 crewmates. */
-const BATTLE_FORMATION_SLOTS = 5;
 
 function portraitInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -57,6 +61,15 @@ function portraitInitials(name: string): string {
     return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`;
   }
   return name.slice(0, 2);
+}
+
+function crewFactionId(
+  character: ReturnType<typeof CharacterService.getCharacter> | null | undefined,
+): string | null {
+  if (!character) {
+    return null;
+  }
+  return character.relationFactionId ?? character.faction ?? null;
 }
 
 function crewStatsFor(character: ReturnType<typeof CharacterService.getCharacter>, strength: number) {
@@ -77,6 +90,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
   const [tab, setTab] = useState<CrewTab>("CORE");
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [selectedWeaponId, setSelectedWeaponId] = useState<string | null>(null);
+  const [formationTick, setFormationTick] = useState(0);
   const crew = CrewService.list(run);
   const captain = CrewService.captainEntry(run);
   const captainFruit = run.player.devilFruitId ? getDevilFruit(run.player.devilFruitId) : undefined;
@@ -87,6 +101,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
   const affiliation = AffiliationService.summary(run);
   const authority = AuthorityService.get(run);
   const partyConfig = CrewCombatService.ensurePartyConfig(run);
+  const formationSlots = partyConfig.formationSlots ?? Array.from({ length: CORE_CREW_CAP }, () => null);
   const fleet = FleetService.list(run);
   const apprentices = FleetService.listApprentices(run);
   const showExtendedTabs =
@@ -103,20 +118,12 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
     (item) => item.type === "DEVIL_FRUIT" || item.fruitId,
   );
 
-  const orderedCrew = useMemo(() => {
-    const activeIds = partyConfig.activeFighterIds.slice(0, MAX_ACTIVE_FIGHTERS);
-    const activeSet = new Set(activeIds);
-    const activeMembers = activeIds
-      .map((id) => crew.find((entry) => entry.member.characterId === id))
-      .filter((entry): entry is (typeof crew)[number] => Boolean(entry));
-    const benchMembers = crew.filter((entry) => !activeSet.has(entry.member.characterId));
-    return [...activeMembers, ...benchMembers];
-  }, [crew, partyConfig.activeFighterIds]);
-
-  const roster = useMemo(() => {
+  const rosterSlots = useMemo(() => {
+    void formationTick;
     const playerProgress = ProgressionService.getProgression(run, "player");
     const playerXp = ProgressionService.xpProgress(playerProgress);
     MpService.ensurePlayer(run.player);
+    const slots = CrewCombatService.ensurePartyConfig(run).formationSlots ?? formationSlots;
 
     const toRow = (
       id: string,
@@ -132,29 +139,62 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
         fruit: string | null;
         statusLine: string | null;
         entry?: (typeof crew)[number];
+        portraitSrc: string;
+        epithet?: string | null;
+        level: number;
       },
     ) => {
       const primary = WeaponService.equippedInstanceFor(run, id, "primary");
       const secondary = WeaponService.equippedInstanceFor(run, id, "secondary");
+      const primaryView = WeaponService.resolveWeaponView(primary);
+      const secondaryView = WeaponService.resolveWeaponView(secondary);
       const legacyWeaponId = extras.entry?.character.weaponIds?.[0];
-      const legacyName =
-        !primary && legacyWeaponId ? getWeapon(legacyWeaponId)?.name ?? null : null;
+      const legacyWeapon = !primary && legacyWeaponId ? getWeapon(legacyWeaponId) : undefined;
+      const legacyName = legacyWeapon?.name ?? null;
+      const scheduleId = id === run.player.id ? "player" : id;
+      const assignment = CharacterScheduleService.getAssignment(run, scheduleId);
+      const recovering =
+        assignment?.type === "RECOVERING" || assignment?.type === "HOSPITALIZED";
+      const unavailable = !CharacterScheduleService.isAvailable(run, scheduleId) && !recovering;
+      const poisoned = AfflictionService.isAfflicted(run, scheduleId);
+      const recoveryTip = MedicalRecoveryService.recoverySummary(run, scheduleId);
+      const busyTip = CharacterScheduleService.busySummary(run, scheduleId);
+      const poisonTip = AfflictionService.badgeTip(run, scheduleId);
+      const statusTip = recovering
+        ? recoveryTip ?? busyTip
+        : unavailable
+          ? busyTip ?? "Unavailable"
+          : null;
       return {
         id,
         name,
         hp,
         vitals,
+        level: extras.level,
         weapon: primary?.name ?? (id === run.player.id ? captainWeapon : legacyName),
         weaponInstanceId: primary?.id ?? null,
+        primaryWeaponType: (primaryView?.weaponType ??
+          legacyWeapon?.weaponType ??
+          null) as WeaponType | null,
         secondaryWeapon: secondary?.name ?? null,
         secondaryWeaponInstanceId: secondary?.id ?? null,
+        secondaryWeaponType: (secondaryView?.weaponType ?? null) as WeaponType | null,
         fruit: extras.fruit,
         isCaptain: extras.isCaptain,
         entry: extras.entry,
         statusLine: extras.statusLine,
+        statusTip,
+        recovering,
+        unavailable,
+        poisoned,
+        poisonTip,
+        portraitSrc: extras.portraitSrc,
+        epithet: extras.epithet ?? null,
       };
     };
 
+    const captainFactionId =
+      AffiliationService.ensure(run).primaryFactionId ?? run.player.affiliation?.primaryFactionId ?? null;
     const captainRow = toRow(
       run.player.id,
       captain.name,
@@ -171,10 +211,26 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
         isCaptain: true,
         fruit: captainFruit?.name ?? null,
         statusLine: MedicalRecoveryService.recoverySummary(run, "player"),
+        portraitSrc: factionPortraitSrc(captainFactionId, "leader"),
+        epithet: null,
+        level: playerProgress.level,
       },
     );
 
-    const crewRows = orderedCrew.map((entry) => {
+    const crewById = new Map(crew.map((entry) => [entry.member.characterId, entry]));
+
+    return Array.from({ length: CORE_CREW_CAP }, (_, index) => {
+      const id = slots[index] ?? null;
+      if (!id) {
+        return null;
+      }
+      if (id === run.player.id) {
+        return captainRow;
+      }
+      const entry = crewById.get(id);
+      if (!entry) {
+        return null;
+      }
       const hp = CrewService.estimatedHp(entry.character);
       const fruit = entry.character.devilFruitId ? getDevilFruit(entry.character.devilFruitId) : undefined;
       const progression = ProgressionService.getProgression(run, entry.member.characterId);
@@ -195,49 +251,21 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
           fruit: fruit?.name ?? null,
           statusLine: MedicalRecoveryService.recoverySummary(run, entry.member.characterId),
           entry,
+          portraitSrc: factionPortraitSrc(crewFactionId(entry.character), "crew"),
+          epithet: entry.character.epithet ?? null,
+          level: progression.level,
         },
       );
     });
-
-    const activeCount = Math.min(MAX_ACTIVE_FIGHTERS, partyConfig.activeFighterIds.length);
-    const activeRows = crewRows.slice(0, activeCount);
-    const benchRows = crewRows.slice(activeCount);
-
-    // Fixed layout: top row = captain + 4 battle slots; bottom row = bench.
-    const slots: Array<(typeof captainRow) | null> = Array.from({ length: CORE_CREW_CAP }, () => null);
-    slots[0] = captainRow;
-    for (let i = 0; i < MAX_ACTIVE_FIGHTERS; i++) {
-      slots[1 + i] = activeRows[i] ?? null;
-    }
-    for (let i = 0; i < benchRows.length && BATTLE_FORMATION_SLOTS + i < CORE_CREW_CAP; i++) {
-      slots[BATTLE_FORMATION_SLOTS + i] = benchRows[i] ?? null;
-    }
-    return slots;
   }, [
     captain,
     captainFruit,
     captainWeapon,
-    orderedCrew,
-    partyConfig.activeFighterIds.length,
+    crew,
+    formationSlots,
+    formationTick,
     run,
   ]);
-
-  const rosterSlots = roster;
-
-  // Top row (slots 1–4 after captain) drives activeParty.
-  useEffect(() => {
-    const battleCrewIds = rosterSlots
-      .slice(1, BATTLE_FORMATION_SLOTS)
-      .map((member) => member?.id)
-      .filter((id): id is string => Boolean(id));
-    const current = partyConfig.activeFighterIds.slice(0, MAX_ACTIVE_FIGHTERS);
-    if (
-      battleCrewIds.length !== current.length ||
-      battleCrewIds.some((id, index) => id !== current[index])
-    ) {
-      CrewCombatService.setActiveFighters(run, battleCrewIds);
-    }
-  }, [partyConfig.activeFighterIds, rosterSlots, run]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedPrimary =
@@ -263,12 +291,16 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
   const selectedCrewMaxMp = selectedCrewStats ? MpService.maxMpForStats(selectedCrewStats) : 0;
 
   const handleDragStart = (event: DragEvent<HTMLElement>, payload: DragPayload) => {
-    event.dataTransfer.setData("application/x-rogue-piece-gear", JSON.stringify(payload));
+    const raw = JSON.stringify(payload);
+    event.dataTransfer.setData("application/x-rogue-piece-gear", raw);
+    event.dataTransfer.setData("text/plain", raw);
     event.dataTransfer.effectAllowed = "move";
   };
 
   const readDragPayload = (event: DragEvent): DragPayload | null => {
-    const raw = event.dataTransfer.getData("application/x-rogue-piece-gear");
+    const raw =
+      event.dataTransfer.getData("application/x-rogue-piece-gear") ||
+      event.dataTransfer.getData("text/plain");
     if (!raw) {
       return null;
     }
@@ -280,21 +312,38 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
   };
 
   const assignWeapon = (instanceId: string, characterId: string, slot?: EquipSlot) => {
+    const instance = WeaponService.findInstance(run.player, instanceId);
+    const view = WeaponService.resolveWeaponView(instance);
     const resolved =
       slot ??
       (characterId === run.player.id
-        ? WeaponService.findEquippedInstance(run.player, "primary")
-          ? "secondary"
-          : "primary"
-        : WeaponService.preferredCrewEquipSlot(run, characterId));
+        ? WeaponService.preferredPlayerEquipSlot(run.player, view)
+        : WeaponService.preferredCrewEquipSlot(run, characterId, view));
     onAssignStashWeapon?.(instanceId, characterId, resolved);
   };
 
-  const handleDropOnMember = (event: DragEvent<HTMLButtonElement>, characterId: string) => {
+  const applyCrewFormationDrop = (fromIndex: number, toIndex: number) => {
+    if (CrewCombatService.moveFormationMember(run, fromIndex, toIndex)) {
+      setFormationTick((tick) => tick + 1);
+    }
+  };
+
+  const handleDropOnSlot = (
+    event: DragEvent<HTMLElement>,
+    toIndex: number,
+    characterId?: string,
+  ) => {
     event.preventDefault();
     setDropTargetId(null);
     const payload = readDragPayload(event);
     if (!payload) {
+      return;
+    }
+    if (payload.kind === "crew") {
+      applyCrewFormationDrop(payload.fromIndex, toIndex);
+      return;
+    }
+    if (!characterId) {
       return;
     }
     if (payload.kind === "weapon") {
@@ -303,6 +352,8 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
     }
     onAssignStashFruit?.(payload.fruitId, characterId);
   };
+
+  const slotDropKey = (index: number, memberId?: string | null) => memberId ?? `open-${index}`;
 
   useEffect(() => {
     const clearDropTarget = () => setDropTargetId(null);
@@ -323,40 +374,57 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
   const showMobileList = isMobile && tab === "CORE" && !selectedId;
 
   const renderRosterSlot = (member: (typeof rosterSlots)[number], index: number) => {
-    const isBattleSlot = index < BATTLE_FORMATION_SLOTS;
-    const slotKey = member?.id ?? `open-${index}`;
+    const isBattleSlot = index < BATTLE_ROW_SLOTS;
+    const slotKey = slotDropKey(index, member?.id);
+    const canDragMember = Boolean(member) && !isMobile;
 
     if (isMobile && !member) {
       return null;
     }
 
     return (
-      <li className={isBattleSlot ? "crew-roster-slot-battle" : undefined} key={slotKey}>
+      <li className={isBattleSlot ? "crew-roster-slot-battle" : undefined} key={`formation-${index}`}>
         {member ? (
           <CharacterCard
             compact
-            dropTarget={dropTargetId === member.id}
+            draggable={canDragMember}
+            dropTarget={dropTargetId === slotKey}
             fruitName={member.fruit}
             isActiveFighter={isBattleSlot}
+            epithet={member.epithet}
             isCaptain={member.isCaptain}
+            level={member.level}
             name={member.name}
             onClick={() => {
-              setSelectedId(member.id);
+              setSelectedId((current) => (current === member.id ? null : member.id));
               setSelectedWeaponId(null);
             }}
-            onDragLeave={() => setDropTargetId((current) => (current === member.id ? null : current))}
+            onDragLeave={() => setDropTargetId((current) => (current === slotKey ? null : current))}
             onDragOver={(event) => {
               event.preventDefault();
-              setDropTargetId(member.id);
+              setDropTargetId(slotKey);
             }}
-            onDrop={(event) => handleDropOnMember(event, member.id)}
+            onDrop={(event) => handleDropOnSlot(event, index, member.id)}
+            onMemberDragStart={(event) =>
+              handleDragStart(event, {
+                kind: "crew",
+                characterId: member.id,
+                fromIndex: index,
+              })
+            }
             onWeaponDragStart={(event, instanceId) =>
               handleDragStart(event, { kind: "weapon", instanceId })
             }
             portraitInitials={portraitInitials(member.name)}
+            portraitSrc={member.portraitSrc}
             primaryWeapon={member.weapon}
+            primaryWeaponType={member.primaryWeaponType}
+            recovering={member.recovering}
+            poisoned={member.poisoned}
+            poisonTip={member.poisonTip}
             secondaryWeapon={member.secondaryWeapon}
             secondaryWeaponInstanceId={member.secondaryWeaponInstanceId}
+            secondaryWeaponType={member.secondaryWeaponType}
             selected={selectedId === member.id}
             statusLine={
               isMobile && isBattleSlot
@@ -365,6 +433,8 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                   : "Battle"
                 : member.statusLine
             }
+            statusTip={member.statusTip}
+            unavailable={member.unavailable}
             vitals={member.vitals}
             weaponInstanceId={member.weaponInstanceId}
           />
@@ -374,9 +444,16 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
               "character-card",
               "character-card-empty",
               isBattleSlot ? "crew-roster-empty-battle" : "",
+              dropTargetId === slotKey ? "is-drop-target" : "",
             ]
               .filter(Boolean)
               .join(" ")}
+            onDragLeave={() => setDropTargetId((current) => (current === slotKey ? null : current))}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDropTargetId(slotKey);
+            }}
+            onDrop={(event) => handleDropOnSlot(event, index)}
           >
             <p className="character-card-empty-label">Open slot</p>
           </div>
@@ -509,6 +586,21 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
               ))}
             </ul>
           </section>
+          <section className="detail-section">
+            <p className="detail-label">Weapon mastery</p>
+            <ul className="detail-stat-list">
+              {WeaponMasteryService.displayTracks(run.player).map((row) => (
+                <li key={row.track}>
+                  <span>
+                    {row.label} Lv {row.level}
+                  </span>
+                  <span>
+                    {row.needed > 0 ? `${row.current}/${row.needed} XP` : `${row.xp} XP`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
           {isMobile ? renderEquippedWeapons() : null}
         </>
       );
@@ -584,7 +676,10 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
         <p className="text-sm text-parchment-dim">No weapons in the crew pack.</p>
       ) : (
         <ul className="crew-weapon-list">
-          {weaponRows.map(({ instance, ownerLabel, ownerName }) => (
+          {weaponRows.map(({ instance, ownerLabel, ownerName }) => {
+            const view = WeaponService.resolveWeaponView(instance);
+            const rarityClass = weaponRarityClass(view?.rarity, view?.material);
+            return (
             <li key={instance.id}>
               <div className={`crew-weapon-row-wrap ${selectedWeaponId === instance.id ? "is-selected" : ""}`}>
                 <button
@@ -596,7 +691,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                   onDragStart={(event) => handleDragStart(event, { kind: "weapon", instanceId: instance.id })}
                   type="button"
                 >
-                  <span className="crew-weapon-row-name font-display">{instance.name}</span>
+                  <span className={`crew-weapon-row-name font-display ${rarityClass}`}>{instance.name}</span>
                   {ownerName ? (
                     <span className="crew-weapon-row-owner">{ownerName}</span>
                   ) : (
@@ -629,7 +724,8 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                 ) : null}
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
       {selectedWeaponView ? (

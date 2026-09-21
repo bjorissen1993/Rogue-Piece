@@ -11,7 +11,9 @@ import { clamp } from "../utils/stats";
 import { CollectionService } from "./CollectionService";
 import { CharacterService } from "./CharacterService";
 import { CrewService } from "./CrewService";
+import { AfflictionService } from "./AfflictionService";
 import { MpService } from "./MpService";
+import type { AfflictionKind } from "../models/types";
 
 export type ItemUseResult = {
   ok: boolean;
@@ -30,9 +32,11 @@ export const INVENTORY_CATEGORIES: InventoryCategory[] = [
   "WEAPONS",
   "DEVIL_FRUITS",
   "CONSUMABLES",
+  "TOOLS",
   "MATERIALS",
   "QUEST_ITEMS",
   "KEY_ITEMS",
+  "COLLECTABLES",
   "MISCELLANEOUS",
 ];
 
@@ -40,9 +44,11 @@ export const INVENTORY_FILTER_CATEGORIES: Exclude<InventoryCategory, "ALL">[] = 
   "WEAPONS",
   "DEVIL_FRUITS",
   "CONSUMABLES",
+  "TOOLS",
   "MATERIALS",
   "QUEST_ITEMS",
   "KEY_ITEMS",
+  "COLLECTABLES",
   "MISCELLANEOUS",
 ];
 
@@ -51,9 +57,11 @@ export const INVENTORY_CATEGORY_LABELS: Record<InventoryCategory, string> = {
   WEAPONS: "Weapons",
   DEVIL_FRUITS: "Devil Fruits",
   CONSUMABLES: "Consumables",
+  TOOLS: "Tools",
   MATERIALS: "Materials",
   QUEST_ITEMS: "Quest",
   KEY_ITEMS: "Key",
+  COLLECTABLES: "Collectibles",
   MISCELLANEOUS: "Misc",
 };
 
@@ -63,6 +71,27 @@ function stackOf(player: Player, itemId: string): InventoryItem | undefined {
 
 function definitionIdOf(item: InventoryItem): string {
   return item.itemId || item.id;
+}
+
+function applyClearAfflictionEffects(
+  run: RunState,
+  characterId: string,
+  effects: import("../models/types").ItemEffect[],
+): string | null {
+  let cleared = false;
+  for (const effect of effects) {
+    if (effect.type !== "CLEAR_AFFLICTION") {
+      continue;
+    }
+    const kinds = effect.kinds?.length ? effect.kinds : (["POISON", "SICKNESS"] as AfflictionKind[]);
+    for (const kind of kinds) {
+      if (AfflictionService.list(run, characterId).some((entry) => entry.kind === kind)) {
+        AfflictionService.clear(run, characterId, kind);
+        cleared = true;
+      }
+    }
+  }
+  return cleared ? "Afflictions clear." : null;
 }
 
 export type CarriedCollectibleStack = {
@@ -142,8 +171,10 @@ export function categorizeItem(item: InventoryItem): StoredCategory {
   }
   if (def?.type === "CONSUMABLE") return "CONSUMABLES";
   if (def?.type === "MATERIAL") return "MATERIALS";
+  if (def?.useContext === "PASSIVE") return "COLLECTABLES";
   if (def?.useContext === "SPECIAL") return "KEY_ITEMS";
   const hay = `${item.name} ${item.description}`.toLowerCase();
+  if (/smoke|bomb|tool|flare|spyglass/.test(hay)) return "TOOLS";
   if (/chart|folio|key|map|contract/.test(hay)) return "KEY_ITEMS";
   if (/quest|letter|token/.test(hay)) return "QUEST_ITEMS";
   return "MISCELLANEOUS";
@@ -428,6 +459,10 @@ export const ItemService = {
       if (effect.type === "GUARANTEE_ESCAPE") {
         effectLines.push("Guarantees escape from this fight.");
       }
+      if (effect.type === "CLEAR_AFFLICTION") {
+        const kinds = effect.kinds?.length ? effect.kinds.join("/") : "poison & sickness";
+        effectLines.push(`Clears ${kinds.toLowerCase()}.`);
+      }
     }
     if (effectLines.length) {
       lines.push(effectLines.join(" · "));
@@ -579,15 +614,22 @@ export const ItemService = {
     targetCharacterId: string,
     context: ItemUseContext,
   ): ItemUseResult {
+    const def = getItemDefinition(itemId);
     const isPlayer =
       targetCharacterId === run.player.id ||
       targetCharacterId === "player" ||
       !targetCharacterId;
     if (isPlayer) {
-      return this.useOnPlayer(run.player, itemId, context);
+      const result = this.useOnPlayer(run.player, itemId, context);
+      if (result.ok && def) {
+        const clearLine = applyClearAfflictionEffects(run, "player", def.effects);
+        if (clearLine) {
+          result.message = `${result.message} ${clearLine}`.trim();
+        }
+      }
+      return result;
     }
 
-    const def = getItemDefinition(itemId);
     const fail = (message: string): ItemUseResult => ({
       ok: false,
       message,
@@ -750,6 +792,10 @@ export const ItemService = {
     }
     if (!parts.length) {
       parts.push(`You use the ${def.name} on ${targetName}.`);
+    }
+    const clearLine = applyClearAfflictionEffects(run, targetCharacterId, def.effects);
+    if (clearLine) {
+      parts.push(clearLine);
     }
 
     return {

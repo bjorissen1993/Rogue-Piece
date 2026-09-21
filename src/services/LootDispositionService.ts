@@ -89,8 +89,8 @@ export const LootDispositionService = {
     slot?: "primary" | "secondary",
   ): string {
     if (characterId === run.player.id) {
-      const resolved =
-        slot ?? (WeaponService.findEquippedInstance(run.player, "primary") ? "secondary" : "primary");
+      const view = WeaponService.resolveWeaponView(WeaponService.findInstance(run.player, instanceId));
+      const resolved = slot ?? WeaponService.preferredPlayerEquipSlot(run.player, view);
       return WeaponService.equipInstance(run, instanceId, run.player.id, resolved)
         ? "Weapon equipped."
         : run.lastFeedback ?? "Could not equip.";

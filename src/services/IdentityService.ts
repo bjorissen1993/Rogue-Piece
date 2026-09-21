@@ -415,35 +415,37 @@ export const IdentityService = {
     const aff = run.player.affiliation;
     const affRank = aff?.rankId ? getRankById(aff.rankId) : undefined;
 
+    let title: string;
     if (identity.roleId === "BOUNTY_HUNTER") {
       const hunter = roleRank?.name ?? "Bounty Hunter";
-      if (identity.legalStatusId === "WANTED" || identity.legalStatusId === "FUGITIVE") {
-        return `${hunter} · ${legal}`;
-      }
-      return hunter;
-    }
-
-    if (identity.roleId === "CELESTIAL_DRAGON") {
-      return identity.celestial?.lostStatus ? `Ex-Celestial · ${roleLabel}` : "Celestial Dragon";
-    }
-
-    if (aff && AffiliationService.isActiveMember(aff) && aff.primaryFactionId) {
+      title =
+        identity.legalStatusId === "WANTED" || identity.legalStatusId === "FUGITIVE"
+          ? `${hunter} · ${legal}`
+          : hunter;
+    } else if (identity.roleId === "CELESTIAL_DRAGON") {
+      title = identity.celestial?.lostStatus ? `Ex-Celestial · ${roleLabel}` : "Celestial Dragon";
+    } else if (aff && AffiliationService.isActiveMember(aff) && aff.primaryFactionId) {
       const factionLabel =
         aff.primaryFactionId === "BOUNTY_HUNTER"
           ? CAREER_ROLE_LABELS.BOUNTY_HUNTER
           : CAREER_FACTION_LABELS[aff.primaryFactionId];
       const rankName = affRank?.name;
       const base = rankName ? `${rankName}` : factionLabel;
-      if (identity.legalStatusId === "WANTED" || identity.legalStatusId === "FUGITIVE") {
-        return `${base} · ${legal}`;
-      }
-      return base;
+      title =
+        identity.legalStatusId === "WANTED" || identity.legalStatusId === "FUGITIVE"
+          ? `${base} · ${legal}`
+          : base;
+    } else if (identity.legalStatusId === "WANTED" || identity.legalStatusId === "FUGITIVE") {
+      title = `${roleLabel} · ${legal}`;
+    } else {
+      title = roleRank?.name ?? roleLabel;
     }
-
-    if (identity.legalStatusId === "WANTED" || identity.legalStatusId === "FUGITIVE") {
-      return `${roleLabel} · ${legal}`;
+    const flag = run.player.flags.find((f) => f.startsWith("story_title:"));
+    const extra = flag?.slice("story_title:".length).trim();
+    if (extra && !title.includes(extra)) {
+      return `${title} · ${extra}`;
     }
-    return roleRank?.name ?? roleLabel;
+    return title;
   },
 
   hudSummary(run: RunState): {

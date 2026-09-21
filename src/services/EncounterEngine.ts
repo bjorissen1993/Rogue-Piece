@@ -3,7 +3,7 @@ import { ENCOUNTERS, getEncounterById } from "../data/encounters";
 import { getItemDefinition } from "../data/items";
 import { getLocation } from "../data/locations";
 import { getWeapon } from "../data/weapons";
-import { SURRENDER_BERRY_LOSS_RATIO, SURRENDER_HP_LOSS } from "../game/constants";
+import { SURRENDER_BERRY_LOSS_RATIO, SURRENDER_HP_LOSS, ISLAND_HUB_ENCOUNTER_ID, AT_SEA_ENCOUNTER_ID, XP_REWARDS } from "../game/constants";
 import type {
   Encounter,
   EncounterChoice,
@@ -30,17 +30,23 @@ import { RaceService } from "./RaceService";
 import { StoryThreadService } from "./StoryThreadService";
 import { type RandomService, createRng } from "./RandomService";
 import { isUnescapableRequest, threatWeightMultiplier } from "./ThreatService";
+import { WeaponMasteryService } from "./WeaponMasteryService";
 import { WeaponService } from "./WeaponService";
 import { WorldService, fruitEncounterMultiplier } from "./WorldService";
 import { TrainingService } from "./TrainingService";
 import { IslandService } from "./IslandService";
+import { DialogueService } from "./DialogueService";
+import { StoryChainService } from "./StoryChainService";
+import { VoyageService } from "./VoyageService";
+import { IslandPressureService } from "./IslandPressureService";
+import { AfflictionService } from "./AfflictionService";
 import { ProgressionService } from "./ProgressionService";
 import { AffiliationService } from "./AffiliationService";
 import { IdentityService } from "./IdentityService";
 import { CrewService } from "./CrewService";
 import { FactionMissionService } from "./FactionMissionService";
 import { CharacterScheduleService } from "./CharacterScheduleService";
-import { KnowledgeService } from "./KnowledgeService";
+import { KnowledgeService, getKnowledgeCollectable } from "./KnowledgeService";
 import { SparringService, needsBattleSetup } from "./SparringService";
 import { MedicalRecoveryService } from "./MedicalRecoveryService";
 import { RunEndResolutionService } from "./RunEndResolutionService";
@@ -51,7 +57,6 @@ import {
   participantBounds,
 } from "../game/encounterParticipants";
 import { getRankById } from "../data/ranks";
-import { XP_REWARDS } from "../game/constants";
 import { resolveTimeCost } from "../utils/presentation";
 import type { EncounterTier } from "../models/types";
 
@@ -234,6 +239,33 @@ export function conditionMet(condition: EncounterCondition, run: RunState): bool
         condition.minStage ?? "LIMITED",
       );
       return ok !== Boolean(condition.negate);
+    }
+    case "HAS_FACILITY": {
+      const island = IslandService.getCurrentIsland(run);
+      const has = IslandService.hasFacility(island, condition.facilityId);
+      return has !== Boolean(condition.negate);
+    }
+    case "ISLAND_FLAG": {
+      const island = IslandService.getCurrentIsland(run);
+      const has = IslandService.hasDiscoveryFlag(island, condition.flag);
+      return has !== Boolean(condition.negate);
+    }
+    case "ACTIVITY_MODE": {
+      const mode = run.activityMode ?? "ISLAND";
+      const matched = mode === condition.mode;
+      return matched !== Boolean(condition.negate);
+    }
+    case "MIN_ISLAND_PRESSURE": {
+      const island = IslandService.getCurrentIsland(run);
+      return (island?.pressureLevel ?? 0) >= condition.value;
+    }
+    case "MAX_ISLAND_PRESSURE": {
+      const island = IslandService.getCurrentIsland(run);
+      return (island?.pressureLevel ?? 0) <= condition.value;
+    }
+    case "MIN_ISLAND_TRUST": {
+      const island = IslandService.getCurrentIsland(run);
+      return (island?.trustLevel ?? 0) >= condition.value;
     }
     default:
       return true;
@@ -779,6 +811,53 @@ function applyStoryAndCharacterOutcomes(run: RunState, outcome: EncounterOutcome
   if (outcome.goToEncounter) {
     run.pendingEncounterId = outcome.goToEncounter;
   }
+  if (outcome.seekRandomEncounter) {
+    run.pendingSeekRandomEncounter = true;
+  }
+  if (outcome.adjustIslandPressure != null || outcome.adjustIslandTrust != null || outcome.adjustIslandDevelopment != null || outcome.adjustIslandProtection != null) {
+    const island = IslandPressureService.ensureCurrent(run);
+    if (island) {
+      if (outcome.adjustIslandPressure) {
+        IslandPressureService.adjustPressure(island, outcome.adjustIslandPressure);
+      }
+      if (outcome.adjustIslandTrust) {
+        IslandPressureService.adjustTrust(island, outcome.adjustIslandTrust);
+      }
+      if (outcome.adjustIslandDevelopment) {
+        IslandPressureService.adjustDevelopment(island, outcome.adjustIslandDevelopment);
+      }
+      if (outcome.adjustIslandProtection) {
+        IslandPressureService.adjustProtection(island, outcome.adjustIslandProtection);
+      }
+    }
+  }
+  if (outcome.fundIslandProject) {
+    lines.push(IslandPressureService.fundProject(run, outcome.fundIslandProject));
+  }
+  if (outcome.acceptIslandProtection) {
+    lines.push(IslandPressureService.acceptProtection(run));
+  }
+  if (outcome.shipRepair || outcome.shipUpgradeSpeed) {
+    const ship = VoyageService.ensureShip(run);
+    if (outcome.shipRepair) {
+      const before = ship.condition;
+      ship.condition = Math.max(5, Math.min(100, ship.condition + outcome.shipRepair));
+      if (outcome.shipRepair < 0) {
+        lines.push(`Hull takes damage ${before}% → ${ship.condition}%.`);
+      } else {
+        lines.push(`Hull repaired ${before}% → ${ship.condition}%.`);
+      }
+    }
+    if (outcome.shipUpgradeSpeed) {
+      ship.speed = Math.round((ship.speed + outcome.shipUpgradeSpeed) * 10) / 10;
+      lines.push(`${ship.name} sails faster (speed ${ship.speed}).`);
+    }
+  }
+  if (outcome.clearAfflictions) {
+    const targetId = run.pendingParticipantId ?? "player";
+    AfflictionService.clearMedicalDots(run, targetId);
+    lines.push("Toxins and fever ease under treatment.");
+  }
   if (outcome.unlockFightingStyle) {
     WeaponService.unlockStyle(run, outcome.unlockFightingStyle);
   }
@@ -824,6 +903,7 @@ function applyOutcome(
   }
 
   if (outcome.combat) {
+    IslandPressureService.onHostileAction(run, 10);
     normalizeCombatRequest(run, outcome);
     const request = outcome.combat;
     if (needsBattleSetup(request)) {
@@ -912,6 +992,19 @@ function applyOutcome(
   run.player.flags = removeValues(run.player.flags, outcome.removePlayerFlags);
   run.world.flags = addUnique(run.world.flags, outcome.addWorldFlags);
   run.runFlags = addUnique(run.runFlags, outcome.addRunFlags);
+  if (outcome.addIslandDiscoveryFlags?.length) {
+    const island = IslandService.getCurrentIsland(run);
+    if (island) {
+      const added = IslandService.addDiscoveryFlags(island, outcome.addIslandDiscoveryFlags);
+      if (added.length) {
+        lines.push(
+          added.length === 1
+            ? "A new lead appears on your mental map of this island."
+            : "New leads etch themselves onto your sense of this island.",
+        );
+      }
+    }
+  }
   touchMilestones(profile, outcome.addMilestones);
 
   if (outcome.unlockLocation) {
@@ -935,6 +1028,12 @@ function applyOutcome(
       const def = getItemDefinition(itemId);
       if (def) {
         lines.push(`Added to Backpack: ${def.name}.`);
+      }
+      if (getKnowledgeCollectable(itemId)) {
+        const note = KnowledgeService.grantFromCollectable(run, profile, itemId);
+        if (note) {
+          lines.push(note);
+        }
       }
     }
   }
@@ -1055,6 +1154,19 @@ function concludeCombat(profile: ProfileSave, rng: RandomService): ResolveResult
   }
   syncCombatResources(run);
   const pending = combat.pendingOutcome;
+  const storyLine = StoryChainService.fireEvent(
+    run,
+    {
+      kind: "battle_ended",
+      islandId: run.currentIslandId ?? undefined,
+      won: combat.result === "WIN",
+      encounterId: run.currentEncounterId ?? undefined,
+    },
+    profile,
+  );
+  if (storyLine) {
+    lines.push(storyLine);
+  }
   if (combat.result === "WIN") {
     profile.statistics.combatWins += 1;
     if (combat.isFriendly) {
@@ -1075,6 +1187,10 @@ function concludeCombat(profile: ProfileSave, rng: RandomService): ResolveResult
     lines.push(...medLines);
     lines.push(...MedicalRecoveryService.buildPostBattleDialogue(run, combat));
     WeaponService.onCombatWin(run);
+    const masteryUnlock = WeaponMasteryService.applyUnlocks(run);
+    if (masteryUnlock) {
+      lines.push(masteryUnlock);
+    }
     const narrativeLines: string[] = [];
     if (combat.party) {
       run.pendingBattleResult = BattleResultService.createFromCombat(run, combat);
@@ -1207,6 +1323,23 @@ export const EncounterEngine = {
         pool = withoutLast;
       }
     }
+    // Prefer story/event content over facility hubs when seeking a random beat.
+    const storyPool = pool.filter(
+      (item) =>
+        item.encounter.id !== ISLAND_HUB_ENCOUNTER_ID &&
+        item.encounter.id !== AT_SEA_ENCOUNTER_ID &&
+        !IslandService.isFacilityEncounter(item.encounter.id),
+    );
+    if (storyPool.length > 0) {
+      pool = storyPool;
+    }
+    // While sailing, bias toward SEA category events.
+    if ((run.activityMode ?? "ISLAND") === "SAILING") {
+      const seaPool = pool.filter((item) => item.encounter.category === "SEA");
+      if (seaPool.length > 0) {
+        pool = seaPool;
+      }
+    }
     if (pool.length === 0) {
       pool = ENCOUNTERS.filter((encounter) => availableChoices(encounter, run).length > 0).map(
         (encounter) => ({ encounter, weight: Math.max(0.01, effectiveWeight(encounter, run)) }),
@@ -1215,6 +1348,27 @@ export const EncounterEngine = {
     const picked = rng.pickWeighted(pool);
     bindEncounter(run, picked.encounter, rng);
     run.currentEncounterId = picked.encounter.id;
+    return run;
+  },
+
+  /** Enter or re-enter the Island State hub as the primary shore screen. */
+  enterIslandHub(run: RunState, rng = createRng(run.seed)): RunState {
+    run.activityMode = "ISLAND";
+    IslandService.ensureAllIslandFacilities(run, rng);
+    const island = IslandService.getCurrentIsland(run);
+    if (island && !island.introductionShown) {
+      const intro = IslandService.showIntroduction(run, island.id, island.region);
+      if (intro) {
+        run.lastFeedback = intro;
+      }
+    }
+    const hub = getEncounterById(ISLAND_HUB_ENCOUNTER_ID);
+    if (!hub) {
+      return this.selectEncounter(run, rng);
+    }
+    bindEncounter(run, hub, rng);
+    run.currentEncounterId = hub.id;
+    run.dynamicEncounter = null;
     return run;
   },
 
@@ -1272,6 +1426,12 @@ export const EncounterEngine = {
       return { profile: next, text: presented.lockReason, gameOver: run.gameOver };
     }
     const choice = presented.choice;
+    let exploreIsland = IslandService.getCurrentIsland(run);
+    if (encounter.id === "island_hub" && choice.id === "explore") {
+      if (exploreIsland) {
+        IslandService.recordExplore(exploreIsland);
+      }
+    }
     const { min: minParticipants } = participantBounds(choice);
     if (minParticipants > 0 || choiceNeedsParticipants(choice)) {
       const selected =
@@ -1306,6 +1466,26 @@ export const EncounterEngine = {
 
     const lines: string[] = [];
     applyOutcome(next, choice.outcome, rng, lines);
+    if (encounter.id === "island_inn" && (choice.id === "room" || choice.id === "rest_free")) {
+      const restStory = StoryChainService.fireEvent(
+        run,
+        {
+          kind: "rest",
+          islandId: run.currentIslandId ?? undefined,
+          encounterId: encounter.id,
+        },
+        next,
+      );
+      if (restStory) {
+        lines.push(restStory);
+      }
+    }
+    if (encounter.id === "island_hub" && choice.id === "explore" && exploreIsland) {
+      const flavor = DialogueService.exploreFlavor(run, exploreIsland);
+      if (flavor) {
+        lines.unshift(flavor);
+      }
+    }
     run.pendingParticipantId = null;
     run.pendingParticipantIds = [];
     const combat = next.activeRun?.combat;
@@ -1342,6 +1522,15 @@ export const EncounterEngine = {
       // Refresh abilities mid-fight when a new fruit skill unlocks / form-gated list changes.
       run.combat.playerCombatant.abilities = getAbilitiesForPlayer(run.player);
       run.combat.playerCombatant.stats = DevilFruitCombatService.effectiveStats(run.player);
+    }
+    if (action.type === "ATTACK" || action.type === "TECHNIQUE") {
+      const masteryLine = WeaponMasteryService.recordCombatAction(next, run, action);
+      if (masteryLine && !run.lastFeedback) {
+        run.lastFeedback = masteryLine;
+      } else if (masteryLine && run.lastFeedback && masteryLine.includes("learned")) {
+        run.lastFeedback = `${run.lastFeedback} ${masteryLine}`;
+      }
+      run.combat.playerCombatant.abilities = getAbilitiesForPlayer(run.player);
     }
     syncCombatResources(run);
     // Leave finished combat mounted so the UI can play hit/defeat presentation first.
@@ -1484,7 +1673,9 @@ export const EncounterEngine = {
     const run = requireRun(next);
     const pendingEncounterId = run.pendingEncounterId ?? null;
     const chained = pendingEncounterId ? getEncounterById(pendingEncounterId) : null;
+    const seekRandom = Boolean(run.pendingSeekRandomEncounter);
     run.pendingEncounterId = null;
+    run.pendingSeekRandomEncounter = false;
 
     if (chained) {
       // Submenu / forced follow-up: spend time from the gate choice, skip XP & random pick.
@@ -1492,7 +1683,11 @@ export const EncounterEngine = {
       run.lastResultText = null;
       run.lastFeedback = null;
       run.lastHpChange = null;
-      WorldService.afterEncounter(run, rng);
+      const completed = WorldService.afterEncounter(run, rng);
+      const storyPulse = StoryChainService.notifyTimeAndActivities(run, completed, next);
+      if (storyPulse) {
+        run.lastFeedback = storyPulse;
+      }
       refreshStats(next);
       if (run.gameOver || run.player.hp <= 0) {
         markDeath(run, run.deathCause ?? "Lost at sea");
@@ -1513,9 +1708,14 @@ export const EncounterEngine = {
     }
     run.encounterCount += 1;
     next.statistics.encountersCompleted += 1;
-    const xpMsg = ProgressionService.grantExperience(run, "player", XP_REWARDS.ENCOUNTER, "encounter").message;
-    if (xpMsg) {
-      run.lastFeedback = run.lastFeedback ? `${run.lastFeedback} ${xpMsg}` : xpMsg;
+    const fromFacility = IslandService.isFacilityEncounter(encounter?.id);
+    // Facility shopping/leave should not farm encounter XP; hub explore & story beats still grant it.
+    const grantXp = !fromFacility || seekRandom;
+    if (grantXp) {
+      const xpMsg = ProgressionService.grantExperience(run, "player", XP_REWARDS.ENCOUNTER, "encounter").message;
+      if (xpMsg) {
+        run.lastFeedback = run.lastFeedback ? `${run.lastFeedback} ${xpMsg}` : xpMsg;
+      }
     }
     if (run.storyThreads.some((thread) => thread.state === "RESOLVED" && thread.lastUpdatedDay === run.day)) {
       ProgressionService.grantExperience(run, "player", XP_REWARDS.STORY_RESOLVE, "story");
@@ -1524,7 +1724,11 @@ export const EncounterEngine = {
     run.lastResultText = null;
     run.lastFeedback = null;
     run.lastHpChange = null;
-    WorldService.afterEncounter(run, rng);
+    const completed = WorldService.afterEncounter(run, rng);
+    const storyPulse = StoryChainService.notifyTimeAndActivities(run, completed, next);
+    if (storyPulse) {
+      run.lastFeedback = storyPulse;
+    }
     FactionService.checkRevolutionaryEmergence(next);
     refreshStats(next);
     if (run.gameOver || run.player.hp <= 0) {
@@ -1533,6 +1737,20 @@ export const EncounterEngine = {
       next.statistics.deaths += 1;
       next.statistics.daysSurvivedTotal += run.day;
       refreshStats(next);
+      return next;
+    }
+
+    const activityMode = run.activityMode ?? "ISLAND";
+    if (seekRandom) {
+      this.selectEncounter(run, rng);
+      return next;
+    }
+    if (activityMode === "SAILING" && run.activeVoyage) {
+      VoyageService.resumeAfterEvent(run);
+      return next;
+    }
+    if (activityMode === "ISLAND") {
+      this.enterIslandHub(run, rng);
       return next;
     }
     this.selectEncounter(run, rng);

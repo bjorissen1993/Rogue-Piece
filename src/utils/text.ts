@@ -37,6 +37,43 @@ export function formatHudAmount(amount: number): string {
   return amount.toLocaleString();
 }
 
+/** Split a crew card display into primary name + optional title/epithet line. */
+export function splitCharacterDisplayName(
+  fullName: string,
+  epithet?: string | null,
+): { name: string; title?: string } {
+  const trimmed = fullName.trim();
+  const epithetTrimmed = epithet?.trim();
+  if (epithetTrimmed) {
+    return { name: trimmed, title: epithetTrimmed };
+  }
+  if (!trimmed) {
+    return { name: fullName };
+  }
+
+  const quoted = trimmed.match(/^(.+?)\s+[“”"']([^“”"']+)[“”"']$/);
+  if (quoted?.[1] && quoted[2]) {
+    return { name: quoted[1].trim(), title: quoted[2].trim() };
+  }
+
+  const ofThe = trimmed.match(/^(.+?)\s+(of\s+the\s+.+)$/i);
+  if (ofThe?.[1] && ofThe[2]) {
+    return { name: ofThe[1].trim(), title: ofThe[2].trim() };
+  }
+
+  const ofRest = trimmed.match(/^(.+?)\s+(of\s+.+)$/i);
+  if (ofRest?.[1] && ofRest[2]) {
+    return { name: ofRest[1].trim(), title: ofRest[2].trim() };
+  }
+
+  const theRest = trimmed.match(/^(\S+)\s+(the\s+.+)$/i);
+  if (theRest?.[1] && theRest[2]) {
+    return { name: theRest[1].trim(), title: theRest[2].trim() };
+  }
+
+  return { name: trimmed };
+}
+
 export const STAT_LABELS: Record<StatName, string> = {
   strength: "Strength",
   defense: "Defense",

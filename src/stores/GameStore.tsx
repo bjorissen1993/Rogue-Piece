@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { endRun, startRun } from "../game/createGame";
+import { MAX_ACTIVE_FIGHTERS, MAX_SUPPORT_SLOTS } from "../game/constants";
 import type {
   CareerFactionId,
   CareerRoleId,
@@ -7,11 +8,15 @@ import type {
   CombatRequest,
   IdentityTendencyId,
   LegalStatusId,
+  IslandFacilityHotspot,
+  IslandMapLayoutExtras,
+  IslandMapScene,
   ProfileSave,
   ProfileSlot,
   RaceDefinition,
   RelationFactionId,
   SavePreview,
+  StoryTriggerEvent,
   TimeOfDay,
   WeaponShopTheme,
   ZoanFormId,
@@ -32,6 +37,8 @@ import { EncounterEngine } from "../services/EncounterEngine";
 import { EncounterHistoryService } from "../services/EncounterHistoryService";
 import { FactionMissionService } from "../services/FactionMissionService";
 import { FactionService } from "../services/FactionService";
+import { DialogueService } from "../services/DialogueService";
+import { StoryChainService } from "../services/StoryChainService";
 import { IslandService } from "../services/IslandService";
 import { ItemService } from "../services/ItemService";
 import { RaceService } from "../services/RaceService";
@@ -42,6 +49,7 @@ import { canAccessDevelopmentProfile } from "../services/DevAccess";
 import { StoryThreadService } from "../services/StoryThreadService";
 import { WeaponService } from "../services/WeaponService";
 import { WeaponShopService } from "../services/WeaponShopService";
+import { ItemMarketService } from "../services/ItemMarketService";
 import { SparringService } from "../services/SparringService";
 import { WorldCombatProgressionService } from "../services/WorldCombatProgressionService";
 import { BATTLE_FORMATS } from "../services/EncounterCompositionService";
@@ -49,12 +57,14 @@ import { LegacyService } from "../services/LegacyService";
 import { ProgressionService } from "../services/ProgressionService";
 import { CharacterScheduleService } from "../services/CharacterScheduleService";
 import { TrainingService } from "../services/TrainingService";
+import { VoyageService } from "../services/VoyageService";
 import { WorldService } from "../services/WorldService";
 import { KnowledgeService } from "../services/KnowledgeService";
 import { LootDispositionService } from "../services/LootDispositionService";
 import { PartyCombatService } from "../services/PartyCombatService";
 import { createSeed } from "../utils/ids";
 import { DEVIL_FRUITS } from "../data/devilFruits";
+import { isKnownIslandMapAssetId } from "../data/islandMaps";
 import type { StatName } from "../models/types";
 
 export type Screen = "profileSelect" | "profileMenu" | "playMenu" | "newRun" | "game" | "gameOver";
@@ -105,7 +115,20 @@ type GameStoreValue = {
   requestResetDev: () => void;
   cancelResetDev: () => void;
   choose: (choiceId: string, participantIds?: string[]) => void;
+  saveIslandFacilityHotspots: (
+    hotspots: IslandFacilityHotspot[],
+    scenes?: IslandMapScene[] | null,
+    extras?: IslandMapLayoutExtras,
+  ) => void;
+  /** Talk-to-NPC stub: personality-aware template line; persists dialogue memory. */
+  talkToLocalNpcs: (parentHotspotId?: string) => string;
+  fireStoryTrigger: (event: StoryTriggerEvent) => string | null;
+  setIslandMapAsset: (mapAssetId: string) => void;
+  /** Assign map art / facilities for older saves when entering the island hub. */
+  ensureIslandHubMaps: () => void;
   continueResult: () => void;
+  beginVoyage: (toIslandId: string) => void;
+  tickVoyage: () => void;
   dismissAssignmentResults: () => void;
   dismissBattleResult: () => void;
   finishCombatPresentation: () => void;
@@ -117,6 +140,13 @@ type GameStoreValue = {
   ) => void;
   sellWeaponShopOwned: (instanceId: string) => void;
   refreshWeaponShop: (theme?: WeaponShopTheme) => void;
+  ensureItemMarket: (kind: import("../models/types").ItemMarketKind) => void;
+  buyItemMarketListing: (kind: import("../models/types").ItemMarketKind, listingId: string) => void;
+  refreshItemMarket: (kind: import("../models/types").ItemMarketKind) => void;
+  acceptFactionMission: (missionId: string) => void;
+  resolveFactionMission: (missionId: string, success?: boolean) => void;
+  postFactionMissionWork: () => void;
+  ensureTaskBoard: () => void;
   confirmBattleSetup: (participantIds: string[], wager: import("../models/types").SparWager | null) => void;
   cancelBattleSetup: () => void;
   combatAction: (action: CombatAction) => void;
@@ -302,13 +332,37 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     setOverlay(null);
   }, []);
 
+  const ensureIslandHubMaps = useCallback(() => {
+    if (!profile?.activeRun) {
+      return;
+    }
+    const needsAssign = profile.activeRun.islands.some(
+      (island) =>
+        !isKnownIslandMapAssetId(island.mapAssetId) ||
+        !(island.facilities && island.facilities.length > 0),
+    );
+    if (!needsAssign) {
+      return;
+    }
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    const rng = createRng(`${run.seed}:island-facilities`);
+    IslandService.ensureAllIslandFacilities(run, rng);
+    persist(next);
+  }, [profile, persist]);
+
   const continueRun = useCallback(() => {
     if (!profile?.activeRun || profile.activeRun.gameOver) {
       return;
     }
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    const rng = createRng(`${run.seed}:island-facilities`);
+    IslandService.ensureAllIslandFacilities(run, rng);
+    persist(next);
     setOverlay(null);
     setScreen("game");
-  }, [profile]);
+  }, [profile, persist]);
 
   const startNewRunFlow = useCallback(() => {
     if (!profile) {
@@ -389,6 +443,82 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     [profile, persist],
   );
 
+  const saveIslandFacilityHotspots = useCallback(
+    (
+      hotspots: IslandFacilityHotspot[],
+      scenes?: IslandMapScene[] | null,
+      extras?: IslandMapLayoutExtras,
+    ) => {
+      if (!profile?.activeRun) {
+        return;
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const island = IslandService.getCurrentIsland(run);
+      if (!island) {
+        return;
+      }
+      IslandService.setFacilityHotspots(island, hotspots, scenes, extras);
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const talkToLocalNpcs = useCallback(
+    (parentHotspotId?: string) => {
+      if (!profile?.activeRun) {
+        return "There's no one to talk to right now.";
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const island = IslandService.getCurrentIsland(run);
+      const hotspot = parentHotspotId
+        ? island?.mapLayouts?.[island.mapAssetId ?? ""]?.hotspots.find((h) => h.hotspotId === parentHotspotId)
+          ?? island?.facilityHotspots?.find((h) => h.hotspotId === parentHotspotId)
+        : undefined;
+      const result = DialogueService.performTalk(run, island, hotspot);
+      persist(next);
+      return result.line;
+    },
+    [profile, persist],
+  );
+
+  const fireStoryTrigger = useCallback(
+    (event: StoryTriggerEvent) => {
+      if (!profile?.activeRun) {
+        return null;
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const line = StoryChainService.fireEvent(run, event, next);
+      persist(next);
+      return line;
+    },
+    [profile, persist],
+  );
+
+  const setIslandMapAsset = useCallback(
+    (mapAssetId: string) => {
+      if (!profile?.activeRun) {
+        return;
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const island = IslandService.getCurrentIsland(run);
+      if (!island) {
+        return;
+      }
+      island.mapAssetId = mapAssetId;
+      island.mapLayouts = island.mapLayouts ?? {};
+      // Never reuse another map's placements — empty means defaults / auto-layout.
+      island.facilityHotspots = island.mapLayouts[mapAssetId]?.hotspots
+        ? [...island.mapLayouts[mapAssetId]!.hotspots]
+        : [];
+      persist(next);
+    },
+    [profile, persist],
+  );
+
   const dismissAssignmentResults = useCallback(() => {
     if (!profile?.activeRun?.pendingAssignmentResults?.length) {
       return;
@@ -409,6 +539,53 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       setOverlay(null);
     }
   }, [profile, persist]);
+
+  const beginVoyage = useCallback(
+    (toIslandId: string) => {
+      if (!profile?.activeRun) {
+        return;
+      }
+      const rng = createRng(`${profile.activeRun.seed}:depart:${toIslandId}:${profile.activeRun.day}`);
+      const next = VoyageService.beginVoyage(profile, toIslandId, rng);
+      persist(next);
+      setOverlay(null);
+    },
+    [profile, persist],
+  );
+
+  const tickVoyage = useCallback(() => {
+    if (!profile?.activeRun) {
+      return;
+    }
+    const run = profile.activeRun;
+    if ((run.activityMode ?? "ISLAND") !== "SAILING" || !run.activeVoyage) {
+      return;
+    }
+    if (run.awaitingAdvance || (run.combat && !run.combat.finished)) {
+      return;
+    }
+    if (overlay) {
+      return;
+    }
+    const rng = createRng(
+      `${run.seed}:voyage:${run.activeVoyage.slotsElapsed}:${run.day}:${run.timeOfDay}`,
+    );
+    const result = VoyageService.tick(profile, rng);
+    const next = result.profile;
+    if (result.arrived) {
+      const arrivedRun = next.activeRun!;
+      EncounterEngine.enterIslandHub(arrivedRun, rng);
+      persist(next);
+      return;
+    }
+    if (result.needsEvent) {
+      const eventRun = next.activeRun!;
+      EncounterEngine.selectEncounter(eventRun, rng);
+      persist(next);
+      return;
+    }
+    persist(next);
+  }, [profile, persist, overlay]);
 
   const dismissBattleResult = useCallback(() => {
     if (!profile?.activeRun?.pendingBattleResult) {
@@ -509,6 +686,90 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     },
     [profile, persist],
   );
+
+  const ensureItemMarket = useCallback(
+    (kind: import("../models/types").ItemMarketKind) => {
+      if (!profile?.activeRun) return;
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const rng = createRng(`${run.seed}:market:${kind}:${run.day}`);
+      ItemMarketService.ensureStock(run, kind, rng);
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const buyItemMarketListing = useCallback(
+    (kind: import("../models/types").ItemMarketKind, listingId: string) => {
+      if (!profile?.activeRun) return;
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const stock = ItemMarketService.ensureStock(run, kind);
+      const rng = createRng(`${run.seed}:market-buy:${listingId}:${run.day}`);
+      const result = ItemMarketService.purchase(run, next, stock.shopKey, listingId, rng);
+      run.lastFeedback = result.message;
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const refreshItemMarket = useCallback(
+    (kind: import("../models/types").ItemMarketKind) => {
+      if (!profile?.activeRun) return;
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const rng = createRng(`${run.seed}:market-refresh:${kind}:${run.day}`);
+      ItemMarketService.ensureStock(run, kind, rng, { forceRefresh: true });
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const acceptFactionMission = useCallback(
+    (missionId: string) => {
+      if (!profile?.activeRun) return;
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      run.lastFeedback = FactionMissionService.activateMission(run, missionId);
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const resolveFactionMission = useCallback(
+    (missionId: string, success = true) => {
+      if (!profile?.activeRun) return;
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      run.lastFeedback = FactionMissionService.resolveMission(run, missionId, success);
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const postFactionMissionWork = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    FactionMissionService.ensureBoardStock(run);
+    const mission = FactionMissionService.generateMission(run, {
+      title: "Board notice",
+      description: "A freshly posted job from the island task board.",
+    });
+    run.lastFeedback = `Posted: ${mission.title}.`;
+    persist(next);
+  }, [profile, persist]);
+
+  const ensureTaskBoard = useCallback(() => {
+    if (!profile?.activeRun) return;
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    const before = (run.factionMissions ?? []).length;
+    FactionMissionService.ensureBoardStock(run);
+    if ((run.factionMissions ?? []).length !== before) {
+      persist(next);
+    }
+  }, [profile, persist]);
 
   const confirmBattleSetup = useCallback(
     (participantIds: string[], wager: import("../models/types").SparWager | null) => {
@@ -1182,8 +1443,9 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     const next = structuredClone(profile);
     const run = next.activeRun!;
     const rng = createRng(`${run.seed}_slot_${Date.now()}`);
-    WorldService.spendTime(run, 1, rng);
-    setDebugFeedback(`Advanced 1 slot → Day ${run.day} ${run.timeOfDay}`);
+    const completed = WorldService.spendTime(run, 1, rng);
+    const story = StoryChainService.notifyTimeAndActivities(run, completed, next);
+    setDebugFeedback(story ?? `Advanced 1 slot → Day ${run.day} ${run.timeOfDay}`);
     persist(next);
   }, [profile, persist]);
 
@@ -1193,7 +1455,8 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     const run = next.activeRun!;
     const rng = createRng(`${run.seed}_day_${Date.now()}`);
     WorldService.turnDay(run, rng);
-    setDebugFeedback(`Advanced to Day ${run.day}`);
+    const story = StoryChainService.notifyTimeAndActivities(run, [], next);
+    setDebugFeedback(story ?? `Advanced to Day ${run.day}`);
     persist(next);
   }, [profile, persist]);
 
@@ -1910,8 +2173,11 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   const debugAutoParty = useCallback(() => {
     withRunFeedback((run) => {
       const ids = run.crew.map((member) => member.characterId);
-      CrewCombatService.setActiveFighters(run, ids.slice(0, 3));
-      CrewCombatService.setSupportSlots(run, ids.slice(3, 6));
+      CrewCombatService.setActiveFighters(run, ids.slice(0, MAX_ACTIVE_FIGHTERS));
+      CrewCombatService.setSupportSlots(
+        run,
+        ids.slice(MAX_ACTIVE_FIGHTERS, MAX_ACTIVE_FIGHTERS + MAX_SUPPORT_SLOTS),
+      );
       const summary = CrewService.activePartySummary(run);
       return `Party set — fighters: ${summary.fighters.join(", ") || "player only"} · support: ${summary.support.join(", ") || "none"}`;
     });
@@ -1987,7 +2253,14 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     requestResetDev,
     cancelResetDev,
     choose,
+    saveIslandFacilityHotspots,
+    talkToLocalNpcs,
+    fireStoryTrigger,
+    setIslandMapAsset,
+    ensureIslandHubMaps,
     continueResult,
+    beginVoyage,
+    tickVoyage,
     dismissAssignmentResults,
     dismissBattleResult,
     finishCombatPresentation,
@@ -1996,6 +2269,13 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     buyWeaponShopListing,
     sellWeaponShopOwned,
     refreshWeaponShop,
+    ensureItemMarket,
+    buyItemMarketListing,
+    refreshItemMarket,
+    acceptFactionMission,
+    resolveFactionMission,
+    postFactionMissionWork,
+    ensureTaskBoard,
     confirmBattleSetup,
     cancelBattleSetup,
     combatAction,

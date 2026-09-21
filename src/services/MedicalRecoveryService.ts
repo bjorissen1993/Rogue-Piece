@@ -10,8 +10,10 @@ import type {
   WorldCharacter,
 } from "../models/types";
 import { TIME_OF_DAY_ORDER } from "../game/constants";
+import { AfflictionService } from "./AfflictionService";
 import { CharacterScheduleService } from "./CharacterScheduleService";
 import { CharacterService } from "./CharacterService";
+import { CrewCombatService } from "./CrewCombatService";
 import { IslandService } from "./IslandService";
 import { PartyCombatService } from "./PartyCombatService";
 import { ProgressionService } from "./ProgressionService";
@@ -270,6 +272,20 @@ export const MedicalRecoveryService = {
       }
       lines.push(`${input.name} is badly hurt (${input.severity.toLowerCase()}).`);
       return { lines, days, hospitalized };
+    }
+
+    const formationId = characterId === "player" ? run.player.id : characterId;
+    CrewCombatService.parkUnavailableMember(run, formationId);
+
+    // Hospital / ship doctor clears toxins; untreated recovery may leave a lingering DoT.
+    if (hospitalized || treatedBy) {
+      AfflictionService.clearMedicalDots(run, characterId);
+    } else if (input.severity === "MODERATE" || input.severity === "SEVERE") {
+      AfflictionService.apply(run, characterId, "SICKNESS", { days: Math.max(2, days) });
+      lines.push(`${input.name} looks feverish — infection may linger without care.`);
+    } else if ((input.overkill ?? 0) >= 8) {
+      AfflictionService.apply(run, characterId, "POISON", { days: 2 });
+      lines.push(`${input.name}'s wounds look poisoned — find a doctor soon.`);
     }
 
     if (characterId !== "player") {

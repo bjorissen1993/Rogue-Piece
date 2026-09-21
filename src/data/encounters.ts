@@ -53,7 +53,7 @@ export const ENCOUNTERS: Encounter[] = [
   {
     id: "floating_crate",
     title: "Floating Crate",
-    category: "Flotsam",
+    category: "SEA",
     visual: { overlay: "SEA", background: "/backgrounds/sea.png", variant: "default" },
     description:
       "A sealed crate knocks against your hull, half-swallowed by foam. Someone lost this. Or someone wanted it gone.",
@@ -124,7 +124,7 @@ export const ENCOUNTERS: Encounter[] = [
   {
     id: "marine_patrol",
     title: "Marine Patrol",
-    category: "Authority",
+    category: "SEA",
     visual: { overlay: "DARK", background: "/backgrounds/sea.png", variant: "fight" },
     description:
       "A Marine cutter cuts across your wake. A megaphone crackles: they want names, papers, and a look at your hold.",
@@ -227,7 +227,7 @@ export const ENCOUNTERS: Encounter[] = [
   {
     id: "sea_king",
     title: "Sea King",
-    category: "The Deep",
+    category: "SEA",
     visual: { overlay: "SEA", background: "/backgrounds/sea.png", variant: "fight" },
     description:
       "The water goes black beneath you. A ridge of spines breaks the surface, then an eye the size of a dinghy.",
@@ -700,6 +700,7 @@ export const ENCOUNTERS: Encounter[] = [
   {
     id: "storm_at_sea",
     title: "Storm at Sea",
+    category: "SEA",
     visual: { overlay: "SEA", background: "/backgrounds/sea.png" },
     timeCost: "LONG",
     description:
@@ -989,7 +990,7 @@ export const ENCOUNTERS: Encounter[] = [
   {
     id: "rival_boarding",
     title: "Rival Boarding",
-    category: "Boarding",
+    category: "SEA",
     visual: { overlay: "DARK", background: "/backgrounds/sea.png", variant: "fight" },
     regions: ALL_SEAS,
     description:
@@ -2048,7 +2049,7 @@ export const ENCOUNTERS: Encounter[] = [
     timeCost: "LONG",
     description:
       "A dockside yard has posts, sand, and people who will take your coin to make you hurt usefully. Nothing here is free, and nothing here lasts past sundown.",
-    weight: 9,
+    weight: 0,
     conditions: [
       {
         type: "ANY_LOCATION",

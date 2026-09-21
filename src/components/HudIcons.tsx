@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
-import type { InventoryItem, RelationFactionId } from "../models/types";
+import type { CSSProperties, ReactNode } from "react";
+import { TIME_OF_DAY_ORDER } from "../game/constants";
+import type { InventoryItem, RelationFactionId, TimeOfDay, WeaponType } from "../models/types";
 
 export type HudIconName =
   | "hourglass"
@@ -175,25 +176,182 @@ const MARKS: Record<HudIconName, ReactNode> = {
 };
 
 export const HUD_ART: Partial<Record<HudIconName, string>> = {
-  hourglass: "/icons/time.png",
-  compass: "/icons/location.png",
-  pin: "/icons/region.png",
-  coin: "/icons/money.png",
-  pouch: "/icons/item.png",
-  fruit: "/icons/Devil_Fruit.png",
+  hourglass: "/icons/UI/time.png",
+  compass: "/icons/UI/location.png",
+  pin: "/icons/UI/region.png",
+  coin: "/icons/UI/money.png",
+  pouch: "/icons/UI/item.png",
+  fruit: "/icons/Events/Devil_Fruit.png",
 };
 
 export const FACTION_ART: Record<RelationFactionId, string> = {
-  MARINES: "/icons/marines.png",
-  PIRATES: "/icons/pirates.png",
-  WORLD_GOVERNMENT: "/icons/world-government.png",
-  CIVILIANS: "/icons/civilians.png",
-  REVOLUTIONARY_ARMY: "/icons/revolutionary-army.png",
+  MARINES: "/icons/Faction/marines.png",
+  PIRATES: "/icons/Faction/pirates.png",
+  WORLD_GOVERNMENT: "/icons/Faction/world-government.png",
+  CIVILIANS: "/icons/Faction/civilians.png",
+  REVOLUTIONARY_ARMY: "/icons/Faction/revolutionary-army.png",
 };
 
-export const BOUNTY_ART = "/icons/bounty.png";
-export const TITLE_ART = "/icons/Title.png";
-export const CREST_ART = "/icons/pirate-head.png";
+/** Circular crew-card portraits (Leader = captain/player, Crew = crewmates). */
+export type FactionPortraitRole = "leader" | "crew";
+
+/**
+ * Filename stems under public/icons/Crew (actual on-disk names).
+ * Civilian → Civillian_*, Revolutionary → Revolutionairy_* (uploaded spellings).
+ */
+const FACTION_PORTRAIT_STEM: Record<RelationFactionId, string> = {
+  MARINES: "Marines",
+  PIRATES: "Pirates",
+  WORLD_GOVERNMENT: "Government",
+  CIVILIANS: "Civillian",
+  REVOLUTIONARY_ARMY: "Revolutionairy",
+};
+
+export const FACTION_PORTRAIT_FALLBACK: Record<FactionPortraitRole, string> = {
+  leader: "/icons/Crew/Civillian_Leader.png",
+  crew: "/icons/Crew/Civillian_Crew.png",
+};
+
+/**
+ * Resolve a faction id (career, relation, npc, or loose alias) to a portrait asset
+ * in public/icons/Crew (*_Leader.png / *_Crew.png).
+ */
+export function factionPortraitSrc(
+  factionId: string | null | undefined,
+  role: FactionPortraitRole,
+): string {
+  const key = normalizeFactionPortraitKey(factionId);
+  const stem = key ? FACTION_PORTRAIT_STEM[key] : null;
+  if (!stem) {
+    return FACTION_PORTRAIT_FALLBACK[role];
+  }
+  const suffix = role === "leader" ? "Leader" : "Crew";
+  return `/icons/Crew/${stem}_${suffix}.png`;
+}
+
+function normalizeFactionPortraitKey(
+  factionId: string | null | undefined,
+): RelationFactionId | null {
+  if (!factionId) {
+    return null;
+  }
+  switch (factionId.toUpperCase()) {
+    case "MARINES":
+    case "MARINE":
+      return "MARINES";
+    case "PIRATES":
+    case "PIRATE":
+      return "PIRATES";
+    case "WORLD_GOVERNMENT":
+    case "GOVERNMENT":
+      return "WORLD_GOVERNMENT";
+    case "CIVILIANS":
+    case "CIVILIAN":
+      return "CIVILIANS";
+    case "REVOLUTIONARY_ARMY":
+    case "REVOLUTIONARY":
+    case "REVOLUTIONAIRY":
+      return "REVOLUTIONARY_ARMY";
+    default:
+      return null;
+  }
+}
+
+export const BOUNTY_ART = "/icons/UI/bounty.png";
+export const TITLE_ART = "/icons/UI/Title.png";
+export const CREST_ART = "/icons/UI/pirate-head.png";
+export const TIME_LOOP_ART = "/icons/UI/Time_Loop.png";
+export const RECOVERING_ART = "/icons/Crew/Recovering.png";
+export const UNAVAILABLE_ART = "/icons/Crew/Unavailable.png";
+/** Affliction / DoT badge (poison, sickness). */
+export const AFFLICTION_DOT_ART = "/icons/Skill_Badge/Badge_Damage_Over_Time-Affliction.png";
+/** Skill-badge DF art (same asset as DEVIL_FRUIT in skillBadges). */
+export const DEVIL_FRUIT_BADGE_ART = "/icons/Skill_Badge/Badge_Devil_Fruit.png";
+export const DEVIL_FRUIT_ICON_FALLBACK = "/icons/Events/Devil_Fruit.png";
+
+/** UI badge art for roster weapon-class icons. */
+export type WeaponIconKind = "Unarmed" | "Sword" | "Spear" | "Staff" | "Rifle" | "Shield";
+
+export const WEAPON_ICON_ART: Record<WeaponIconKind, string> = {
+  Unarmed: "/icons/Weapons/Weapon_Unarmed.png",
+  Sword: "/icons/Weapons/Weapon_Sword.png",
+  Spear: "/icons/Weapons/Weapon_Spear.png",
+  Staff: "/icons/Weapons/Weapon_Staff_2H.png",
+  Rifle: "/icons/Weapons/Weapon_Pistol_2H.png",
+  Shield: "/icons/Weapons/Weapon_Shield.png",
+};
+
+/**
+ * Map game WeaponType → roster icon.
+ * SWORD → Sword; SPEAR → Spear; CLUB → Staff; GUN → 2H pistol (rifles); FISTS/KICKS/none → Unarmed.
+ */
+export function weaponIconKind(weaponType?: WeaponType | null): WeaponIconKind {
+  switch (weaponType) {
+    case "SWORD":
+      return "Sword";
+    case "SPEAR":
+      return "Spear";
+    case "CLUB":
+      return "Staff";
+    case "GUN":
+      return "Rifle";
+    case "FISTS":
+    case "KICKS":
+    default:
+      return "Unarmed";
+  }
+}
+
+export function weaponIconSrc(
+  weaponType?: WeaponType | null,
+  emptyKind: WeaponIconKind = "Unarmed",
+): string {
+  if (!weaponType) {
+    return WEAPON_ICON_ART[emptyKind];
+  }
+  return WEAPON_ICON_ART[weaponIconKind(weaponType)];
+}
+
+/** Day-bottom / night-top art: sweep 0°→180° across TIME_OF_DAY_ORDER so night lands upright. */
+const TIME_LOOP_BASE_ROTATION_DEG = 270; // temporary: quarter-turn clockwise + 180°
+
+export function timeLoopRotationDeg(timeOfDay: TimeOfDay): number {
+  const index = Math.max(0, TIME_OF_DAY_ORDER.indexOf(timeOfDay));
+  const last = TIME_OF_DAY_ORDER.length - 1;
+  const sweep = last <= 0 ? 0 : (index / last) * 180;
+  return TIME_LOOP_BASE_ROTATION_DEG + sweep;
+}
+
+export function TimeLoopEmblem({
+  timeOfDay,
+  size,
+}: {
+  timeOfDay: TimeOfDay;
+  size?: number;
+}) {
+  const deg = timeLoopRotationDeg(timeOfDay);
+  return (
+    <span
+      aria-hidden="true"
+      className="time-loop-emblem"
+      style={
+        size != null
+          ? ({ "--time-loop-size": `${size}px` } as CSSProperties)
+          : undefined
+      }
+    >
+      <img
+        alt=""
+        className="time-loop-emblem-dial"
+        draggable={false}
+        height={size}
+        src={TIME_LOOP_ART}
+        style={{ transform: `rotate(${deg}deg)` }}
+        width={size}
+      />
+    </span>
+  );
+}
 
 export function HudArt({
   src,

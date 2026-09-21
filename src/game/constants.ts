@@ -1,8 +1,24 @@
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 33;
+
+/** Primary shore navigation encounter (Island State hub). */
+export const ISLAND_HUB_ENCOUNTER_ID = "island_hub";
+/** At-sea travel screen while a voyage is in progress. */
+export const AT_SEA_ENCOUNTER_ID = "at_sea";
+
+/** Default player ship speed in distance-units per time slot. */
+export const DEFAULT_SHIP_SPEED = 1;
+/** Baseline voyage distance between East Blue islands (abstract units). */
+export const DEFAULT_VOYAGE_DISTANCE = 3;
+/** Chance per sailing time slot to pause for a sea event. */
+export const SEA_EVENT_CHANCE_PER_SLOT = 0.28;
+/** Auto-tick interval (ms) while sailing with no event pending. */
+export const VOYAGE_AUTO_TICK_MS = 900;
 
 /** Core roster cap including the player character. */
 export const CORE_CREW_CAP = 10;
-/** Max crew IDs in the fighting line (captain is always added → 5 fighters total). */
+/** Max fighters in the active battle row (includes captain when present). */
+export const BATTLE_ROW_SLOTS = 5;
+/** Max crew IDs derived into activeFighterIds (battle row minus optional captain). */
 export const MAX_ACTIVE_FIGHTERS = 4;
 export const MAX_SUPPORT_SLOTS = 3;
 
@@ -26,6 +42,21 @@ export const XP_REWARDS = {
 
 /** Levels that offer a technique choice. */
 export const TECHNIQUE_MILESTONE_LEVELS = [3, 5, 8, 12, 16] as const;
+
+/**
+ * Cumulative mastery XP thresholds → mastery level index.
+ * Level 0 at 0 XP; level 1 at 1 use; 3/5/8/12 match technique-milestone spirit.
+ */
+export const MASTERY_LEVEL_XP_THRESHOLDS = [0, 1, 3, 5, 8, 12, 16, 22, 30, 40, 55, 75, 100] as const;
+
+/** Solo weapon/unarmed techniques unlock at these mastery levels. */
+export const MASTERY_SOLO_UNLOCK_LEVELS = [1, 3, 5, 8, 12] as const;
+
+/** Both tracks must reach this mastery level for hybrid combo unlocks. */
+export const MASTERY_COMBO_LEVEL = 5;
+
+/** XP granted per successful combat use of a mastery track. */
+export const MASTERY_XP_PER_USE = 1;
 
 export const TIME_OF_DAY_ORDER = ["DAWN", "MORNING", "AFTERNOON", "EVENING", "NIGHT"] as const;
 

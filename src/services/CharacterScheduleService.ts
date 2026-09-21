@@ -11,6 +11,7 @@ import type {
 } from "../models/types";
 import { CharacterService } from "./CharacterService";
 import { ProgressionService } from "./ProgressionService";
+import { WeaponMasteryService } from "./WeaponMasteryService";
 import { WeaponService } from "./WeaponService";
 import type { WeaponType } from "../models/types";
 
@@ -125,6 +126,44 @@ export const CharacterScheduleService = {
     }
     const member = run.crew.find((entry) => entry.characterId === characterId);
     return member?.status ?? "Ready";
+  },
+
+  /**
+   * Why a character is busy / unavailable (assignment label + return, or derived status).
+   * Null when Ready / available with no assignment.
+   */
+  busySummary(run: RunState, characterId: string): string | null {
+    const id = characterId === run.player.id ? "player" : characterId;
+    const assignment = this.getAssignment(run, id);
+    if (assignment) {
+      return `${assignment.label} · returns ${formatReturn(assignment)}`;
+    }
+    const status = this.derivedStatus(run, id);
+    if (status === "Ready") {
+      return null;
+    }
+    switch (status) {
+      case "Training":
+        return "Training";
+      case "OnMission":
+        return "On mission";
+      case "PersonalActivity":
+        return "Busy with personal activity";
+      case "Injured":
+        return "Injured / recovering";
+      case "Hospitalized":
+        return "Hospitalized";
+      case "Resting":
+        return "Resting";
+      case "Captured":
+        return "Captured";
+      case "Missing":
+        return "Missing";
+      case "Unavailable":
+        return "Unavailable";
+      default:
+        return String(status);
+    }
   },
 
   scheduleEnd(
@@ -263,7 +302,11 @@ export const CharacterScheduleService = {
         if (assignment.characterId === "player") {
           const weaponType = assignment.focus as WeaponType;
           WeaponService.addMastery(run, weaponType, 12 + (assignment.endDay - assignment.startDay) * 8);
+          const unlockLine = WeaponMasteryService.applyUnlocks(run);
           rewards.push(`${weaponType} mastery improved.`);
+          if (unlockLine) {
+            rewards.push(unlockLine);
+          }
         }
       }
       summary = `${name} finishes ${assignment.label}.`;

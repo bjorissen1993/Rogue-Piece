@@ -175,8 +175,8 @@ export type EncounterActionName =
   | "joinTemporarily"
   | "default";
 
-const GENERIC_CHOICE_ICON = "/icons/explore.png";
-const CHOICE_DISTANCE_ICON = "/icons/keep-distance.png";
+const GENERIC_CHOICE_ICON = "/icons/Events/explore.png";
+const CHOICE_DISTANCE_ICON = "/icons/Events/keep-distance.png";
 
 const FORBIDDEN_DIAMOND_ICONS = new Set([
   "strength",
@@ -224,21 +224,21 @@ const CHOICE_ICON_ALIASES: Record<string, string> = {
 };
 
 const CHOICE_DIAMOND_BY_ACTION: Record<EncounterActionName, string> = {
-  fight: "/icons/fight.png",
-  parley: "/icons/talk.png",
+  fight: "/icons/Events/fight.png",
+  parley: "/icons/Events/talk.png",
   escape: CHOICE_DISTANCE_ICON,
-  help: "/icons/help.png",
-  steal: "/icons/treasure.png",
-  cutRope: "/icons/cut-rope.png",
+  help: "/icons/Events/help.png",
+  steal: "/icons/Events/treasure.png",
+  cutRope: "/icons/Events/cut-rope.png",
   keepDistance: CHOICE_DISTANCE_ICON,
-  search: "/icons/search.png",
-  stealth: "/icons/stealth.png",
-  track: "/icons/track.png",
-  treasure: "/icons/treasure.png",
-  explore: "/icons/explore.png",
-  rest: "/icons/rest.png",
-  join: "/icons/join.png",
-  joinTemporarily: "/icons/join-temporarily.png",
+  search: "/icons/Events/search.png",
+  stealth: "/icons/Events/stealth.png",
+  track: "/icons/Events/track.png",
+  treasure: "/icons/Events/treasure.png",
+  explore: "/icons/Events/explore.png",
+  rest: "/icons/Events/rest.png",
+  join: "/icons/Events/join.png",
+  joinTemporarily: "/icons/Events/join-temporarily.png",
   train: GENERIC_CHOICE_ICON,
   default: GENERIC_CHOICE_ICON,
 };
@@ -274,7 +274,7 @@ export function choiceIconSrc(icon?: string): string | undefined {
   if (icon.startsWith("/") || icon.startsWith("http")) {
     return /(?:^|[/\\])escape\.(?:png|svg|webp|jpg|jpeg)$/i.test(icon) ? CHOICE_DISTANCE_ICON : icon;
   }
-  return `/icons/${aliased}.png`;
+  return `/icons/Events/${aliased}.png`;
 }
 
 export function choiceDiamondSrc(choice: EncounterChoice): string {

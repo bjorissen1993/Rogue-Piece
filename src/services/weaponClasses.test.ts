@@ -177,6 +177,113 @@ describe("weapon class gating + dual wield", () => {
     expect(WeaponService.equippedInstanceFor(run, character.id, "secondary")).toBeUndefined();
   });
 
+  it("does not mirror a secondary into primary via weaponIds (no ghost duplicate)", () => {
+    const { run } = freshRun("crew-no-ghost");
+    const character = CharacterService.getOrCreateCharacter(run, {
+      name: "Niko",
+      faction: "PIRATE",
+      strength: 6,
+      combatStyle: "swordsman",
+      personality: "Steady",
+      tags: ["test"],
+      alive: true,
+      weaponIds: ["steel_cutlass"],
+    });
+    CharacterService.acceptRecruitment(run, character.id, "FIGHTER", "PERMANENT");
+
+    const pistol = WeaponGenerationService.generate(createRng("crew-ghost-pistol"), {
+      archetypeId: "pistol",
+      material: "STEEL",
+      quality: "FINE",
+    });
+    const pistolId = WeaponService.grantGeneratedWeapon(run, pistol, { skipDisposition: true });
+    expect(WeaponService.assignToCrew(run, pistolId!, character.id, "secondary").ok).toBe(true);
+
+    const primary = WeaponService.equippedInstanceFor(run, character.id, "primary");
+    const secondary = WeaponService.equippedInstanceFor(run, character.id, "secondary");
+    expect(primary).toBeUndefined();
+    expect(secondary?.id).toBe(pistolId);
+    expect(primary?.id).not.toBe(secondary?.id);
+    expect(WeaponService.preferredCrewEquipSlot(run, character.id)).toBe("primary");
+  });
+
+  it("drop preference fills empty primary, and 2H replaces primary instead of failing secondary", () => {
+    const { run } = freshRun("crew-drop-pref");
+    const character = CharacterService.getOrCreateCharacter(run, {
+      name: "Osa",
+      faction: "PIRATE",
+      strength: 7,
+      combatStyle: "swordsman",
+      personality: "Bold",
+      tags: ["test"],
+      alive: true,
+    });
+    CharacterService.acceptRecruitment(run, character.id, "FIGHTER", "PERMANENT");
+
+    WeaponService.grantWeapon(run, "steel_cutlass", { skipDisposition: true });
+    const cutlass = run.player.inventory.find((item) => item.weaponDefinitionId === "steel_cutlass")!;
+    const cutlassView = WeaponService.resolveWeaponView(cutlass)!;
+    expect(WeaponService.preferredCrewEquipSlot(run, character.id, cutlassView)).toBe("primary");
+    expect(WeaponService.assignToCrew(run, cutlass.id, character.id).ok).toBe(true);
+
+    const pistol = WeaponGenerationService.generate(createRng("crew-drop-pistol"), {
+      archetypeId: "pistol",
+      material: "STEEL",
+      quality: "FINE",
+    });
+    const pistolId = WeaponService.grantGeneratedWeapon(run, pistol, { skipDisposition: true });
+    const pistolView = WeaponService.resolveWeaponView(WeaponService.findInstance(run.player, pistolId!)!)!;
+    expect(WeaponService.preferredCrewEquipSlot(run, character.id, pistolView)).toBe("secondary");
+
+    const rifle = WeaponGenerationService.generate(createRng("crew-drop-rifle"), {
+      archetypeId: "rifle",
+      material: "STEEL",
+      quality: "FINE",
+    });
+    const rifleId = WeaponService.grantGeneratedWeapon(run, rifle, { skipDisposition: true });
+    const rifleView = WeaponService.resolveWeaponView(WeaponService.findInstance(run.player, rifleId!)!)!;
+    expect(WeaponService.preferredCrewEquipSlot(run, character.id, rifleView)).toBe("primary");
+
+    const slot = WeaponService.preferredCrewEquipSlot(run, character.id, rifleView);
+    expect(WeaponService.assignToCrew(run, rifleId!, character.id, slot).ok).toBe(true);
+    expect(WeaponService.equippedInstanceFor(run, character.id, "primary")?.id).toBe(rifleId);
+    expect(WeaponService.equippedInstanceFor(run, character.id, "secondary")).toBeUndefined();
+  });
+
+  it("reassigning a weapon between crewmates clears the previous owner's loadout", () => {
+    const { run } = freshRun("crew-reassign");
+    const a = CharacterService.getOrCreateCharacter(run, {
+      name: "Ada",
+      faction: "PIRATE",
+      strength: 6,
+      combatStyle: "swordsman",
+      personality: "Calm",
+      tags: ["test"],
+      alive: true,
+    });
+    const b = CharacterService.getOrCreateCharacter(run, {
+      name: "Bea",
+      faction: "PIRATE",
+      strength: 6,
+      combatStyle: "swordsman",
+      personality: "Bold",
+      tags: ["test"],
+      alive: true,
+    });
+    CharacterService.acceptRecruitment(run, a.id, "FIGHTER", "PERMANENT");
+    CharacterService.acceptRecruitment(run, b.id, "FIGHTER", "PERMANENT");
+
+    WeaponService.grantWeapon(run, "steel_cutlass", { skipDisposition: true });
+    const cutlass = run.player.inventory.find((item) => item.weaponDefinitionId === "steel_cutlass")!;
+    expect(WeaponService.assignToCrew(run, cutlass.id, a.id, "primary").ok).toBe(true);
+    expect(WeaponService.assignToCrew(run, cutlass.id, b.id, "primary").ok).toBe(true);
+
+    expect(WeaponService.equippedInstanceFor(run, a.id, "primary")).toBeUndefined();
+    expect(WeaponService.equippedInstanceFor(run, b.id, "primary")?.id).toBe(cutlass.id);
+    expect(a.weaponIds ?? []).not.toContain("steel_cutlass");
+    expect(b.weaponIds).toContain("steel_cutlass");
+  });
+
   it("hides Focused Strike when crew only has weaponIds catalog loadout (no inventory link)", () => {
     const { run } = freshRun("crew-weaponids");
     const character = CharacterService.getOrCreateCharacter(run, {

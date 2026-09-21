@@ -105,6 +105,86 @@ function materializeAffiliation(run: RunState): PlayerAffiliation {
   return run.player.affiliation;
 }
 
+/** Story-chain granted epithet (player.flags story_title:…). */
+const STORY_TITLE_FLAG_PREFIX = "story_title:";
+
+function overlayStoryTitle(run: RunState, base: string): string {
+  const flag = run.player.flags.find((f) => f.startsWith(STORY_TITLE_FLAG_PREFIX));
+  const extra = flag?.slice(STORY_TITLE_FLAG_PREFIX.length).trim();
+  if (!extra || base.includes(extra)) {
+    return base;
+  }
+  return `${base} · ${extra}`;
+}
+
+function computeCareerTitle(run: RunState): string {
+  const aff = materializeAffiliation(run);
+  const identity = run.player.identity;
+  const hunterRankId = identity?.roleRankId;
+  const hunterRank = hunterRankId ? getRankById(hunterRankId) : undefined;
+  const rank = aff.rankId ? getRankById(aff.rankId) : undefined;
+  const wanted =
+    identity?.legalStatusId === "WANTED" ||
+    identity?.legalStatusId === "FUGITIVE" ||
+    run.player.bounty > 0;
+  const active = ACTIVE_MEMBERSHIP.includes(aff.membershipStatus);
+
+  if (identity?.roleId === "BOUNTY_HUNTER") {
+    const name = hunterRank?.name ?? "Bounty Hunter";
+    return wanted ? `${name} · Wanted` : name;
+  }
+
+  if (identity?.roleId === "CELESTIAL_DRAGON") {
+    return identity.celestial?.lostStatus ? "Ex-Celestial" : "Celestial Dragon";
+  }
+
+  if (aff.membershipStatus === "TRAITOR") {
+    const label = aff.primaryFactionId
+      ? CAREER_FACTION_LABELS[aff.primaryFactionId]
+      : "Faction";
+    return wanted ? `Traitor · Wanted` : `Traitor to the ${label}`;
+  }
+
+  if (aff.membershipStatus === "FORMER_MEMBER") {
+    if (aff.primaryFactionId === "MARINES") {
+      return wanted ? "Former Marine · Wanted" : "Former Marine";
+    }
+    if (aff.primaryFactionId === "PIRATES") {
+      return wanted ? "Former Pirate · Wanted" : "Former Pirate";
+    }
+    if (aff.primaryFactionId) {
+      const label = CAREER_FACTION_LABELS[aff.primaryFactionId];
+      return wanted ? `Former ${label} · Wanted` : `Former ${label}`;
+    }
+  }
+
+  if (aff.primaryFactionId === "MARINES" && active && rank) {
+    return `Marine ${rank.name}`;
+  }
+  if (aff.primaryFactionId === "PIRATES" && active && rank) {
+    if (rank.id === "pirate_captain" || rank.order >= 4) {
+      return rank.name;
+    }
+    return `Pirate ${rank.name}`;
+  }
+  if (aff.primaryFactionId === "REVOLUTIONARY_ARMY" && active && rank) {
+    return `Revolutionary ${rank.name}`;
+  }
+  if (aff.primaryFactionId === "WORLD_GOVERNMENT" && active && rank) {
+    return `WG ${rank.name}`;
+  }
+  if (aff.primaryFactionId === "BOUNTY_HUNTER" && active && rank) {
+    return rank.name;
+  }
+  if (identity?.roleId === "WANDERER") {
+    return wanted ? "Wanderer · Wanted" : "Wanderer";
+  }
+  if (rank && (aff.primaryFactionId === "INDEPENDENT" || aff.primaryFactionId === "CIVILIAN" || aff.membershipStatus === "INDEPENDENT")) {
+    return wanted ? `${rank.name} · Wanted` : rank.name;
+  }
+  return wanted ? "Wanderer · Wanted" : "Wanderer";
+}
+
 export const AffiliationService = {
   defaultAffiliation,
 
@@ -181,70 +261,7 @@ export const AffiliationService = {
   },
 
   computeTitle(run: RunState): string {
-    const aff = materializeAffiliation(run);
-    const identity = run.player.identity;
-    const hunterRankId = identity?.roleRankId;
-    const hunterRank = hunterRankId ? getRankById(hunterRankId) : undefined;
-    const rank = aff.rankId ? getRankById(aff.rankId) : undefined;
-    const wanted =
-      identity?.legalStatusId === "WANTED" ||
-      identity?.legalStatusId === "FUGITIVE" ||
-      run.player.bounty > 0;
-
-    if (identity?.roleId === "BOUNTY_HUNTER") {
-      const name = hunterRank?.name ?? "Bounty Hunter";
-      return wanted ? `${name} · Wanted` : name;
-    }
-
-    if (identity?.roleId === "CELESTIAL_DRAGON") {
-      return identity.celestial?.lostStatus ? "Ex-Celestial" : "Celestial Dragon";
-    }
-
-    if (aff.membershipStatus === "TRAITOR") {
-      const label = aff.primaryFactionId
-        ? CAREER_FACTION_LABELS[aff.primaryFactionId]
-        : "Faction";
-      return wanted ? `Traitor · Wanted` : `Traitor to the ${label}`;
-    }
-
-    if (aff.membershipStatus === "FORMER_MEMBER") {
-      if (aff.primaryFactionId === "MARINES") {
-        return wanted ? "Former Marine · Wanted" : "Former Marine";
-      }
-      if (aff.primaryFactionId === "PIRATES") {
-        return wanted ? "Former Pirate · Wanted" : "Former Pirate";
-      }
-      if (aff.primaryFactionId) {
-        const label = CAREER_FACTION_LABELS[aff.primaryFactionId];
-        return wanted ? `Former ${label} · Wanted` : `Former ${label}`;
-      }
-    }
-
-    if (aff.primaryFactionId === "MARINES" && this.isActiveMember(aff) && rank) {
-      return `Marine ${rank.name}`;
-    }
-    if (aff.primaryFactionId === "PIRATES" && this.isActiveMember(aff) && rank) {
-      if (rank.id === "pirate_captain" || rank.order >= 4) {
-        return rank.name;
-      }
-      return `Pirate ${rank.name}`;
-    }
-    if (aff.primaryFactionId === "REVOLUTIONARY_ARMY" && this.isActiveMember(aff) && rank) {
-      return `Revolutionary ${rank.name}`;
-    }
-    if (aff.primaryFactionId === "WORLD_GOVERNMENT" && this.isActiveMember(aff) && rank) {
-      return `WG ${rank.name}`;
-    }
-    if (aff.primaryFactionId === "BOUNTY_HUNTER" && this.isActiveMember(aff) && rank) {
-      return rank.name;
-    }
-    if (identity?.roleId === "WANDERER") {
-      return wanted ? "Wanderer · Wanted" : "Wanderer";
-    }
-    if (rank && (aff.primaryFactionId === "INDEPENDENT" || aff.primaryFactionId === "CIVILIAN" || aff.membershipStatus === "INDEPENDENT")) {
-      return wanted ? `${rank.name} · Wanted` : rank.name;
-    }
-    return wanted ? "Wanderer · Wanted" : "Wanderer";
+    return overlayStoryTitle(run, computeCareerTitle(run));
   },
 
   syncTitle(run: RunState): void {

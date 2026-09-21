@@ -131,6 +131,43 @@ export const FactionMissionService = {
     return `Order refused: ${order.title}. Command will remember.`;
   },
 
+  /** Ensure the task board has a few open notices to accept. */
+  ensureBoardStock(run: RunState): void {
+    ensureLists(run);
+    const templates = [
+      {
+        title: "Escort the carts",
+        description: "Guard a merchant caravan to the next ridge and back.",
+      },
+      {
+        title: "Dockside watch",
+        description: "Walk the pier at dusk and discourage cutpurses.",
+      },
+      {
+        title: "Quiet delivery",
+        description: "Carry a sealed crate inland. Do not open it.",
+        moralConflict: true,
+      },
+    ];
+    for (const template of templates) {
+      const openCount = (run.factionMissions ?? []).filter(
+        (mission) => mission.status === "AVAILABLE" || mission.status === "ACTIVE",
+      ).length;
+      if (openCount >= 3) {
+        break;
+      }
+      const already = (run.factionMissions ?? []).some(
+        (mission) =>
+          mission.title === template.title &&
+          (mission.status === "AVAILABLE" || mission.status === "ACTIVE"),
+      );
+      if (already) {
+        continue;
+      }
+      this.generateMission(run, template);
+    }
+  },
+
   activateMission(run: RunState, missionId: string): string {
     ensureLists(run);
     const mission = run.factionMissions!.find((entry) => entry.id === missionId);

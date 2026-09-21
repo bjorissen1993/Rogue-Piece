@@ -2,14 +2,23 @@ import { MARINE_NAMES, PIRATE_NAMES, UNDERWORLD_NAMES } from "../data/npcs";
 import { requireDevilFruit } from "../data/devilFruits";
 import { getLocation } from "../data/locations";
 import { TIME_OF_DAY_ORDER } from "../game/constants";
-import type { NpcFaction, RunState, TimeOfDay, WorldCharacter, WorldHistoryEvent } from "../models/types";
+import type {
+  AssignmentCompletionReport,
+  NpcFaction,
+  RunState,
+  TimeOfDay,
+  WorldCharacter,
+  WorldHistoryEvent,
+} from "../models/types";
 import { createId } from "../utils/ids";
 import { clamp } from "../utils/stats";
 import type { RandomService } from "./RandomService";
 import { TrainingService } from "./TrainingService";
 import { CharacterScheduleService } from "./CharacterScheduleService";
+import { AfflictionService } from "./AfflictionService";
 import { FactionService } from "./FactionService";
 import { IslandService } from "./IslandService";
+import { IslandPressureService } from "./IslandPressureService";
 
 function pushNews(state: RunState, text: string): void {
   const event: WorldHistoryEvent = {
@@ -221,15 +230,16 @@ export const WorldService = {
     }
   },
 
-  afterEncounter(state: RunState, rng: RandomService): void {
+  afterEncounter(state: RunState, rng: RandomService): AssignmentCompletionReport[] {
     const slots = Math.max(0, state.pendingTimeCost ?? 1);
     state.pendingTimeCost = 0;
-    this.spendTime(state, slots, rng);
+    return this.spendTime(state, slots, rng);
   },
 
-  spendTime(state: RunState, slots: number, rng: RandomService): void {
+  spendTime(state: RunState, slots: number, rng: RandomService): AssignmentCompletionReport[] {
+    const completed: AssignmentCompletionReport[] = [];
     if (slots <= 0) {
-      return;
+      return completed;
     }
     let current = TIME_OF_DAY_ORDER.includes(state.timeOfDay)
       ? state.timeOfDay
@@ -244,6 +254,7 @@ export const WorldService = {
       }
       state.timeOfDay = TIME_OF_DAY_ORDER[index] ?? "MORNING";
       const finished = CharacterScheduleService.tickAfterTimeAdvance(state);
+      completed.push(...finished);
       for (const report of finished) {
         if (report.summary) {
           state.lastFeedback = report.summary;
@@ -251,6 +262,11 @@ export const WorldService = {
       }
     }
     state.timeOfDay = TIME_OF_DAY_ORDER[index] ?? "MORNING";
+    const pressureLines = IslandPressureService.tickAshore(state, slots);
+    if (pressureLines.length) {
+      state.lastFeedback = pressureLines[pressureLines.length - 1] ?? state.lastFeedback;
+    }
+    return completed;
   },
 
   turnDay(state: RunState, rng: RandomService): void {
@@ -266,6 +282,11 @@ export const WorldService = {
       if ((fruit.transitRemaining ?? 0) <= 0) {
         resolveTransit(state, fruit.fruitId, rng);
       }
+    }
+
+    const afflictionLines = AfflictionService.tickDaily(state);
+    if (afflictionLines.length) {
+      state.lastFeedback = afflictionLines[afflictionLines.length - 1] ?? state.lastFeedback;
     }
 
     simulateWorld(state, rng);

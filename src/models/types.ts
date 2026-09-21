@@ -411,7 +411,15 @@ export interface BattleResultReport {
 }
 
 export interface ActivePartyConfig {
-  /** Up to 4 crew character ids in the fighting line (player always fights → 5 total). */
+  /**
+   * Core roster layout (length = CORE_CREW_CAP). Indices 0–4 = active row,
+   * 5–9 = bench. May include the player id; empty slots are null.
+   */
+  formationSlots?: Array<string | null>;
+  /**
+   * Crew character ids currently eligible to fight (from the active row, available only).
+   * Derived from formationSlots — do not treat as the visual layout.
+   */
   activeFighterIds: string[];
   /** Up to 3 crew ids providing off-field support. */
   supportSlotIds: string[];
@@ -513,9 +521,11 @@ export type InventoryCategory =
   | "WEAPONS"
   | "DEVIL_FRUITS"
   | "CONSUMABLES"
+  | "TOOLS"
   | "MATERIALS"
   | "QUEST_ITEMS"
   | "KEY_ITEMS"
+  | "COLLECTABLES"
   | "MISCELLANEOUS";
 
 export type InventoryTab = InventoryCategory;
@@ -590,6 +600,18 @@ export interface CharacterRecoveryMeta {
   hospitalizedLocationId?: string;
   hospitalizedLocationName?: string;
   overkill?: number;
+}
+
+/** Lightweight daily DoT (poison / sickness) persisted on player or crew. */
+export type AfflictionKind = "POISON" | "SICKNESS";
+
+export interface CharacterAffliction {
+  kind: AfflictionKind;
+  /** Days remaining until natural clear (ticks on day advance). */
+  daysRemaining: number;
+  /** HP lost each day turn. */
+  damagePerDay: number;
+  label?: string;
 }
 
 export interface CharacterAssignment {
@@ -781,6 +803,309 @@ export interface SpeechProfile {
   dialectFlavor?: string;
 }
 
+/**
+ * Personality shapes HOW an NPC speaks. Situation, relationship, and emotion
+ * override quirks — never a one-note gimmick. Added in SAVE_VERSION 31.
+ */
+export type HumorStyle = "dry" | "playful" | "sarcastic" | "warm" | "grim" | "none";
+
+export type PersonalityValueId =
+  | "freedom"
+  | "justice"
+  | "loyalty"
+  | "ambition"
+  | "compassion"
+  | "honor"
+  | "profit"
+  | "family"
+  | "knowledge"
+  | "power";
+
+export type RomanceDisposition = "closed" | "reserved" | "open" | "wary";
+
+/** Core temperament axes, 0–100. */
+export interface PersonalityCore {
+  warmth: number;
+  impulsiveness: number;
+  pride: number;
+  curiosity: number;
+  stubbornness: number;
+}
+
+/** Social axes, 0–100. */
+export interface PersonalitySocial {
+  extraversion: number;
+  trust: number;
+  loyalty: number;
+  statusSensitivity: number;
+}
+
+export interface PersonalityHumor {
+  style: HumorStyle;
+  /** 0–100. High situationSeverity suppresses this. */
+  intensity: number;
+}
+
+/**
+ * D&D-style alignment, −100 to 100, intended to shift gradually.
+ * Distinct from player IdentityTendencyId.
+ */
+export interface AlignmentAxes {
+  /** −100 chaotic, 0 neutral, 100 lawful. */
+  lawChaos: number;
+  /** −100 evil, 0 neutral, 100 good. */
+  goodEvil: number;
+}
+
+export interface PersonalityProfile {
+  /** Reuses SpeechProfile — do not duplicate speech axes here. */
+  speech: SpeechProfile;
+  core: PersonalityCore;
+  social: PersonalitySocial;
+  humor: PersonalityHumor;
+  values: PersonalityValueId[];
+  softSpots?: string[];
+  taboos?: string[];
+  /** Flavor tension (e.g. kind ashore, ruthless in a fight) — not a catchphrase. */
+  contradictions?: string[];
+  alignment: AlignmentAxes;
+  /** Phase 2: subtle romance, not a dating sim. */
+  romanceDisposition?: RomanceDisposition;
+  /** Optional light flavor; situation can ignore these. */
+  quirks?: string[];
+}
+
+export type DialogueSituation =
+  | "idle"
+  | "greeting"
+  | "business"
+  | "celebration"
+  | "secret"
+  | "crisis"
+  | "combat"
+  | "aftermath"
+  | "explore"
+  | "recruitment";
+
+export type KnowledgeClaimKind = "fact" | "rumor" | "opinion" | "lie";
+
+export type RelationshipBand = "hostile" | "wary" | "neutral" | "friendly" | "allied";
+
+/**
+ * What they say is driven by situation / relationship / knowledge.
+ * Personality only colors delivery.
+ */
+export interface DialogueContext {
+  situation: DialogueSituation;
+  /** 0–100; high severity suppresses humor and quirks. */
+  situationSeverity: number;
+  relationship: RelationshipBand;
+  relationshipScore: number;
+  topic?: string;
+  emotionOverride?: string;
+  speakerKnowledge?: KnowledgeLevel;
+  /** Not always exposed to the player. */
+  claimKind?: KnowledgeClaimKind;
+  locationAnchorId?: string;
+  locationTags?: string[];
+  presentCrewIds?: string[];
+  islandId?: string;
+  hotspotId?: string;
+}
+
+/** Lightweight talk flags — complementary to CharacterMemory events. */
+export interface DialogueMemory {
+  flags: string[];
+  lastTalkDay?: number;
+  lastTopics?: string[];
+  talkCount?: number;
+}
+
+export type LocationAnchorAiPermission = "never" | "suggest" | "auto";
+
+/**
+ * Placeholder location on a map layout for authored/AI story matching.
+ * Added in SAVE_VERSION 31.
+ */
+export interface LocationAnchor {
+  id: string;
+  description: string;
+  tags: string[];
+  aiPermission: LocationAnchorAiPermission;
+  hotspotId?: string;
+  notes?: string;
+}
+
+export type StoryChainNodeEditState = "generated" | "edited" | "locked";
+
+export type StoryChainNodeKind =
+  | "start"
+  | "end"
+  | "beat"
+  | "talk"
+  | "explore"
+  | "battle"
+  | "boss"
+  | "event"
+  | "investigate"
+  | "custom";
+
+export type StoryChainTone =
+  | "adventure"
+  | "mystery"
+  | "drama"
+  | "comedy"
+  | "tragedy"
+  | "political"
+  | "thriller";
+
+export type StoryChainTriggerKind =
+  | "map_icon"
+  | "suboption"
+  | "enter_location"
+  | "screen"
+  | "time"
+  | "flag"
+  | "activity_completed"
+  | "battle_ended"
+  | "rest"
+  | "sailing_event";
+
+/** Nest a node onto a map icon / suboption / enter-location / time trigger. */
+export interface StoryChainTrigger {
+  kind: StoryChainTriggerKind;
+  /** hotspotId, `${hotspotId}:${childId}`, islandId, screen id, flag, day, or activity type. */
+  ref?: string;
+  childId?: string;
+  islandId?: string;
+  mapAssetId?: string;
+  day?: number;
+  timeOfDay?: TimeOfDay;
+  activityType?: string;
+}
+
+export interface StoryChainNode {
+  id: string;
+  /** 1-based display order within the chain. */
+  order: number;
+  kind: StoryChainNodeKind;
+  label?: string;
+  notes?: string;
+  /** Nested map icon on this (or another) island map. */
+  placedHotspotId?: string;
+  locationAnchorId?: string;
+  /** Match hint from generation — not nested until the author places it. */
+  suggestedHotspotId?: string;
+  editState?: StoryChainNodeEditState;
+  trigger?: StoryChainTrigger;
+  /** Stable key so sectional regen can replace generated nodes without touching edited/locked. */
+  generationKey?: string;
+  /** Cross-island hop (same idea as HotspotLink.toIslandId). */
+  toIslandId?: string;
+  toMapAssetId?: string;
+}
+
+export interface StoryChainStart {
+  premise?: string;
+  twist?: string;
+  dialogueBeats?: number;
+  battlesCount?: number;
+  bossBattle?: boolean;
+  eventsCount?: number;
+  investigationsCount?: number;
+  tone?: StoryChainTone | string;
+  /** 1–5. */
+  importance?: number;
+  restrictions?: string;
+  mustHappen?: string;
+  mustNotHappen?: string;
+}
+
+export interface StoryChainUnlock {
+  hotspotId?: string;
+  islandId?: string;
+  questId?: string;
+  npcId?: string;
+}
+
+export interface StoryChainEndEffects {
+  world?: string;
+  relationship?: string;
+  faction?: string;
+  legacy?: string;
+  worldNews?: string;
+  title?: string;
+}
+
+export interface StoryChainEnd {
+  resolution?: string;
+  twist?: string;
+  possibleConclusions?: string[];
+  unlocks?: StoryChainUnlock;
+  effects?: StoryChainEndEffects;
+}
+
+/**
+ * Authored Start → numbered beats → End chain. Unplaced nodes live in the editor tray.
+ * Added in SAVE_VERSION 31; Start/End fields + nesting expanded in SAVE_VERSION 32;
+ * End effects + extra triggers in SAVE_VERSION 33.
+ */
+export interface StoryChain {
+  id: string;
+  name: string;
+  islandId?: string;
+  mapAssetId?: string;
+  start: StoryChainStart;
+  end: StoryChainEnd;
+  nodes: StoryChainNode[];
+  notes?: string;
+  /** Fingerprint of last structural generation (counts / must-happen). */
+  generationFingerprint?: string;
+}
+
+export interface PendingStoryTrigger {
+  chainId: string;
+  nodeId: string;
+  kind: StoryChainTriggerKind;
+  /** Lower fires first. */
+  priority: number;
+  islandId?: string;
+}
+
+export interface StoryChainProgress {
+  chainId: string;
+  completedNodeIds: string[];
+  firedNodeIds: string[];
+  effectsApplied?: boolean;
+}
+
+export interface StoryTriggerEvent {
+  kind: StoryChainTriggerKind;
+  hotspotId?: string;
+  childId?: string;
+  islandId?: string;
+  mapAssetId?: string;
+  day?: number;
+  timeOfDay?: TimeOfDay;
+  activityType?: string;
+  encounterId?: string;
+  won?: boolean;
+  ref?: string;
+}
+
+/** Cross-island continuation after a node points at another island. SAVE_VERSION 33. */
+export interface PendingStoryTravel {
+  chainId: string;
+  nodeId: string;
+  toIslandId: string;
+  toMapAssetId?: string;
+}
+
+export type IslandMapLayoutExtras = {
+  locationAnchors?: LocationAnchor[] | null;
+  storyChains?: StoryChain[] | null;
+};
+
 export interface DialogueBeat {
   speakerId: string;
   speakerName?: string;
@@ -809,6 +1134,9 @@ export type ParticipantRequirement =
   | { type: "AVAILABLE_CHARACTER"; characterId: string };
 
 export type WeaponType = "SWORD" | "SPEAR" | "CLUB" | "GUN" | "KICKS" | "FISTS";
+
+/** Progression tracks for weapon / unarmed / devil-fruit mastery. */
+export type MasteryTrackId = WeaponType | "UNARMED" | "DEVIL_FRUIT";
 
 export type WeaponRarity = "COMMON" | "UNCOMMON" | "RARE" | "LEGENDARY";
 
@@ -875,6 +1203,302 @@ export type IslandArchetype =
   | "MARINE_FORTRESS"
   | "FISHING"
   | "TRADING";
+
+/** Persistent places the player can visit while ashore. */
+export type IslandFacilityId =
+  | "HARBOR"
+  | "INN"
+  | "MARKET"
+  | "TRAINING_GROUNDS"
+  | "TASK_BOARD"
+  | "WEAPON_SHOP"
+  | "CLINIC"
+  | "SHIPYARD"
+  | "BLACK_MARKET"
+  | "LIBRARY"
+  | "MARINE_BASE"
+  | "AUCTION_HOUSE";
+
+export type IslandFacilityKind = "BASIC" | "SPECIAL";
+
+export interface IslandFacility {
+  id: IslandFacilityId;
+  kind: IslandFacilityKind;
+  /** Encounter opened when visiting from the island hub. */
+  encounterId: string;
+  name: string;
+  /** Basics are always unlocked; specials unlock when generated for the island. */
+  unlocked: boolean;
+}
+
+/**
+ * Map hotspot id: a facility, or a special marker (Explore, Quest, Event, …).
+ * Kept as `facilityId` on saved records for backward compatibility.
+ */
+export type IslandMapHotspotId = IslandFacilityId | IslandSpecialMarkerId;
+
+/** Non-facility map markers (Explore, quest/event leads, gather spots, …). */
+export type IslandSpecialMarkerId =
+  | "EXPLORE"
+  | "QUEST"
+  | "EVENT"
+  | "GATHER"
+  | "FISHING"
+  | "HUNTS"
+  | "INVESTIGATE"
+  | "TALK"
+  | "SCOUT"
+  | "SEARCH"
+  | "CHALLENGE"
+  | "MUSEUM"
+  | "BOUNTIES"
+  | "DELIVERIES"
+  | "ESCORT"
+  | "JOBS"
+  | "MISSING_PERSONS";
+
+/**
+ * Authored sequential stage / outcome on a map hotspot (quest chain step).
+ * Execution is stubbed in play; editor + persistence are the source of truth.
+ * Added in SAVE_VERSION 29.
+ */
+export type HotspotStageKind =
+  | "FIND_ITEM"
+  | "DELIVER"
+  | "TALK"
+  | "BATTLE"
+  | "JOIN_OFFER"
+  | "EXPLORE"
+  | "CUSTOM";
+
+export interface HotspotStage {
+  id: string;
+  /** 1-based display order within the hotspot. */
+  order: number;
+  kind: HotspotStageKind;
+  label?: string;
+  /** Convenience flag when the stage involves combat (often true for BATTLE). */
+  battle?: boolean;
+  notes?: string;
+  /** Free-form payload for future quest execution (item ids, enemy packs, etc.). */
+  payload?: Record<string, unknown>;
+}
+
+/** Link semantics for editor chains / reveal authoring. Added in SAVE_VERSION 30. */
+export type HotspotLinkKind = "CHAIN" | "REVEAL" | "TRAVEL";
+
+/**
+ * Directed link from this hotspot to another placement (same map or another island).
+ * Drawn as editor link lines when both ends are on the current map.
+ * Added in SAVE_VERSION 29.
+ */
+export interface HotspotLink {
+  id: string;
+  toHotspotId?: string;
+  toIslandId?: string;
+  toMapAssetId?: string;
+  label?: string;
+  notes?: string;
+  /** Optional link role; REVEAL also folds into `revealsHotspotIds` on migrate. */
+  kind?: HotspotLinkKind;
+}
+
+/**
+ * Named scene that groups linked hotspots into a quest/event chain.
+ * Stored on `mapLayouts[mapAssetId].scenes` (SAVE_VERSION 29).
+ */
+export interface IslandMapScene {
+  id: string;
+  name: string;
+  /** Owning island id when authored; optional for cross-island chains. */
+  islandId?: string;
+  notes?: string;
+}
+
+/** How a placed map hotspot becomes visible in play mode. */
+export type HotspotUnlockMode = "always" | "explore_count" | "flag" | "quest";
+
+/**
+ * Per-instance unlock rule for a map hotspot.
+ * Preferred over legacy alwaysVisible / unlocked / unlockFlag fields.
+ */
+export interface HotspotUnlockRule {
+  mode: HotspotUnlockMode;
+  /** Minimum island exploreCount required when mode is `explore_count`. */
+  exploreCount?: number;
+  /** Discovery / run / world / player flag when mode is `flag`. */
+  flag?: string;
+  /** Quest / story thread id (also checked as a flag) when mode is `quest`. */
+  questId?: string;
+}
+
+/**
+ * Per-parent override for a radial-menu child action.
+ * Catalog still defines the full child list; overrides gate inclusion + unlock.
+ */
+export interface HotspotChildOverride {
+  /** Map child action id (e.g. `TALK_NPCS`, `HARBOR_CREW`). */
+  childId: string;
+  /**
+   * When false, hide this child even if it is in the default catalog.
+   * When true, include an optional child (e.g. Talk on Harbor).
+   * Omitted = catalog default (Talk optional parents default off except Inn).
+   */
+  included?: boolean;
+  /** When the child appears; defaults to always unlocked. */
+  unlock?: HotspotUnlockRule;
+}
+
+/** Kind of quest / event bound to a QUEST / EVENT (or similar) map hotspot. */
+export type HotspotQuestKind =
+  | "STORY_THREAD"
+  | "FACTION_MISSION"
+  | "ENCOUNTER"
+  | "EVENT"
+  | "CUSTOM";
+
+/** Who can handle / trigger the quest or event at this hotspot. */
+export type HotspotHandlerType = "NPC" | "CREW" | "ANY" | "FACTION";
+
+/**
+ * Per-instance quest/event + handler binding for map markers.
+ * Added in SAVE_VERSION 28.
+ */
+export interface HotspotQuestConfig {
+  kind: HotspotQuestKind;
+  /** Story thread template id, encounter id, faction mission id, or custom key. */
+  questOrEventId?: string;
+  handlerType: HotspotHandlerType;
+  /** World character id or crew characterId when handlerType is NPC / CREW. */
+  handlerId?: string;
+  /** Optional faction filter when handlerType is FACTION or NPC. */
+  handlerFaction?: RelationFactionId | NpcFaction;
+}
+
+/** Authored hotspot layout for one map art asset. */
+export interface IslandMapLayout {
+  hotspots: IslandFacilityHotspot[];
+  /**
+   * Named scenes (quest/event chains) for icons on this map.
+   * Added in SAVE_VERSION 29.
+   */
+  scenes?: IslandMapScene[];
+  /**
+   * Placeholder locations (description, tags, AI matching permission).
+   * Added in SAVE_VERSION 31.
+   */
+  locationAnchors?: LocationAnchor[];
+  /**
+   * Story chains (Start / numbered nodes / End) for this map.
+   * Added in SAVE_VERSION 31.
+   */
+  storyChains?: StoryChain[];
+}
+
+/**
+ * Relative icon position on an island map (percent of map width/height).
+ * Multiple instances of the same facilityId are allowed; distinguish by hotspotId.
+ * Facilities still require IslandFacility.unlocked; instance unlock rules gate visibility further.
+ */
+export interface IslandFacilityHotspot {
+  /** Unique instance id for this placement (uuid). Required after SAVE_VERSION 26. */
+  hotspotId: string;
+  /** Facility or special marker id (name kept for save compat). */
+  facilityId: IslandMapHotspotId;
+  /** 0–100, left → right */
+  xPct: number;
+  /** 0–100, top → bottom */
+  yPct: number;
+  /** Structured unlock rule for this instance (preferred). */
+  unlock?: HotspotUnlockRule;
+  /**
+   * Per-child inclusion + unlock overrides for this parent placement.
+   * Added in SAVE_VERSION 27.
+   */
+  childOverrides?: HotspotChildOverride[];
+  /**
+   * Quest / event kind + handler for QUEST, EVENT, and similar markers.
+   * Added in SAVE_VERSION 28.
+   */
+  questConfig?: HotspotQuestConfig;
+  /**
+   * Scene id grouping this hotspot into a quest/event chain (`layout.scenes`).
+   * Added in SAVE_VERSION 29.
+   */
+  sceneId?: string;
+  /**
+   * Outgoing links to other hotspots / islands (editor chain + design notes).
+   * Added in SAVE_VERSION 29.
+   */
+  links?: HotspotLink[];
+  /**
+   * Sequential stages / outcomes authored on this icon.
+   * Added in SAVE_VERSION 29.
+   */
+  stages?: HotspotStage[];
+  /**
+   * Other hotspot instance ids on this map that become visible after using this probe
+   * (Explore / Investigate / Search / Scout). Added in SAVE_VERSION 30.
+   */
+  revealsHotspotIds?: string[];
+  /**
+   * One-shot probe: hide this icon after the player uses it once.
+   * Added in SAVE_VERSION 30. (`disappearAfterUse` is accepted on load as an alias.)
+   */
+  consumeOnUse?: boolean;
+  /** Free-text design notes for this placement (AI/dev flesh-out later). */
+  notes?: string;
+  /** Short purpose / what this marker is for (beyond facilityId label). */
+  purpose?: string;
+  /** Always show once the island is known (e.g. Explore). Legacy; prefer unlock.mode = "always". */
+  alwaysVisible?: boolean;
+  /**
+   * Explicit unlock override on this placement.
+   * When true, visible regardless of unlockFlag; when false with a flag, stays hidden.
+   * Legacy; prefer `unlock`.
+   */
+  unlocked?: boolean;
+  /** Visible when this flag is on the island discoveryFlags (or run/world/player flags). Legacy. */
+  unlockFlag?: string;
+  /**
+   * Structured visibility: `"flag:some_flag"` → same as unlockFlag,
+   * `"facility:WEAPON_SHOP"` → requires that facility unlocked on the island.
+   * Legacy; prefer `unlock`.
+   */
+  visibleWhen?: string;
+  /**
+   * Editor Hide: omit from play mode while keeping the placement in the layout.
+   * Distinct from Remove, which deletes the placement from mapLayouts entirely.
+   */
+  hidden?: boolean;
+}
+
+/** Primary run loop mode: ashore hub vs sea travel (Phase 3). */
+export type RunActivityMode = "ISLAND" | "SAILING";
+
+/** Player vessel used for island-to-island travel. */
+export interface PlayerShip {
+  name: string;
+  /** Distance units covered per time slot. */
+  speed: number;
+  /** Hull integrity 0–100. */
+  condition: number;
+}
+
+/** Active voyage between islands while activityMode is SAILING. */
+export interface ActiveVoyage {
+  fromIslandId: string;
+  toIslandId: string;
+  toIslandName: string;
+  /** Abstract distance units for this leg. */
+  distance: number;
+  /** 0–1 progress along the leg. */
+  progress: number;
+  /** Time slots spent on this voyage so far. */
+  slotsElapsed: number;
+  /** True while a sea event encounter is resolving. */
+  pausedForEvent?: boolean;
+}
 
 export type RunWeather = "CLEAR" | "STORM" | "FOG";
 
@@ -947,8 +1571,11 @@ export interface Player {
   };
   inventory: InventoryItem[];
   flags: string[];
+  /** Persistent out-of-combat DoTs (poison / sickness). */
+  afflictions?: CharacterAffliction[];
   equipment?: Equipment;
-  weaponMastery?: Partial<Record<WeaponType, number>>;
+  /** Mastery XP per track (weapon classes, UNARMED, DEVIL_FRUIT). */
+  weaponMastery?: Partial<Record<MasteryTrackId, number>>;
   activeCombatStyle?: string | null;
   unlockedStyles?: string[];
   progression?: CharacterProgression;
@@ -959,6 +1586,8 @@ export interface Player {
   fruitTechniqueUses?: number;
   /** Per-technique use counts for gated unlocks. */
   fruitTechniqueUseCounts?: Record<string, number>;
+  /** Mastery hybrid / solo technique ids auto-unlocked by track levels. */
+  unlockedMasteryTechniques?: string[];
   /** Active Zoan form when the eaten fruit is ZOAN. */
   zoanForm?: ZoanFormId | null;
 }
@@ -1067,6 +1696,10 @@ export interface WorldCharacter {
   crewRole?: CrewRole;
   recruitmentPath?: string;
   speechProfile?: SpeechProfile;
+  /** Structured personality; speech axes live on profile.speech (SpeechProfile). SAVE_VERSION 31. */
+  personalityProfile?: PersonalityProfile;
+  /** Lightweight dialogue flags (topics already covered, last talk). SAVE_VERSION 31. */
+  dialogueMemory?: DialogueMemory;
   crewStats?: PlayerStats;
   progression?: CharacterProgression;
   unlockedTechniques?: string[];
@@ -1592,6 +2225,8 @@ export interface CrewMember {
   /** Persistent fight vitals between battles (defaults to full when unset). */
   hp?: number;
   mp?: number;
+  /** Persistent out-of-combat DoTs (poison / sickness). */
+  afflictions?: CharacterAffliction[];
 }
 
 export interface Weapon {
@@ -1702,6 +2337,50 @@ export interface Island {
   knownShops?: string[];
   /** Preferred weapon shop theme when visiting the local smithy. */
   weaponShopTheme?: WeaponShopTheme;
+  /**
+   * Persistent facilities for this island (generated once).
+   * Basics always present on town islands; specials roll at creation.
+   */
+  facilities?: IslandFacility[];
+  /**
+   * Island map art key (filename without extension under `/icons/Islands`).
+   * When missing or the image fails to load, the hub falls back to the choice list.
+   */
+  mapAssetId?: string | null;
+  /**
+   * Per-map hotspot layouts keyed by `mapAssetId`.
+   * Each map asset has an independent layout; play mode uses `mapLayouts[mapAssetId]`.
+   * Scenes live on `mapLayouts[mapAssetId].scenes` (SAVE_VERSION 29).
+   * Location anchors and story chains were added in SAVE_VERSION 31.
+   * Added in SAVE_VERSION 28.
+   */
+  mapLayouts?: Record<string, IslandMapLayout>;
+  /**
+   * @deprecated Prefer `mapLayouts[mapAssetId]`. Migrated into the current map's
+   * layout slot on load (SAVE_VERSION 28). Still mirrored for older readers.
+   */
+  facilityHotspots?: IslandFacilityHotspot[];
+  /**
+   * Island-scoped discovery flags that unlock map markers / hub options
+   * (e.g. `map_quest`, `map_event` after exploring).
+   */
+  discoveryFlags?: string[];
+  /** Times the player has used Explore on this island (gates explore_count hotspot unlocks). */
+  exploreCount?: number;
+  /** 0–100 local attention / heat — escalates from time, bounty, and hostile acts. */
+  pressureLevel?: number;
+  /** Hooks for prosperity / safety systems. */
+  developmentLevel?: number;
+  protectionLevel?: number;
+  trustLevel?: number;
+  /** Fractional days spent ashore this visit. */
+  daysAshore?: number;
+  visitCount?: number;
+  lastVisitedDay?: number | null;
+  /** Civilian projects funded on this island. */
+  fundedProjects?: string[];
+  /** Pirate/local protection arrangement accepted. */
+  protectionOffered?: boolean;
 }
 
 export interface BackgroundContext {
@@ -1762,7 +2441,13 @@ export type EncounterCondition =
   | { type: "STAT_MIN"; stat: StatName; value: number; target?: "player" | "any_crew" }
   | { type: "TECHNIQUE"; techniqueId: string; target?: "player" }
   | { type: "HAS_ITEM"; itemId: string; quantity?: number }
-  | { type: "RUN_KNOWLEDGE"; subjectId: string; minStage?: KnowledgeStage; negate?: boolean };
+  | { type: "RUN_KNOWLEDGE"; subjectId: string; minStage?: KnowledgeStage; negate?: boolean }
+  | { type: "HAS_FACILITY"; facilityId: IslandFacilityId; negate?: boolean }
+  | { type: "ISLAND_FLAG"; flag: string; negate?: boolean }
+  | { type: "ACTIVITY_MODE"; mode: RunActivityMode; negate?: boolean }
+  | { type: "MIN_ISLAND_PRESSURE"; value: number }
+  | { type: "MAX_ISLAND_PRESSURE"; value: number }
+  | { type: "MIN_ISLAND_TRUST"; value: number };
 
 export interface SkillCheckRequest {
   stat: StatName;
@@ -1815,6 +2500,8 @@ export interface EncounterOutcome {
   removePlayerFlags?: string[];
   addWorldFlags?: string[];
   addRunFlags?: string[];
+  /** Unlock island map markers / hub leads via current island discoveryFlags. */
+  addIslandDiscoveryFlags?: string[];
   addInventory?: InventoryItem[];
   grantItemIds?: string[];
   removeInventoryIds?: string[];
@@ -1861,6 +2548,21 @@ export interface EncounterOutcome {
   discoverShop?: string;
   /** After Continue, force this encounter instead of a random pick (submenu / chain). */
   goToEncounter?: string;
+  /** After Continue, pick one weighted random encounter (Island explore / sea events). */
+  seekRandomEncounter?: boolean;
+  /** Island pressure / prosperity hooks. */
+  adjustIslandPressure?: number;
+  adjustIslandTrust?: number;
+  adjustIslandDevelopment?: number;
+  adjustIslandProtection?: number;
+  fundIslandProject?: "clinic_wing" | "harbor_lights" | "militia_watch";
+  acceptIslandProtection?: boolean;
+  /** Repair ship hull by this many points (capped at 100). */
+  shipRepair?: number;
+  /** Permanently bump ship speed by this amount. */
+  shipUpgradeSpeed?: number;
+  /** Clear medical DoTs on the acting participant / captain. */
+  clearAfflictions?: boolean;
   addCharacterMemory?: {
     characterId?: string;
     type: CharacterMemoryType;
@@ -2332,6 +3034,7 @@ export type ItemEffect =
   | { type: "GUARANTEE_ESCAPE" }
   /** Bring a knocked-out ally (or 0 HP captain) back into the fight. */
   | { type: "REVIVE"; hpAmount?: number; percentMaxHp?: number }
+  | { type: "CLEAR_AFFLICTION"; kinds?: AfflictionKind[] }
   | { type: "NONE" };
 
 export interface ItemDefinition {
@@ -2387,17 +3090,33 @@ export interface RunState {
   deathCause?: string;
   encounterHistory: EncounterHistory[];
   storyThreads: StoryThread[];
+  /** Play-time story chain trigger queue (one fires at a time). SAVE_VERSION 32. */
+  pendingStoryTriggers?: PendingStoryTrigger[];
+  /** Which story chain nodes have already fired this run. SAVE_VERSION 32. */
+  storyChainProgress?: StoryChainProgress[];
+  /** Sail here to continue a chain that pointed at another island. SAVE_VERSION 33. */
+  pendingStoryTravel?: PendingStoryTravel | null;
   crew: CrewMember[];
   islands: Island[];
   usedIslandNames: string[];
   worldProgressionFlags: WorldProgressionFlags;
   currentWeather?: RunWeather;
   currentIslandId?: string | null;
+  /** Island hub vs sailing voyage — defaults to ISLAND. */
+  activityMode?: RunActivityMode;
+  /** @deprecated Prefer activeVoyage.progress; kept for older saves. */
+  voyageProgress?: number;
+  /** Player ship stats for harbor / sailing. */
+  ship?: PlayerShip;
+  /** In-progress island-to-island voyage while SAILING. */
+  activeVoyage?: ActiveVoyage | null;
   lastEncounterCategory?: EncounterCategory | string | null;
   pendingLevelUps?: PendingLevelUp[];
   pendingTechniqueChoice?: PendingTechniqueChoice | null;
   /** Set by outcome.goToEncounter; consumed on completeEncounter. */
   pendingEncounterId?: string | null;
+  /** Set by outcome.seekRandomEncounter; consumed on completeEncounter. */
+  pendingSeekRandomEncounter?: boolean;
   /** Runtime-only encounter (e.g. Legacy NPC meeting) not in static data. */
   dynamicEncounter?: Encounter | null;
   pendingLootDispositions?: PendingLootDisposition[];
@@ -2422,6 +3141,30 @@ export interface RunState {
   weaponShops?: Record<string, WeaponShopStock>;
   /** Recent shop weapon keys for anti-repetition (archetype:material:quality). */
   recentShopWeaponKeys?: string[];
+  /** Black market / auction item stock keyed by island + market kind. */
+  itemMarkets?: Record<string, ItemMarketStock>;
+}
+
+export type ItemMarketKind = "BLACK_MARKET" | "AUCTION";
+
+export interface ItemMarketListing {
+  listingId: string;
+  itemId: string;
+  price: number;
+  quantity: number;
+  sold: boolean;
+  startingBid?: number;
+  npcBidChance?: number;
+}
+
+export interface ItemMarketStock {
+  shopKey: string;
+  kind: ItemMarketKind;
+  shopName: string;
+  islandId: string;
+  refreshOnDay: number;
+  flavor?: string;
+  listings: ItemMarketListing[];
 }
 
 export interface ProfileSave {

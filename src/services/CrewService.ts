@@ -453,6 +453,10 @@ export const CrewService = {
   },
 
   defaultActiveParty(): ActivePartyConfig {
-    return { activeFighterIds: [], supportSlotIds: [] };
+    return {
+      formationSlots: Array.from({ length: CORE_CREW_CAP }, () => null),
+      activeFighterIds: [],
+      supportSlotIds: [],
+    };
   },
 };

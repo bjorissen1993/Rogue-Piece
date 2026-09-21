@@ -1,5 +1,6 @@
 import type { WeaponView } from "../services/WeaponService";
 import { STAT_LABELS } from "../utils/text";
+import { isSeaStoneMaterial, weaponRarityClass } from "../utils/weaponRarity";
 
 type WeaponStatsBlockProps = {
   weapon: WeaponView;
@@ -16,16 +17,19 @@ function delta(shop: number, equipped: number | undefined): string {
 
 /** Compact weapon stat grid shared by shop and crew panels. */
 export function WeaponStatsBlock({ weapon, compare, className = "" }: WeaponStatsBlockProps) {
+  const rarityClass = weaponRarityClass(weapon.rarity, weapon.material);
+  const seaStone = isSeaStoneMaterial(weapon.material);
+
   return (
     <div className={["weapon-stats-block", className].filter(Boolean).join(" ")}>
       <header className="weapon-stats-head">
-        <h3 className="font-display text-gold">{weapon.name}</h3>
+        <h3 className={`font-display ${rarityClass}`}>{weapon.name}</h3>
         <p className="weapon-stats-meta">
           {weapon.category ?? weapon.weaponType}
           {" · "}
           {weapon.weaponType}
           {" · "}
-          {weapon.rarity}
+          <span className={rarityClass}>{weapon.rarity}</span>
           {weapon.isNamed ? " · Named" : ""}
         </p>
       </header>
@@ -61,7 +65,7 @@ export function WeaponStatsBlock({ weapon, compare, className = "" }: WeaponStat
         </div>
         <div>
           <dt>Quality</dt>
-          <dd>
+          <dd className={seaStone ? rarityClass : undefined}>
             {weapon.quality ?? "—"}
             {weapon.material ? ` / ${weapon.material}` : ""}
           </dd>

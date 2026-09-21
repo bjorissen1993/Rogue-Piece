@@ -16,6 +16,7 @@ import type {
   ThreatLevel,
 } from "../models/types";
 import { clamp } from "../utils/stats";
+import { IslandPressureService } from "./IslandPressureService";
 
 const THREAT_ORDER: ThreatLevel[] = ["TRIVIAL", "EASY", "FAIR", "DANGEROUS", "DEADLY"];
 
@@ -148,6 +149,9 @@ export function threatWeightMultiplier(encounter: Encounter, run: RunState): num
 
   // When hurt: bias toward recovery / settlement content, slightly dampen pure combat.
   const recoveryIds = new Set([
+    "island_hub",
+    "island_harbor",
+    "island_task_board",
     "island_shore_day",
     "food_stall",
     "general_store",
@@ -158,9 +162,12 @@ export function threatWeightMultiplier(encounter: Encounter, run: RunState): num
     "suspicious_merchant",
     "weapon_smith",
     "training_grounds",
+    "island_shore_train",
   ]);
   const isCombatHeavy = Boolean(threat) && !hasExit;
   const isRecovery = recoveryIds.has(encounter.id) || encounter.category === "RECOVERY";
+
+  weight *= IslandPressureService.encounterWeightMultiplier(run, isCombatHeavy);
 
   if (hpRatio < 0.4) {
     if (isRecovery) {

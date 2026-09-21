@@ -65,6 +65,7 @@ export function createPlayer(options: {
     unlockedStyles: [],
     progression: ProgressionService.defaultProgression(),
     unlockedTechniques: [],
+    unlockedMasteryTechniques: [],
   };
 }
 
@@ -148,10 +149,19 @@ export function createRunState(
     worldProgressionFlags: {},
     currentWeather: "CLEAR",
     currentIslandId: null,
+    activityMode: "ISLAND",
+    voyageProgress: 0,
+    ship: {
+      name: `${options.name}'s Ship`,
+      speed: 1,
+      condition: 100,
+    },
+    activeVoyage: null,
     lastEncounterCategory: null,
     pendingLevelUps: [],
     pendingTechniqueChoice: null,
     pendingEncounterId: null,
+    pendingSeekRandomEncounter: false,
     factionMissions: [],
     factionOrders: [],
     activeParty: CrewService.defaultActiveParty(),
@@ -190,7 +200,7 @@ export function createRunState(
   MedicalRecoveryService.injectPersistentCharacters(profile, run);
   ItemService.grant(run, "dried_meat", 1, profile);
   CollectionService.discoverItem(profile, "dried_meat");
-  EncounterEngine.selectEncounter(run, rng);
+  EncounterEngine.enterIslandHub(run, rng);
   return run;
 }
 

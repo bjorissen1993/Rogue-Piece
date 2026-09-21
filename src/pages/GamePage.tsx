@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AssignmentResultOverlay } from "../components/AssignmentResultOverlay";
 import { BattleResultFlow } from "../components/BattleResultFlow";
 import { CombatView } from "../components/CombatView";
@@ -13,7 +13,12 @@ import { TimeDetailOverlay } from "../components/TimeDetailOverlay";
 import { WorldNewsStrip } from "../components/WorldNewsStrip";
 import { BattleSetupOverlay } from "../components/BattleSetupOverlay";
 import { WeaponShopOverlay } from "../components/WeaponShopOverlay";
+import { HarborOverlay, VoyageProgressBar } from "../components/HarborOverlay";
+import { IslandHubMap } from "../components/IslandHubMap";
+import { TaskBoardOverlay } from "../components/TaskBoardOverlay";
+import { ItemMarketOverlay } from "../components/ItemMarketOverlay";
 import { WeaponShopService } from "../services/WeaponShopService";
+import { ItemMarketService } from "../services/ItemMarketService";
 import { LevelUpOverlay } from "../components/LevelUpOverlay";
 import { LootDispositionModal, peekLootDisposition } from "../components/LootDispositionModal";
 import { TechniqueOpportunityOverlay } from "../components/TechniqueOpportunityOverlay";
@@ -24,6 +29,7 @@ import { OverlayFrame } from "../components/OverlayFrame";
 import { ProgressionService } from "../services/ProgressionService";
 import { IslandService } from "../services/IslandService";
 import { EncounterEngine } from "../services/EncounterEngine";
+import { VoyageService } from "../services/VoyageService";
 import { AffiliationService } from "../services/AffiliationService";
 import { DevilFruitCombatService } from "../services/DevilFruitCombatService";
 import { interpolate } from "../utils/text";
@@ -33,6 +39,7 @@ import { useIsMobile } from "../hooks/useMediaQuery";
 import type { ZoanFormId } from "../models/types";
 import { relativeDayLabel } from "../utils/presentation";
 import { HudArt, HudIcon, newsArtSrc, newsGlyphName } from "../components/HudIcons";
+import { AT_SEA_ENCOUNTER_ID, ISLAND_HUB_ENCOUNTER_ID, VOYAGE_AUTO_TICK_MS } from "../game/constants";
 
 export function GamePage() {
   const {
@@ -41,7 +48,14 @@ export function GamePage() {
     openOverlay,
     closeOverlay,
     choose,
+    talkToLocalNpcs,
+    fireStoryTrigger,
+    saveIslandFacilityHotspots,
+    setIslandMapAsset,
+    ensureIslandHubMaps,
     continueResult,
+    beginVoyage,
+    tickVoyage,
     dismissAssignmentResults,
     dismissBattleResult,
     finishCombatPresentation,
@@ -50,6 +64,13 @@ export function GamePage() {
     buyWeaponShopListing,
     sellWeaponShopOwned,
     refreshWeaponShop,
+    ensureItemMarket,
+    buyItemMarketListing,
+    refreshItemMarket,
+    acceptFactionMission,
+    resolveFactionMission,
+    postFactionMissionWork,
+    ensureTaskBoard,
     confirmBattleSetup,
     cancelBattleSetup,
     combatAction,
@@ -175,8 +196,14 @@ export function GamePage() {
   const [factionsSheetOpen, setFactionsSheetOpen] = useState(false);
   const [newsArchiveOpen, setNewsArchiveOpen] = useState(false);
   const [moreSheetOpen, setMoreSheetOpen] = useState(false);
+  const [hubListFallback, setHubListFallback] = useState(false);
+  const [hubMapEditing, setHubMapEditing] = useState(false);
+  const [hubToolsHost, setHubToolsHost] = useState<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
   const run = profile?.activeRun;
+  const onHubMapEditingChange = useCallback((editing: boolean) => {
+    setHubMapEditing(editing);
+  }, []);
   const lastFeedback = run?.lastFeedback ?? null;
   const lastHpChange = run?.lastHpChange ?? null;
   const playerHp = run?.player.hp ?? 0;
@@ -192,9 +219,27 @@ export function GamePage() {
     Boolean(run?.pendingLevelUps?.length) ||
     Boolean(run?.pendingTechniqueChoice) ||
     Boolean(run?.pendingAssignmentResults?.length) ||
-    (run?.currentEncounterId === "weapon_smith" && !run.awaitingAdvance);
+    (run?.currentEncounterId === "weapon_smith" && !run.awaitingAdvance) ||
+    (run?.currentEncounterId === "island_harbor" && !run.awaitingAdvance);
 
   useDocumentClass("overlay-open", pauseBackgroundMotion);
+
+  useEffect(() => {
+    setHubListFallback(false);
+    setHubMapEditing(false);
+  }, [run?.currentIslandId, run?.currentEncounterId]);
+
+  useEffect(() => {
+    if (hubListFallback) {
+      setHubMapEditing(false);
+    }
+  }, [hubListFallback]);
+
+  useEffect(() => {
+    if (run?.currentEncounterId === ISLAND_HUB_ENCOUNTER_ID && !run.awaitingAdvance) {
+      ensureIslandHubMaps();
+    }
+  }, [run?.currentEncounterId, run?.currentIslandId, run?.awaitingAdvance, ensureIslandHubMaps]);
 
   useEffect(() => {
     if (!lastFeedback) {
@@ -224,6 +269,56 @@ export function GamePage() {
       ensureWeaponShop();
     }
   }, [run?.currentEncounterId, run?.awaitingAdvance, run?.currentIslandId, run?.day, ensureWeaponShop]);
+
+  useEffect(() => {
+    if (!run || run.awaitingAdvance) {
+      return;
+    }
+    if (run.currentEncounterId === "island_black_market") {
+      ensureItemMarket("BLACK_MARKET");
+    } else if (run.currentEncounterId === "island_auction_house") {
+      ensureItemMarket("AUCTION");
+    } else if (run.currentEncounterId === "island_task_board") {
+      ensureTaskBoard();
+    }
+  }, [
+    run?.currentEncounterId,
+    run?.awaitingAdvance,
+    run?.currentIslandId,
+    run?.day,
+    ensureItemMarket,
+    ensureTaskBoard,
+  ]);
+
+  useEffect(() => {
+    if (!run) {
+      return;
+    }
+    const sailing =
+      (run.activityMode ?? "ISLAND") === "SAILING" &&
+      Boolean(run.activeVoyage) &&
+      !run.activeVoyage?.pausedForEvent &&
+      run.currentEncounterId === AT_SEA_ENCOUNTER_ID &&
+      !run.awaitingAdvance &&
+      !run.combat &&
+      !overlay;
+    if (!sailing) {
+      return;
+    }
+    const id = window.setInterval(() => tickVoyage(), VOYAGE_AUTO_TICK_MS);
+    return () => window.clearInterval(id);
+  }, [
+    run?.activityMode,
+    run?.activeVoyage,
+    run?.activeVoyage?.pausedForEvent,
+    run?.activeVoyage?.progress,
+    run?.activeVoyage?.slotsElapsed,
+    run?.currentEncounterId,
+    run?.awaitingAdvance,
+    run?.combat,
+    overlay,
+    tickVoyage,
+  ]);
 
   if (!profile || !run) {
     return null;
@@ -264,8 +359,34 @@ export function GamePage() {
     return shops.find((entry) => run.day < entry.refreshOnDay) ?? shops[0] ?? null;
   })();
 
+  const blackMarketStock =
+    encounter?.id === "island_black_market" && !resultText
+      ? ItemMarketService.getStock(
+          run,
+          ItemMarketService.shopKey(run.currentIslandId, "BLACK_MARKET"),
+        )
+      : null;
+  const auctionStock =
+    encounter?.id === "island_auction_house" && !resultText
+      ? ItemMarketService.getStock(run, ItemMarketService.shopKey(run.currentIslandId, "AUCTION"))
+      : null;
+
+  const showIslandHubMap =
+    encounter?.id === ISLAND_HUB_ENCOUNTER_ID &&
+    Boolean(island) &&
+    !resultText &&
+    !hubListFallback &&
+    !run.combat &&
+    !run.pendingBattleSetup;
+
+  const showHubMapTools = showIslandHubMap && isDev && !isMobile;
+
   return (
-    <div className={`game-shell ${isMobile ? "is-mobile" : ""}`}>
+    <div
+      className={`game-shell is-no-left-hud${showIslandHubMap ? " is-island-hub-map" : ""}${
+        isMobile ? " is-mobile" : ""
+      }`}
+    >
         {isMobile ? (
           <MobileTopChrome
             isDev={isDev}
@@ -277,22 +398,16 @@ export function GamePage() {
             run={run}
           />
         ) : (
-          <>
-            <RunBar
-              isDev={isDev}
-              onMenu={() => openOverlay("gameMenu")}
-              onOpenTime={() => openOverlay("time")}
-              run={run}
-            />
-            <PlayerHud
-              onCrew={() => openOverlay("crew")}
-              onInventory={(itemId) => {
-                setInventoryFocusId(itemId ?? null);
-                openOverlay("inventory");
-              }}
-              run={run}
-            />
-          </>
+          <RunBar
+            hubMapEditing={hubMapEditing}
+            isDev={isDev}
+            onHubToolsHost={setHubToolsHost}
+            onMenu={() => openOverlay("gameMenu")}
+            onOpenFactions={() => setFactionsSheetOpen(true)}
+            onOpenTime={() => openOverlay("time")}
+            run={run}
+            showHubMapTools={showHubMapTools}
+          />
         )}
         <main className="game-main">
           {run.combat ? (
@@ -324,6 +439,38 @@ export function GamePage() {
               run={run}
               setup={run.pendingBattleSetup}
             />
+          ) : run.activityMode === "SAILING" &&
+            run.activeVoyage &&
+            run.currentEncounterId === AT_SEA_ENCOUNTER_ID &&
+            !resultText ? (
+            <VoyageProgressBar
+              day={run.day}
+              shipName={VoyageService.ensureShip(run).name}
+              timeOfDay={run.timeOfDay}
+              voyage={run.activeVoyage}
+            />
+          ) : showIslandHubMap && island ? (
+            <IslandHubMap
+              choices={choices}
+              editing={hubMapEditing}
+              island={island}
+              isDev={isDev}
+              lockReasons={lockReasons}
+              onChangeMapAsset={isDev ? setIslandMapAsset : undefined}
+              onChoose={choose}
+              onEditingChange={onHubMapEditingChange}
+              onOpenCrew={() => openOverlay("crew")}
+              onOpenInventory={() => {
+                setInventoryFocusId(null);
+                openOverlay("inventory");
+              }}
+              onRequestListFallback={() => setHubListFallback(true)}
+              onSaveHotspots={saveIslandFacilityHotspots}
+              onTalkNpcs={talkToLocalNpcs}
+              onStoryTrigger={fireStoryTrigger}
+              run={run}
+              toolsHost={showHubMapTools ? hubToolsHost : null}
+            />
           ) : (
             <EncounterView
               backgroundContext={{
@@ -348,7 +495,6 @@ export function GamePage() {
             />
           )}
         </main>
-        {!isMobile ? <FactionTubes run={run} /> : null}
         {!isMobile ? <WorldNewsStrip run={run} /> : null}
         {isMobile ? (
           <MobileBottomNav
@@ -402,23 +548,58 @@ export function GamePage() {
               openOverlay("inventory");
             }}
             run={run}
+            showPackLinks
+            variant="sheet"
           />
         </BottomSheet>
+      ) : characterSheetOpen ? (
+        <OverlayFrame
+          elevate
+          eyebrow={AffiliationService.getLeaderLabel(run)}
+          onClose={() => setCharacterSheetOpen(false)}
+          title={run.player.name}
+        >
+          <PlayerHud
+            onCrew={() => {
+              setCharacterSheetOpen(false);
+              openOverlay("crew");
+            }}
+            onInventory={(itemId) => {
+              setCharacterSheetOpen(false);
+              setInventoryFocusId(itemId ?? null);
+              openOverlay("inventory");
+            }}
+            run={run}
+            showPackLinks={false}
+            variant="sheet"
+          />
+        </OverlayFrame>
       ) : null}
 
-      {isMobile ? (
-        <BottomSheet
-          eyebrow="STANDING"
-          onClose={() => {
-            setFactionsSheetOpen(false);
+      <BottomSheet
+        eyebrow="STANDING"
+        onClose={() => {
+          setFactionsSheetOpen(false);
+          if (isMobile) {
             setMobileNav("game");
-          }}
-          open={factionsSheetOpen}
-          size="full"
-          title="Factions"
+          }
+        }}
+        open={isMobile && factionsSheetOpen}
+        size="full"
+        title="Factions"
+      >
+        <FactionTubes run={run} />
+      </BottomSheet>
+
+      {!isMobile && factionsSheetOpen ? (
+        <OverlayFrame
+          elevate
+          eyebrow="STANDING"
+          onClose={() => setFactionsSheetOpen(false)}
+          title="Faction Standing"
         >
           <FactionTubes run={run} />
-        </BottomSheet>
+        </OverlayFrame>
       ) : null}
 
       {isMobile ? (
@@ -537,6 +718,67 @@ export function GamePage() {
         )
       ) : null}
 
+      {encounter?.id === "island_harbor" && !resultText ? (
+        <HarborOverlay
+          onDepart={beginVoyage}
+          onLeave={() => choose("leave")}
+          onOpenCrew={() => openOverlay("crew")}
+          onOpenInventory={() => {
+            setInventoryFocusId(null);
+            openOverlay("inventory");
+          }}
+          run={run}
+        />
+      ) : null}
+
+      {encounter?.id === "island_task_board" && !resultText ? (
+        <TaskBoardOverlay
+          onAccept={acceptFactionMission}
+          onLeave={() => choose("leave")}
+          onPostWork={postFactionMissionWork}
+          onResolve={resolveFactionMission}
+          run={run}
+        />
+      ) : null}
+
+      {encounter?.id === "island_black_market" && !resultText ? (
+        blackMarketStock ? (
+          <ItemMarketOverlay
+            isDev={isDev}
+            onBuy={(listingId) => buyItemMarketListing("BLACK_MARKET", listingId)}
+            onLeave={() => choose("leave")}
+            onRefresh={() => refreshItemMarket("BLACK_MARKET")}
+            run={run}
+            stock={blackMarketStock}
+          />
+        ) : (
+          <div className="overlay-scrim">
+            <section className="overlay-panel overlay-panel-narrow">
+              <p className="weapon-shop-empty">Stalls are still being set…</p>
+            </section>
+          </div>
+        )
+      ) : null}
+
+      {encounter?.id === "island_auction_house" && !resultText ? (
+        auctionStock ? (
+          <ItemMarketOverlay
+            isDev={isDev}
+            onBuy={(listingId) => buyItemMarketListing("AUCTION", listingId)}
+            onLeave={() => choose("leave")}
+            onRefresh={() => refreshItemMarket("AUCTION")}
+            run={run}
+            stock={auctionStock}
+          />
+        ) : (
+          <div className="overlay-scrim">
+            <section className="overlay-panel overlay-panel-narrow">
+              <p className="weapon-shop-empty">Lots are still being unveiled…</p>
+            </section>
+          </div>
+        )
+      ) : null}
+
       {run.pendingBattleResult ? (
         <BattleResultFlow
           onComplete={dismissBattleResult}
@@ -555,6 +797,26 @@ export function GamePage() {
             <div className="mt-6 grid gap-3">
               <button className="choice-btn" onClick={closeOverlay} type="button">
                 Resume
+              </button>
+              <button
+                className="choice-btn"
+                onClick={() => {
+                  closeOverlay();
+                  setCharacterSheetOpen(true);
+                }}
+                type="button"
+              >
+                Stats
+              </button>
+              <button
+                className="choice-btn"
+                onClick={() => {
+                  setInventoryFocusId(null);
+                  openOverlay("inventory");
+                }}
+                type="button"
+              >
+                Backpack
               </button>
               <button className="choice-btn" onClick={() => openOverlay("crew")} type="button">
                 {crewLabel}

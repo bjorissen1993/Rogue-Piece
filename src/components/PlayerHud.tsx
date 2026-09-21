@@ -5,6 +5,7 @@ import { ORIGIN_LABELS } from "../data/origins";
 import { getRace } from "../data/races";
 import type { RunState, StatName } from "../models/types";
 import { primaryMasteryDisplay, weaponDisplayName, WeaponService } from "../services/WeaponService";
+import { WeaponMasteryService } from "../services/WeaponMasteryService";
 import { MpService } from "../services/MpService";
 import { ProgressionService } from "../services/ProgressionService";
 import { AffiliationService } from "../services/AffiliationService";
@@ -19,11 +20,21 @@ type PlayerHudProps = {
   run: RunState;
   onInventory: (itemId?: string) => void;
   onCrew: () => void;
+  /** Sheet / menu presentation (no left-rail chrome, optional pack links). */
+  variant?: "rail" | "sheet";
+  /** When false, hide Backpack / Crew shortcuts (Menu already exposes them). */
+  showPackLinks?: boolean;
 };
 
 const STATS: StatName[] = ["strength", "defense", "speed", "willpower", "charisma", "intelligence"];
 
-export function PlayerHud({ run, onInventory, onCrew }: PlayerHudProps) {
+export function PlayerHud({
+  run,
+  onInventory,
+  onCrew,
+  variant = "rail",
+  showPackLinks = true,
+}: PlayerHudProps) {
   const { player } = run;
   const fruit = player.devilFruitId ? getDevilFruit(player.devilFruitId) : undefined;
   const packedFruit = player.inventory.find((item) => item.type === "DEVIL_FRUIT");
@@ -31,6 +42,9 @@ export function PlayerHud({ run, onInventory, onCrew }: PlayerHudProps) {
   const location = getLocation(run.currentLocationId);
   const packed = player.inventory.reduce((sum, item) => sum + (item.quantity ?? 1), 0);
   const mastery = primaryMasteryDisplay(player);
+  const masteryLevel = mastery
+    ? WeaponMasteryService.getLevel(player, mastery.type)
+    : 0;
   const progression = ProgressionService.getProgression(run, "player");
   const xp = ProgressionService.xpProgress(progression);
   const crewLabel = AffiliationService.getCrewLabel(run);
@@ -47,7 +61,7 @@ export function PlayerHud({ run, onInventory, onCrew }: PlayerHudProps) {
   }, [run.lastHpChange, player.hp]);
 
   return (
-    <aside className={`player-hud ${hit ? "is-hit" : ""}`}>
+    <aside className={`player-hud${variant === "sheet" ? " is-sheet" : ""}${hit ? " is-hit" : ""}`}>
       <p className="hud-kicker">{leaderLabel}</p>
       <h2 className="player-name font-display">{player.name}</h2>
       <p className="player-line">
@@ -78,7 +92,8 @@ export function PlayerHud({ run, onInventory, onCrew }: PlayerHudProps) {
         {mastery ? (
           <span>
             {" "}
-            · {WeaponService.rankLabel(mastery.rank)} {mastery.type.toLowerCase()}
+            · {WeaponMasteryService.trackLabel(mastery.type)} Lv {masteryLevel} (
+            {WeaponService.rankLabel(mastery.rank)})
           </span>
         ) : null}
       </p>
@@ -105,18 +120,20 @@ export function PlayerHud({ run, onInventory, onCrew }: PlayerHudProps) {
         })}
       </ul>
 
-      <div className="backpack-preview hud-pack-row">
-        <button className="backpack-btn" onClick={() => onInventory()} type="button">
-          <HudIcon name="pouch" size={28} />
-          Backpack
-          <span className="backpack-count">{packed}</span>
-        </button>
-        <button className="backpack-btn crew-btn" onClick={onCrew} type="button">
-          <HudIcon name="anchor" size={28} />
-          {crewLabel}
-          <span className="backpack-count">{run.crew.length}</span>
-        </button>
-      </div>
+      {showPackLinks ? (
+        <div className="backpack-preview hud-pack-row">
+          <button className="backpack-btn" onClick={() => onInventory()} type="button">
+            <HudIcon name="pouch" size={28} />
+            Backpack
+            <span className="backpack-count">{packed}</span>
+          </button>
+          <button className="backpack-btn crew-btn" onClick={onCrew} type="button">
+            <HudIcon name="anchor" size={28} />
+            {crewLabel}
+            <span className="backpack-count">{run.crew.length}</span>
+          </button>
+        </div>
+      ) : null}
     </aside>
   );
 }

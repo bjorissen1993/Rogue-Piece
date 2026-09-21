@@ -18,6 +18,7 @@ import type {
 } from "../models/types";
 import { STAT_LABELS } from "../utils/text";
 import { clampStat, ensurePlayerStats } from "../utils/stats";
+import { DialogueService } from "./DialogueService";
 import { CharacterService } from "./CharacterService";
 import { MpService } from "./MpService";
 import { WeaponService } from "./WeaponService";
@@ -319,10 +320,11 @@ export const ProgressionService = {
   },
 
   migrateCharacter(character: WorldCharacter): WorldCharacter {
-    return {
+    const next = {
       ...character,
       crewStats: character.crewStats ? ensurePlayerStats(character.crewStats) : character.crewStats,
       unlockedTechniques: character.unlockedTechniques ?? [],
     };
+    return DialogueService.migrateCharacter(next);
   },
 };

@@ -15,7 +15,9 @@ import {
 import { AffiliationService } from "../services/AffiliationService";
 import { CrewService } from "../services/CrewService";
 import { DevilFruitService } from "../services/DevilFruitService";
+import { WeaponMasteryService } from "../services/WeaponMasteryService";
 import { WeaponService } from "../services/WeaponService";
+import { weaponRarityClass } from "../utils/weaponRarity";
 import { InventoryCard } from "./CharacterCard";
 import { ConfirmModal } from "./ConfirmModal";
 import { ItemTargetPicker } from "./ItemTargetPicker";
@@ -286,8 +288,11 @@ export function InventoryOverlay({
                                       <section className="detail-section">
                                         <p className="detail-label">Weapon</p>
                                         <p className="detail-value">
-                                          {itemWeapon.weaponType} · {itemWeapon.rarity} · dmg {itemWeapon.damage} · spd{" "}
-                                          {itemWeapon.speed}
+                                          {itemWeapon.weaponType} ·{" "}
+                                          <span className={weaponRarityClass(itemWeapon.rarity, itemWeapon.material)}>
+                                            {itemWeapon.rarity}
+                                          </span>{" "}
+                                          · dmg {itemWeapon.damage} · spd {itemWeapon.speed}
                                         </p>
                                         {onEquipWeapon && !inCombat ? (
                                           <div className="grid gap-2 mt-2">
@@ -432,7 +437,9 @@ export function InventoryOverlay({
                     <p className="hud-kicker">
                       {isCarriedCollectible(selected) ? "COLLECTIBLE" : categorizeItem(selected).replaceAll("_", " ")}
                     </p>
-                    <h3 className="font-display mt-2 text-3xl">{selected.name}</h3>
+                    <h3 className={`font-display mt-2 text-3xl ${weapon ? weaponRarityClass(weapon.rarity, weapon.material) : ""}`}>
+                      {selected.name}
+                    </h3>
                     <section className="detail-section mt-3">
                       <p className="detail-label">Description</p>
                       <p className="detail-value">{selected.description}</p>
@@ -445,7 +452,9 @@ export function InventoryOverlay({
                         </section>
                         <section className="detail-section">
                           <p className="detail-label">Rarity</p>
-                          <p className="detail-value">{weapon.rarity}</p>
+                          <p className={`detail-value ${weaponRarityClass(weapon.rarity, weapon.material)}`}>
+                            {weapon.rarity}
+                          </p>
                         </section>
                         <section className="detail-section">
                           <p className="detail-label">Damage</p>
@@ -470,6 +479,19 @@ export function InventoryOverlay({
                         <section className="detail-section">
                           <p className="detail-label">Grip</p>
                           <p className="detail-value">{weapon.grip === "TWO_HAND" ? "Two-handed" : "One-handed"}</p>
+                        </section>
+                        <section className="detail-section">
+                          <p className="detail-label">Class mastery</p>
+                          <p className="detail-value">
+                            {WeaponMasteryService.trackLabel(weapon.weaponType)} Lv{" "}
+                            {WeaponMasteryService.getLevel(run.player, weapon.weaponType)}
+                            {" · "}
+                            {WeaponService.rankLabel(
+                              WeaponService.getMasteryRank(run.player, weapon.weaponType),
+                            )}
+                            {" ("}
+                            {WeaponMasteryService.getXp(run.player, weapon.weaponType)} XP)
+                          </p>
                         </section>
                         <section className="detail-section">
                           <p className="detail-label">Status</p>

@@ -213,7 +213,10 @@ export const WeaponGenerationService = {
   /** Soft preference for the player's equipped weapon family without locking the shop. */
   preferredWeaponTypes(player: Player | null | undefined): WeaponType[] {
     const mastery = player?.weaponMastery ?? {};
-    const ranked = (Object.entries(mastery) as Array<[WeaponType, number]>)
+    const weaponTypes: WeaponType[] = ["SWORD", "SPEAR", "CLUB", "GUN", "KICKS", "FISTS"];
+    const ranked = weaponTypes
+      .map((type) => [type, mastery[type] ?? 0] as const)
+      .filter(([, xp]) => xp > 0)
       .sort((a, b) => b[1] - a[1])
       .map(([type]) => type);
     return ranked.slice(0, 2);

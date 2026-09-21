@@ -1,5 +1,6 @@
 import { getLocation } from "../../data/locations";
 import type { RunState } from "../../models/types";
+import { IslandService } from "../../services/IslandService";
 import { MpService } from "../../services/MpService";
 import { ProgressionService } from "../../services/ProgressionService";
 import { clockFromTimeOfDay } from "../../utils/presentation";
@@ -48,7 +49,8 @@ export function MobileTopChrome({
   onOpenCharacter,
 }: MobileTopChromeProps) {
   const location = getLocation(run.currentLocationId);
-  const place = location?.name ?? "Unknown waters";
+  const island = IslandService.getCurrentIsland(run);
+  const place = island?.name ?? location?.name ?? "Unknown waters";
   const { player } = run;
   const progression = ProgressionService.getProgression(run, "player");
   const xp = ProgressionService.xpProgress(progression);

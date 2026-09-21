@@ -44,6 +44,33 @@ export const KNOWLEDGE_COLLECTABLES: KnowledgeCollectableDef[] = [
     stageGranted: "FAMILIAR",
     label: "Hidden Current",
   },
+  {
+    id: "wanted_poster_scrap",
+    name: "Wanted Poster Scrap",
+    description: "Half a face and a bounty number that still means something.",
+    subjectId: "bounty_board_codes",
+    category: "FACTIONS",
+    stageGranted: "RUMORED",
+    label: "Bounty Board Codes",
+  },
+  {
+    id: "coral_charm",
+    name: "Coral Charm",
+    description: "A fish-man keepsake that warms conversation under the waves.",
+    subjectId: "fishman_customs",
+    category: "RACES",
+    stageGranted: "LIMITED",
+    label: "Fish-Man Customs",
+  },
+  {
+    id: "old_bounty_ledger",
+    name: "Old Bounty Ledger",
+    description: "Names crossed out in three different inks.",
+    subjectId: "hunter_networks",
+    category: "FACTIONS",
+    stageGranted: "FAMILIAR",
+    label: "Hunter Networks",
+  },
 ];
 
 export function getKnowledgeCollectable(id: string): KnowledgeCollectableDef | undefined {

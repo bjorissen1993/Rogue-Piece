@@ -27,12 +27,17 @@ import { FleetService } from "./FleetService";
 import { RaceService } from "./RaceService";
 import { FactionMissionService } from "./FactionMissionService";
 import { FactionService } from "./FactionService";
+import { IslandService } from "./IslandService";
+import { createRng } from "./RandomService";
+import { VoyageService } from "./VoyageService";
+import { IslandPressureService } from "./IslandPressureService";
 import { WeaponService } from "./WeaponService";
 import { MpService } from "./MpService";
 import { ProgressionService } from "./ProgressionService";
 import { LegacyService } from "./LegacyService";
 import { ensurePlayerStats } from "../utils/stats";
 import { nowIso } from "../utils/ids";
+import { migrateHotspotList, migrateIslandMapLayouts } from "../data/islandMaps";
 
 const PROFILE_KEYS: Record<Exclude<ProfileSlot, "dev">, string> = {
   1: "pirateRoguelike_profile_1",
@@ -263,22 +268,50 @@ function migrateRunState(run: RunState): RunState {
     ...run,
     encounterHistory: run.encounterHistory ?? [],
     storyThreads: run.storyThreads ?? [],
+    pendingStoryTriggers: run.pendingStoryTriggers ?? [],
+    storyChainProgress: run.storyChainProgress ?? [],
+    pendingStoryTravel: run.pendingStoryTravel ?? null,
     crew: (run.crew ?? []).map((member) => ProgressionService.migrateCrewMember({
       ...member,
       status: member.status ?? (member.membership === "TEMPORARY" || member.membership === "GUEST" ? "Temporary" : "Ready"),
+      afflictions: member.afflictions ?? [],
     })),
-    islands: (run.islands ?? []).map((island) => ({
-      ...island,
-      knownShops: island.knownShops ?? [],
-    })),
+    islands: (run.islands ?? []).map((island) => {
+      const nextIsland = {
+        ...island,
+        knownShops: island.knownShops ?? [],
+        facilities: island.facilities ?? [],
+        mapAssetId: island.mapAssetId ?? null,
+        mapLayouts: island.mapLayouts ?? {},
+        facilityHotspots: migrateHotspotList(island.facilityHotspots ?? []),
+        discoveryFlags: island.discoveryFlags ?? [],
+        exploreCount: island.exploreCount ?? 0,
+        developmentLevel: island.developmentLevel ?? 0,
+        protectionLevel: island.protectionLevel ?? 0,
+        trustLevel: island.trustLevel ?? 0,
+        pressureLevel: island.pressureLevel ?? 0,
+        daysAshore: island.daysAshore ?? 0,
+        visitCount: island.visitCount ?? 0,
+        lastVisitedDay: island.lastVisitedDay ?? null,
+        fundedProjects: island.fundedProjects ?? [],
+        protectionOffered: island.protectionOffered ?? false,
+      };
+      migrateIslandMapLayouts(nextIsland);
+      return nextIsland;
+    }),
     usedIslandNames: run.usedIslandNames ?? [],
     worldProgressionFlags: run.worldProgressionFlags ?? {},
     currentWeather: run.currentWeather ?? "CLEAR",
     currentIslandId: run.currentIslandId ?? null,
+    activityMode: run.activityMode ?? "ISLAND",
+    voyageProgress: run.voyageProgress ?? run.activeVoyage?.progress ?? 0,
+    ship: run.ship,
+    activeVoyage: run.activeVoyage ?? null,
     lastEncounterCategory: run.lastEncounterCategory ?? null,
     pendingLevelUps: run.pendingLevelUps ?? [],
     pendingTechniqueChoice: run.pendingTechniqueChoice ?? null,
     pendingEncounterId: run.pendingEncounterId ?? null,
+    pendingSeekRandomEncounter: run.pendingSeekRandomEncounter ?? false,
     characterAssignments: run.characterAssignments ?? [],
     characterTrainingToday: run.characterTrainingToday ?? {},
     pendingAssignmentResults: run.pendingAssignmentResults ?? [],
@@ -288,6 +321,7 @@ function migrateRunState(run: RunState): RunState {
     runKnowledge: run.runKnowledge ?? [],
     weaponShops: run.weaponShops ?? {},
     recentShopWeaponKeys: run.recentShopWeaponKeys ?? [],
+    itemMarkets: run.itemMarkets ?? {},
     factionMissions: run.factionMissions ?? [],
     factionOrders: run.factionOrders ?? [],
     activeParty: run.activeParty ?? CrewService.defaultActiveParty(),
@@ -299,12 +333,14 @@ function migrateRunState(run: RunState): RunState {
     raceKnowledge: run.raceKnowledge,
     player: {
       ...run.player,
+      afflictions: run.player.afflictions ?? [],
       equipment: run.player.equipment ?? WeaponService.defaultEquipment(),
       weaponMastery: run.player.weaponMastery ?? WeaponService.defaultMastery(),
       activeCombatStyle: run.player.activeCombatStyle ?? null,
       unlockedStyles: run.player.unlockedStyles ?? [],
       progression: run.player.progression ?? ProgressionService.defaultProgression(),
       unlockedTechniques: run.player.unlockedTechniques ?? [],
+      unlockedMasteryTechniques: run.player.unlockedMasteryTechniques ?? [],
       title: run.player.title ?? "Wanderer",
       identity: run.player.identity,
       inventory: (run.player.inventory ?? []).map((item) => ({
@@ -336,6 +372,18 @@ function migrateRunState(run: RunState): RunState {
   CrewCombatService.ensurePartyConfig(withFactions);
   FactionMissionService.ensure(withFactions);
   MpService.ensurePlayer(withFactions.player);
+  const rng = createRng(`${withFactions.seed}:island-facilities`);
+  IslandService.ensureAllIslandFacilities(withFactions, rng);
+  withFactions.activityMode = withFactions.activityMode ?? "ISLAND";
+  VoyageService.ensureShip(withFactions);
+  for (const island of withFactions.islands) {
+    IslandPressureService.ensure(island);
+  }
+  if (withFactions.activeVoyage && withFactions.activityMode === "SAILING") {
+    withFactions.voyageProgress = withFactions.activeVoyage.progress;
+  } else {
+    withFactions.activeVoyage = withFactions.activeVoyage ?? null;
+  }
   return withFactions;
 }
 
@@ -476,8 +524,26 @@ function parseStored(slot: ProfileSlot, raw: unknown): ProfileSave | null {
 
 function loadSlot(slot: ProfileSlot): ProfileSave | null {
   try {
-    const current = parseStored(slot, readRaw(keyFor(slot)));
+    const raw = readRaw(keyFor(slot));
+    const current = parseStored(slot, raw);
     if (current) {
+      // Persist map/facility migration so older saves keep mapAssetId after reload.
+      const rawRun = (raw as ProfileSave | null)?.activeRun;
+      const migratedRun = current.activeRun;
+      const needsWrite =
+        Boolean(migratedRun) &&
+        (migratedRun!.islands ?? []).some((island) => {
+          const prev = rawRun?.islands?.find((entry) => entry.id === island.id);
+          const mapBackfill = Boolean(island.mapAssetId) && !prev?.mapAssetId;
+          const layoutBackfill =
+            Boolean(island.mapLayouts) &&
+            Object.keys(island.mapLayouts ?? {}).length > 0 &&
+            !prev?.mapLayouts;
+          return mapBackfill || layoutBackfill;
+        });
+      if (needsWrite) {
+        return writeProfile(keyFor(slot), current);
+      }
       return current;
     }
     const legacyKey = slot === "dev" ? LEGACY_DEV_KEY : LEGACY_KEYS[slot];

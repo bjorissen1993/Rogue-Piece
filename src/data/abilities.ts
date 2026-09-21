@@ -1,5 +1,6 @@
 import type { Ability, Player, RunState } from "../models/types";
 import { DevilFruitCombatService } from "../services/DevilFruitCombatService";
+import { WeaponMasteryService } from "../services/WeaponMasteryService";
 import { WeaponService } from "../services/WeaponService";
 import { getRace } from "./races";
 
@@ -74,6 +75,11 @@ export function getAbilitiesForPlayer(player: Player): Ability[] {
   for (const weaponAbility of WeaponService.techniquesForPlayer(player)) {
     if (!list.some((entry) => entry.id === weaponAbility.id)) {
       list.push(weaponAbility);
+    }
+  }
+  for (const masteryAbility of WeaponMasteryService.abilitiesForPlayer(player)) {
+    if (!list.some((entry) => entry.id === masteryAbility.id)) {
+      list.push(masteryAbility);
     }
   }
   const race = getRace(player.raceId);
