@@ -71,6 +71,12 @@ export function GamePage() {
     ensureWeaponShop,
     buyWeaponShopListing,
     sellWeaponShopOwned,
+    upgradeOwnedWeapon,
+    applyOwnedWeaponSeastone,
+    bindOwnedWeaponFruit,
+    renameOwnedWeapon,
+    applyOwnedWeaponNaming,
+    destroyOwnedWeaponHost,
     refreshWeaponShop,
     ensureItemMarket,
     buyItemMarketListing,
@@ -488,6 +494,12 @@ export function GamePage() {
               onEnsureWeaponShop={ensureWeaponShop}
               onBuyWeaponShopItem={buyWeaponShopListing}
               onSellWeaponShopItem={sellWeaponShopOwned}
+              onUpgradeWeapon={upgradeOwnedWeapon}
+              onApplyWeaponSeastone={applyOwnedWeaponSeastone}
+              onBindWeaponFruit={bindOwnedWeaponFruit}
+              onRenameWeapon={renameOwnedWeapon}
+              onApplyWeaponNaming={applyOwnedWeaponNaming}
+              onDestroyWeaponHost={destroyOwnedWeaponHost}
               run={run}
               toolsHost={showHubMapTools ? hubToolsHost : null}
             />

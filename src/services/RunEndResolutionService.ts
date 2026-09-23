@@ -11,6 +11,8 @@ import { CharacterScheduleService } from "./CharacterScheduleService";
 import { CharacterService } from "./CharacterService";
 import { MedicalRecoveryService } from "./MedicalRecoveryService";
 import { PartyCombatService } from "./PartyCombatService";
+import { DevilFruitService } from "./DevilFruitService";
+import { createRng } from "./RandomService";
 
 function upsertPersistent(profile: ProfileSave, record: PersistentCharacterRecord): void {
   if (!profile.persistentCharacters) {
@@ -228,6 +230,11 @@ export const RunEndResolutionService = {
       run.gameOver = true;
       run.deathCause = run.deathCause ?? cause;
       run.player.hp = 0;
+      DevilFruitService.onCharacterPermanentlyDead(
+        run,
+        run.player.id,
+        createRng(`${run.seed}:fruit-runend`),
+      );
       return true;
     }
     return false;

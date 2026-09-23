@@ -33,6 +33,9 @@ describe("Market shop on the hub map", () => {
   it("sells the old parchment stall goods at shop prices", () => {
     expect(marketShopPrice("rice_ball")).toBe(25);
     expect(marketShopCatalog().some((entry) => entry.itemId === "bandage")).toBe(true);
+    expect(marketShopCatalog().every((entry) => entry.itemId !== "bara_bara" && !entry.itemId.includes("fruit"))).toBe(
+      true,
+    );
   });
 
   it("splits stall goods into food, drinks, and medicine", () => {

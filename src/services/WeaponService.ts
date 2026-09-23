@@ -25,6 +25,7 @@ import type {
 import { createId } from "../utils/ids";
 import { CharacterService } from "./CharacterService";
 import { LootDispositionService } from "./LootDispositionService";
+import { WeaponProgressionService } from "./WeaponProgressionService";
 
 export type EquipSlot = "primary" | "secondary";
 
@@ -47,6 +48,11 @@ export type WeaponView = Weapon & {
   category?: GeneratedWeapon["category"];
   critBonus?: number;
   grip: WeaponGrip;
+  namingStage?: number;
+  soulState?: string;
+  seastoneMod?: string;
+  legacyStatus?: string;
+  fruitHostId?: string | null;
 };
 
 function viewFromGenerated(generated: GeneratedWeapon, id: string): WeaponView {
@@ -105,17 +111,32 @@ export const WeaponService = {
 
   resolveWeaponView(item: InventoryItem | null | undefined): WeaponView | undefined {
     if (!item) return undefined;
+    let view: WeaponView | undefined;
     if (item.generatedWeapon) {
-      return viewFromGenerated(
+      view = viewFromGenerated(
         item.generatedWeapon,
         item.weaponDefinitionId ?? `gen_${item.generatedWeapon.archetypeId}`,
       );
-    }
-    if (item.weaponDefinitionId) {
+    } else if (item.weaponDefinitionId) {
       const weapon = getWeapon(item.weaponDefinitionId);
-      return weapon ? viewFromCatalog(weapon) : undefined;
+      view = weapon ? viewFromCatalog(weapon) : undefined;
     }
-    return undefined;
+    if (!view) {
+      return undefined;
+    }
+    const progressed = WeaponProgressionService.applyViewBuffs(item, view);
+    const progress = item.weaponProgress;
+    return {
+      ...progressed,
+      namingStage: progress ? progress.naming.stages.length : 0,
+      soulState: progress?.soul.state,
+      seastoneMod: progress?.seastone.mod,
+      legacyStatus: progress?.legacy.status,
+      fruitHostId: progress?.devilFruit?.fruitId ?? null,
+      isNamed:
+        view.isNamed ||
+        Boolean(progress?.naming.customNamed || progress?.naming.historicalNamed || (progress?.naming.stages.length ?? 0) > 0),
+    };
   },
 
   createWeaponInstance(weaponDefinitionId: string, ownerCharacterId: string | null = null): InventoryItem | null {
@@ -123,7 +144,7 @@ export const WeaponService = {
     if (!weapon) {
       return null;
     }
-    return {
+    const instance: InventoryItem = {
       id: createId("wpn"),
       itemId: `weapon_${weaponDefinitionId}`,
       name: weapon.name,
@@ -135,13 +156,16 @@ export const WeaponService = {
       equipped: false,
       category: "WEAPONS",
     };
+    WeaponProgressionService.ensure(instance);
+    instance.name = WeaponProgressionService.displayName(instance);
+    return instance;
   },
 
   createGeneratedInstance(generated: GeneratedWeapon, ownerCharacterId: string | null = null): InventoryItem {
     const definitionId = generated.namedId
       ? `named_${generated.namedId}`
       : `gen_${generated.archetypeId}_${generated.material}_${generated.quality}`;
-    return {
+    const instance: InventoryItem = {
       id: createId("wpn"),
       itemId: `weapon_${definitionId}`,
       name: generated.name,
@@ -155,6 +179,9 @@ export const WeaponService = {
       equipped: false,
       category: "WEAPONS",
     };
+    WeaponProgressionService.ensure(instance);
+    instance.name = WeaponProgressionService.displayName(instance);
+    return instance;
   },
 
   /**
@@ -987,6 +1014,8 @@ export const WeaponService = {
         item.ownerCharacterId = item.ownerCharacterId ?? run.player.id;
       }
     }
+
+    WeaponProgressionService.migrateInventory(run);
 
     const equipId = run.player.equipment?.primaryWeaponId;
     if (!equipId) {

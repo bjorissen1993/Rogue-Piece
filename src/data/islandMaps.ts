@@ -2605,7 +2605,7 @@ export type MapChildActionResolve =
   | { type: "hub_choice"; choiceId: string }
   | {
       type: "overlay";
-      overlay: "crew" | "inventory" | "harbor" | "market" | "clinic" | "weapon" | "ship";
+      overlay: "crew" | "inventory" | "harbor" | "market" | "clinic" | "weapon" | "weapon_services" | "ship";
       /** Ship screen: Cargo hotspot lands on the hold tab. */
       focus?: "vessel" | "cargo";
     }
@@ -2634,6 +2634,7 @@ export type CatalogChildActionId =
   | "TASK_MISSING"
   | "TASK_HUNTS"
   | "WEAPON_BUY_SELL"
+  | "WEAPON_SERVICES"
   | "CLINIC_MEDICINE"
   | "CLINIC_HEAL"
   | "CLINIC_HOSPITAL"
@@ -2859,9 +2860,15 @@ export const MAP_CHILD_ACTIONS: Record<CatalogChildActionId, MapChildActionDef> 
   },
   WEAPON_BUY_SELL: {
     id: "WEAPON_BUY_SELL",
-    label: "Buy / Sell",
+    label: "Weapons",
     icon: "Map_WeaponsBuy-Sell.png",
     resolve: { type: "overlay", overlay: "weapon" },
+  },
+  WEAPON_SERVICES: {
+    id: "WEAPON_SERVICES",
+    label: "Weapon Services",
+    icon: "Map_UpgradeShip.png",
+    resolve: { type: "overlay", overlay: "weapon_services" },
   },
   CLINIC_MEDICINE: {
     id: "CLINIC_MEDICINE",
@@ -3022,7 +3029,7 @@ export const FACILITY_CHILD_ACTIONS: Partial<Record<IslandFacilityId, CatalogChi
   MARKET: ["MARKET_BUY_SELL"],
   TRAINING_GROUNDS: ["TRAIN_ASSIGN", "TRAIN_VIEW", "TRAIN_SPAR", "TRAIN_SPECIAL"],
   TASK_BOARD: ["TASK_BOUNTIES", "TASK_JOBS", "TASK_DELIVERIES", "TASK_ESCORT", "TASK_MISSING", "TASK_HUNTS"],
-  WEAPON_SHOP: ["WEAPON_BUY_SELL"],
+  WEAPON_SHOP: ["WEAPON_BUY_SELL", "WEAPON_SERVICES"],
   CLINIC: ["CLINIC_MEDICINE", "CLINIC_HEAL", "CLINIC_HOSPITAL"],
   SHIPYARD: ["SHIP_BUY", "SHIP_REPAIR", "SHIP_UPGRADE", "SHIP_SUPPLIES", "SHIP_CUSTOMIZE"],
   BLACK_MARKET: ["BM_RARE", "BM_CONTRABAND", "BM_INFO"],

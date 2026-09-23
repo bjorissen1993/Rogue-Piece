@@ -15,6 +15,7 @@ import type {
   ProfileSlot,
   RaceDefinition,
   RelationFactionId,
+  RunState,
   SavePreview,
   StoryTriggerEvent,
   TimeOfDay,
@@ -52,6 +53,7 @@ import { canAccessDevelopmentProfile } from "../services/DevAccess";
 import { StoryThreadService } from "../services/StoryThreadService";
 import { WeaponService } from "../services/WeaponService";
 import { WeaponShopService } from "../services/WeaponShopService";
+import { WeaponServicesService } from "../services/WeaponServicesService";
 import { ItemMarketService } from "../services/ItemMarketService";
 import { SparringService } from "../services/SparringService";
 import { WorldCombatProgressionService } from "../services/WorldCombatProgressionService";
@@ -151,6 +153,16 @@ type GameStoreValue = {
   ) => string;
   sellWeaponShopOwned: (instanceId: string) => string;
   refreshWeaponShop: (theme?: WeaponShopTheme) => void;
+  upgradeOwnedWeapon: (instanceId: string, advanced?: boolean) => string;
+  applyOwnedWeaponSeastone: (instanceId: string, mod: import("../models/types").SeastoneMod) => string;
+  bindOwnedWeaponFruit: (instanceId: string, fruitId: string) => string;
+  renameOwnedWeapon: (instanceId: string, name: string) => string;
+  applyOwnedWeaponNaming: (
+    instanceId: string,
+    path: import("../models/types").WeaponNamingPath,
+    adjective: string,
+  ) => string;
+  destroyOwnedWeaponHost: (instanceId: string, confirmPhrase: string) => string;
   ensureItemMarket: (kind: import("../models/types").ItemMarketKind) => void;
   buyItemMarketListing: (kind: import("../models/types").ItemMarketKind, listingId: string) => void;
   refreshItemMarket: (kind: import("../models/types").ItemMarketKind) => void;
@@ -839,6 +851,60 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       return result.reason;
     },
     [profile, persist],
+  );
+
+  const mutateWeaponService = useCallback(
+    (fn: (run: RunState) => string) => {
+      if (!profile?.activeRun) {
+        return "";
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const reason = fn(run);
+      run.lastFeedback = reason;
+      persist(next);
+      return reason;
+    },
+    [profile, persist],
+  );
+
+  const upgradeOwnedWeapon = useCallback(
+    (instanceId: string, advanced?: boolean) =>
+      mutateWeaponService((run) => WeaponServicesService.upgrade(run, instanceId, advanced).reason),
+    [mutateWeaponService],
+  );
+
+  const applyOwnedWeaponSeastone = useCallback(
+    (instanceId: string, mod: import("../models/types").SeastoneMod) =>
+      mutateWeaponService((run) => WeaponServicesService.applySeastone(run, instanceId, mod).reason),
+    [mutateWeaponService],
+  );
+
+  const bindOwnedWeaponFruit = useCallback(
+    (instanceId: string, fruitId: string) =>
+      mutateWeaponService((run) => WeaponServicesService.bindDevilFruit(run, instanceId, fruitId).reason),
+    [mutateWeaponService],
+  );
+
+  const renameOwnedWeapon = useCallback(
+    (instanceId: string, name: string) =>
+      mutateWeaponService((run) => WeaponServicesService.rename(run, instanceId, name).reason),
+    [mutateWeaponService],
+  );
+
+  const applyOwnedWeaponNaming = useCallback(
+    (instanceId: string, path: import("../models/types").WeaponNamingPath, adjective: string) =>
+      mutateWeaponService((run) => WeaponServicesService.applyNaming(run, instanceId, path, adjective).reason),
+    [mutateWeaponService],
+  );
+
+  const destroyOwnedWeaponHost = useCallback(
+    (instanceId: string, confirmPhrase: string) =>
+      mutateWeaponService((run) => {
+        const rng = createRng(`${run.seed}:destroy:${instanceId}:${run.day}`);
+        return WeaponServicesService.destroyHost(run, instanceId, rng, confirmPhrase).reason;
+      }),
+    [mutateWeaponService],
   );
 
   const refreshWeaponShop = useCallback(
@@ -2456,6 +2522,12 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     ensureWeaponShop,
     buyWeaponShopListing,
     sellWeaponShopOwned,
+    upgradeOwnedWeapon,
+    applyOwnedWeaponSeastone,
+    bindOwnedWeaponFruit,
+    renameOwnedWeapon,
+    applyOwnedWeaponNaming,
+    destroyOwnedWeaponHost,
     refreshWeaponShop,
     ensureItemMarket,
     buyItemMarketListing,

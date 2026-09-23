@@ -110,6 +110,51 @@ export const ITEMS: ItemDefinition[] = [
     ],
     category: "CONSUMABLES",
   },
+  {
+    id: "island_apple",
+    name: "Island Apple",
+    type: "CONSUMABLE",
+    description: "A common apple from a roadside tree. Sweet, ordinary, forgettable.",
+    consumable: true,
+    useContext: "BOTH",
+    rarity: "COMMON",
+    ordinaryFruit: true,
+    effects: [
+      { type: "HEAL", amount: 6, percentMaxHp: 2 },
+      { type: "RESTORE_MP", amount: 1 },
+    ],
+    category: "CONSUMABLES",
+  },
+  {
+    id: "island_mango",
+    name: "Island Mango",
+    type: "CONSUMABLE",
+    description: "Sun-warm fruit. The kind sailors trade for gossip.",
+    consumable: true,
+    useContext: "BOTH",
+    rarity: "COMMON",
+    ordinaryFruit: true,
+    effects: [
+      { type: "HEAL", amount: 7, percentMaxHp: 2 },
+      { type: "RESTORE_MP", amount: 2 },
+    ],
+    category: "CONSUMABLES",
+  },
+  {
+    id: "wild_banana",
+    name: "Wild Banana",
+    type: "CONSUMABLE",
+    description: "Picked green and left to ripen in a hammock.",
+    consumable: true,
+    useContext: "BOTH",
+    rarity: "POOR",
+    ordinaryFruit: true,
+    effects: [
+      { type: "HEAL", amount: 5, percentMaxHp: 1 },
+      { type: "RESTORE_MP", amount: 1 },
+    ],
+    category: "CONSUMABLES",
+  },
 
   // --- Drinks ×6 (MP-focused) ---
   {
@@ -505,6 +550,17 @@ export const ITEMS: ItemDefinition[] = [
     effects: [{ type: "NONE" }],
     category: "COLLECTABLES",
   },
+  {
+    id: "fruitbound_remnant",
+    name: "Fruitbound Remnant",
+    type: "MATERIAL",
+    description: "What a Devil Fruit weapon leaves when it is unmade. Not a fruit.",
+    consumable: false,
+    useContext: "PASSIVE",
+    rarity: "RARE",
+    effects: [{ type: "NONE" }],
+    category: "COLLECTABLES",
+  },
 ];
 
 /** Typical berry prices for shops (early game vs ~700 starting berries). */
@@ -520,6 +576,9 @@ export const ITEM_SHOP_PRICES: Record<string, number> = {
   fish_prime: 70,
   fish_golden: 140,
   travel_rations: 50,
+  island_apple: 12,
+  island_mango: 16,
+  wild_banana: 8,
   brackish_dregs: 6,
   fresh_water: 20,
   grog: 35,
@@ -577,6 +636,26 @@ export function requireItemDefinition(id: string): ItemDefinition {
 export function itemIdFromName(name: string): string | undefined {
   return ITEMS.find((item) => item.name === name)?.id;
 }
+
+export function isOrdinaryFruitItem(itemId: string | undefined): boolean {
+  if (!itemId) {
+    return false;
+  }
+  return Boolean(getItemDefinition(itemId)?.ordinaryFruit);
+}
+
+export function isDevilFruitMerchandise(itemId: string | undefined, fruitId?: string | null): boolean {
+  if (fruitId) {
+    return true;
+  }
+  if (!itemId) {
+    return false;
+  }
+  const def = getItemDefinition(itemId);
+  return def?.type === "DEVIL_FRUIT" || Boolean(itemId && DEVIL_FRUIT_ITEM_HINT.test(itemId));
+}
+
+const DEVIL_FRUIT_ITEM_HINT = /(devil[_-]?fruit|_no_mi|bara_bara|bomu_bomu|bari_bari|doru_doru|inu_)/i;
 
 export function computeHealAmount(
   amount: number,

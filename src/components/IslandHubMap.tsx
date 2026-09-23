@@ -19,6 +19,7 @@ import { ClinicShopOverlay } from "./ClinicShopOverlay";
 import { MarketShopOverlay } from "./MarketShopOverlay";
 import { ShipOverlay } from "./ShipOverlay";
 import { WeaponTradeShopOverlay } from "./WeaponTradeShopOverlay";
+import { WeaponServicesOverlay } from "./WeaponServicesOverlay";
 import type {
   EncounterChoice,
   HotspotChildOverride,
@@ -166,6 +167,16 @@ type IslandHubMapProps = {
   onEnsureWeaponShop?: () => void;
   onBuyWeaponShopItem?: (listingId: string) => string;
   onSellWeaponShopItem?: (instanceId: string) => string;
+  onUpgradeWeapon?: (instanceId: string, advanced?: boolean) => string;
+  onApplyWeaponSeastone?: (instanceId: string, mod: import("../models/types").SeastoneMod) => string;
+  onBindWeaponFruit?: (instanceId: string, fruitId: string) => string;
+  onRenameWeapon?: (instanceId: string, name: string) => string;
+  onApplyWeaponNaming?: (
+    instanceId: string,
+    path: import("../models/types").WeaponNamingPath,
+    adjective: string,
+  ) => string;
+  onDestroyWeaponHost?: (instanceId: string, confirmPhrase: string) => string;
   onChangeMapAsset?: (mapAssetId: string) => void;
   /** Optional escape hatch to the parchment choice list (manual only). */
   onRequestListFallback?: () => void;
@@ -496,6 +507,12 @@ export function IslandHubMap({
   onEnsureWeaponShop,
   onBuyWeaponShopItem,
   onSellWeaponShopItem,
+  onUpgradeWeapon,
+  onApplyWeaponSeastone,
+  onBindWeaponFruit,
+  onRenameWeapon,
+  onApplyWeaponNaming,
+  onDestroyWeaponHost,
   onChangeMapAsset,
   onRequestListFallback,
   onOpenCrew,
@@ -569,6 +586,7 @@ export function IslandHubMap({
   const [marketShopOpen, setMarketShopOpen] = useState(false);
   const [clinicShopOpen, setClinicShopOpen] = useState(false);
   const [weaponShopOpen, setWeaponShopOpen] = useState(false);
+  const [weaponServicesOpen, setWeaponServicesOpen] = useState(false);
   const [shipOverlayOpen, setShipOverlayOpen] = useState(false);
   const [shipOverlayTab, setShipOverlayTab] = useState<"vessel" | "cargo">("vessel");
   const [hoveredHotspotId, setHoveredHotspotId] = useState<string | null>(null);
@@ -2233,6 +2251,10 @@ export function IslandHubMap({
       if (resolve.overlay === "weapon") {
         onEnsureWeaponShop?.();
         setWeaponShopOpen(true);
+        return;
+      }
+      if (resolve.overlay === "weapon_services") {
+        setWeaponServicesOpen(true);
         return;
       }
     }
@@ -5615,6 +5637,20 @@ export function IslandHubMap({
             onSell={(instanceId) => onSellWeaponShopItem?.(instanceId) ?? ""}
             run={run}
             stock={weaponShopStock}
+          />
+        ) : null}
+        {weaponServicesOpen && run ? (
+          <WeaponServicesOverlay
+            onBindFruit={(instanceId, fruitId) => onBindWeaponFruit?.(instanceId, fruitId) ?? ""}
+            onClose={() => setWeaponServicesOpen(false)}
+            onDestroy={(instanceId, phrase) => onDestroyWeaponHost?.(instanceId, phrase) ?? ""}
+            onNameStage={(instanceId, path, adjective) =>
+              onApplyWeaponNaming?.(instanceId, path, adjective) ?? ""
+            }
+            onRename={(instanceId, name) => onRenameWeapon?.(instanceId, name) ?? ""}
+            onSeastone={(instanceId, mod) => onApplyWeaponSeastone?.(instanceId, mod) ?? ""}
+            onUpgrade={(instanceId, advanced) => onUpgradeWeapon?.(instanceId, advanced) ?? ""}
+            run={run}
           />
         ) : null}
         {shipOverlayOpen && run ? (

@@ -22,6 +22,7 @@ import { CrewService } from "./CrewService";
 import type { RandomService } from "./RandomService";
 import { createRng } from "./RandomService";
 import { BATTLE_FORMATS } from "./EncounterCompositionService";
+import { DevilFruitService } from "./DevilFruitService";
 
 const DAYS_PER_MONTH = 30;
 const MONTHS_PER_YEAR = 12;
@@ -681,6 +682,13 @@ export const LegacyService = {
       knowledgeTags: ["history", "death"],
       consequences: ["posthumous_legacy"],
     });
+    if (profile.activeRun) {
+      DevilFruitService.onCharacterPermanentlyDead(
+        profile.activeRun,
+        characterId,
+        createRng(`${profile.activeRun.seed}:fruit-death:${characterId}`),
+      );
+    }
   },
 
   retireCharacter(profile: ProfileSave, characterId: string): void {

@@ -1,4 +1,4 @@
-export const SAVE_VERSION = 36;
+export const SAVE_VERSION = 37;
 
 /** Primary shore navigation encounter (Island State hub). */
 export const ISLAND_HUB_ENCOUNTER_ID = "island_hub";

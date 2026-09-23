@@ -32,6 +32,7 @@ import { createRng } from "./RandomService";
 import { VoyageService } from "./VoyageService";
 import { IslandPressureService } from "./IslandPressureService";
 import { WeaponService } from "./WeaponService";
+import { DevilFruitService } from "./DevilFruitService";
 import { MpService } from "./MpService";
 import { ProgressionService } from "./ProgressionService";
 import { LegacyService } from "./LegacyService";
@@ -361,6 +362,7 @@ function migrateRunState(run: RunState): RunState {
     },
   };
   WeaponService.migrateInventoryWeapons(next);
+  DevilFruitService.migrateWorldFruits(next);
   next.player.stats = ensurePlayerStats(next.player.stats);
   next.runKnowledge = next.runKnowledge ?? [];
   const withFactions = migrateRunFactions(next);

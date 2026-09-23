@@ -4,6 +4,7 @@ import { resolveWeaponGrip } from "../game/weaponClasses";
 import { WeaponService } from "../services/WeaponService";
 import { WeaponShopService } from "../services/WeaponShopService";
 import { WeaponStatsBlock } from "./WeaponStatsBlock";
+import { WeaponIdentityBlock } from "./WeaponIdentityBlock";
 import { weaponRarityClass } from "../utils/weaponRarity";
 
 type WeaponShopOverlayProps = {
@@ -181,12 +182,17 @@ export function WeaponShopOverlay({
                 <p className="weapon-shop-empty">Select a shop weapon to inspect it.</p>
               )}
 
-              {tradeView ? (
-                <div className="weapon-shop-trade-preview">
-                  <p className="detail-label">Trade-in</p>
-                  <WeaponStatsBlock weapon={tradeView} />
-                </div>
-              ) : null}
+                  {tradeView && tradeIn ? (
+                    <div className="weapon-shop-trade-preview">
+                      <p className="detail-label">Trade-in</p>
+                      <WeaponStatsBlock weapon={tradeView} />
+                      <WeaponIdentityBlock
+                        item={tradeIn.instance}
+                        run={run}
+                        wielderId={tradeIn.instance.ownerCharacterId ?? run.player.id}
+                      />
+                    </div>
+                  ) : null}
 
               <p className="weapon-shop-note">
                 Select one of your weapons to trade it in (half price credit) or sell it outright.

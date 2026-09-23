@@ -19,6 +19,7 @@ import { AfflictionService } from "./AfflictionService";
 import { FactionService } from "./FactionService";
 import { IslandService } from "./IslandService";
 import { IslandPressureService } from "./IslandPressureService";
+import { DevilFruitService } from "./DevilFruitService";
 
 function pushNews(state: RunState, text: string): void {
   const event: WorldHistoryEvent = {
@@ -290,6 +291,7 @@ export const WorldService = {
     }
 
     simulateWorld(state, rng);
+    DevilFruitService.tickWorldCompetition(state, rng);
     this.tickCharacterProgression(state, rng);
   },
 

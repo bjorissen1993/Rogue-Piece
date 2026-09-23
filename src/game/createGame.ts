@@ -79,6 +79,10 @@ export function createWorld(): WorldState {
       status: "UNCLAIMED" as const,
       ownerCharacterId: null,
       history: [`Day 1: ${fruit.name} exists in the world, unclaimed.`],
+      identified: false,
+      hostWeaponInstanceId: null,
+      hostWeaponName: null,
+      lastKnownIslandId: null,
     })),
     characters: [
       ...STARTING_NPCS.map((npc) => ({ ...npc, tags: [...npc.tags], raceId: "HUMAN" })),

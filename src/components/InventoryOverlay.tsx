@@ -16,6 +16,7 @@ import { AffiliationService } from "../services/AffiliationService";
 import { CrewService } from "../services/CrewService";
 import { DevilFruitService } from "../services/DevilFruitService";
 import { WeaponMasteryService } from "../services/WeaponMasteryService";
+import { WeaponIdentityBlock } from "./WeaponIdentityBlock";
 import { WeaponService } from "../services/WeaponService";
 import { weaponRarityClass } from "../utils/weaponRarity";
 import { InventoryCard } from "./CharacterCard";
@@ -499,6 +500,11 @@ export function InventoryOverlay({
                           <p className="detail-label">Grip</p>
                           <p className="detail-value">{weapon.grip === "TWO_HAND" ? "Two-handed" : "One-handed"}</p>
                         </section>
+                        <WeaponIdentityBlock
+                          item={selected}
+                          run={run}
+                          wielderId={selected.ownerCharacterId ?? run.player.id}
+                        />
                         <section className="detail-section">
                           <p className="detail-label">Class mastery</p>
                           <p className="detail-value">

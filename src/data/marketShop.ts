@@ -1,5 +1,11 @@
 import { FISH_CATCH_TIERS, isFishCatchItem } from "./fishing";
-import { ITEM_SHOP_PRICES, getItemDefinition, isSeaKingMeatItem, itemSellPrice } from "./items";
+import {
+  ITEM_SHOP_PRICES,
+  getItemDefinition,
+  isDevilFruitMerchandise,
+  isSeaKingMeatItem,
+  itemSellPrice,
+} from "./items";
 
 /** Portable stall goods — same set the old parchment Market sold. */
 export const MARKET_SHOP_ITEM_IDS = [
@@ -138,7 +144,7 @@ export function marketShopCatalog(): MarketShopListing[] {
   return MARKET_SHOP_ITEM_IDS.flatMap((itemId) => {
     const def = getItemDefinition(itemId);
     const price = marketShopPrice(itemId);
-    if (!def || price == null) {
+    if (!def || price == null || isDevilFruitMerchandise(itemId)) {
       return [];
     }
     return [

@@ -502,7 +502,10 @@ describe("Island facilities (Phase 1)", () => {
     expect(FACILITY_CHILD_ACTIONS.INN).toContain("TALK_NPCS");
     expect(childActionsForFacility("INN").some((a) => a.id === "TALK_NPCS")).toBe(true);
     expect(childActionsForFacility("MARKET").map((a) => a.id)).toEqual(["MARKET_BUY_SELL"]);
-    expect(childActionsForFacility("WEAPON_SHOP").map((a) => a.id)).toEqual(["WEAPON_BUY_SELL"]);
+    expect(childActionsForFacility("WEAPON_SHOP").map((a) => a.id)).toEqual([
+      "WEAPON_BUY_SELL",
+      "WEAPON_SERVICES",
+    ]);
     expect(childActionsForFacility("CLINIC").map((a) => a.id)).toEqual([
       "CLINIC_MEDICINE",
       "CLINIC_HEAL",
@@ -612,6 +615,11 @@ describe("Island facilities (Phase 1)", () => {
       unlock: { mode: "always" },
     });
     expect(weapons.some((a) => a.id === "WEAPON_BUY_SELL" && a.resolve.type === "overlay")).toBe(true);
+    expect(weapons.some((a) => a.id === "WEAPON_SERVICES" && a.resolve.type === "overlay")).toBe(true);
+    expect(weapons.find((a) => a.id === "WEAPON_SERVICES")?.resolve).toEqual({
+      type: "overlay",
+      overlay: "weapon_services",
+    });
     expect(weapons.some((a) => a.id === "HUB_VISIT")).toBe(false);
 
     const clinic = resolveChildActionsForHotspot({

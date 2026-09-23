@@ -1,4 +1,4 @@
-import { ITEM_SHOP_PRICES, getItemDefinition } from "../data/items";
+import { ITEM_SHOP_PRICES, getItemDefinition, isDevilFruitMerchandise } from "../data/items";
 import type {
   ItemMarketKind,
   ItemMarketListing,
@@ -69,9 +69,12 @@ function buildListings(
   for (let i = 0; i < count; i += 1) {
     let itemId = pool[rng.nextInt(0, pool.length - 1)]!;
     let guard = 0;
-    while (used.has(itemId) && guard < 8) {
+    while ((used.has(itemId) || isDevilFruitMerchandise(itemId)) && guard < 8) {
       itemId = pool[rng.nextInt(0, pool.length - 1)]!;
       guard += 1;
+    }
+    if (isDevilFruitMerchandise(itemId)) {
+      continue;
     }
     used.add(itemId);
     const priceMult = kind === "BLACK_MARKET" ? 1.15 + rng.next() * 0.55 : 1.05 + rng.next() * 0.7;

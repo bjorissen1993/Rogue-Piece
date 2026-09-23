@@ -12,7 +12,9 @@ export type DevilFruitStatus =
   | "PLAYER_USED"
   | "NPC_USED"
   | "IN_TRANSIT"
-  | "UNKNOWN";
+  | "UNKNOWN"
+  | "WEAPON_BOUND"
+  | "REINCARNATING";
 
 export type NpcFaction = "PIRATE" | "MARINE" | "CIVILIAN" | "UNDERWORLD";
 export type Faction = NpcFaction;
@@ -1251,6 +1253,111 @@ export type MasteryRank =
   | "MASTER"
   | "LEGENDARY";
 
+/** Naming Evolution path — one choice per stage. */
+export type WeaponNamingPath = "AGILITY" | "EFFICIENCY" | "POWER";
+
+/** Weapon Soul awakening. Independent of rarity / naming / mastery. */
+export type WeaponSoulState = "DORMANT" | "STIRRING" | "AWAKENED" | "BONDED" | "LEGENDARY";
+
+export type WeaponSoulTrait =
+  | "NONE"
+  | "GUARDIAN"
+  | "DUELIST"
+  | "PREDATOR"
+  | "SENTINEL"
+  | "WANDERER";
+
+/** Historical importance — not a power rating. */
+export type WeaponLegacyStatus = "NONE" | "NOTED" | "HISTORICAL" | "LEGENDARY";
+
+export type SeastoneMod =
+  | "NONE"
+  | "TIP"
+  | "EDGE"
+  | "REINFORCEMENT"
+  | "PROJECTILE"
+  | "FULL_CONVERSION";
+
+export type WeaponFruitBondRank = "UNFAMILIAR" | "BONDED" | "SYNCHRONIZED" | "MASTERED";
+
+export type NamingPoolCategory = "SWORD" | "BLUNT" | "RANGED" | "SHIELD" | "POLEARM" | "UNUSUAL";
+
+export interface WeaponNamingStageRecord {
+  stage: 1 | 2 | 3;
+  path: WeaponNamingPath;
+  adjective: string;
+}
+
+export interface WeaponNamingBuffs {
+  speed?: number;
+  damage?: number;
+  accuracy?: number;
+  critBonus?: number;
+  weight?: number;
+  initiative?: number;
+}
+
+export interface WeaponNamingState {
+  baseName: string;
+  customNamed: boolean;
+  /** Bought/found historical Named Weapons — base name is not freely replaceable. */
+  historicalNamed: boolean;
+  stages: WeaponNamingStageRecord[];
+  currentAdjective?: string;
+  buffs: WeaponNamingBuffs;
+  stageTrait?: string;
+}
+
+export interface WeaponWielderMasteryEntry {
+  xp: number;
+}
+
+export interface WeaponSoulRecord {
+  state: WeaponSoulState;
+  trait: WeaponSoulTrait;
+}
+
+export interface WeaponLegacyRecord {
+  status: WeaponLegacyStatus;
+  legacyItemId?: string;
+  formerOwners: string[];
+  notes: string[];
+}
+
+export interface WeaponSeastoneRecord {
+  mod: SeastoneMod;
+  /** Functional seastone blocks Devil Fruit binding. */
+  functional: boolean;
+}
+
+export interface WeaponFruitHostRecord {
+  fruitId: string;
+  bondRank: WeaponFruitBondRank;
+}
+
+/** Instance-scoped weapon identity. Lives on InventoryItem, not class mastery. */
+export interface WeaponProgression {
+  naming: WeaponNamingState;
+  /** Per-character XP with this instance. Not inherited by a new wielder. */
+  wielderMastery: Record<string, WeaponWielderMasteryEntry>;
+  soul: WeaponSoulRecord;
+  legacy: WeaponLegacyRecord;
+  seastone: WeaponSeastoneRecord;
+  devilFruit?: WeaponFruitHostRecord;
+  upgradeLevel: number;
+  advancedUpgradeLevel: number;
+  history: string[];
+}
+
+export interface FruitboundRemnantMeta {
+  formerWeaponName: string;
+  formerOwners: string[];
+  soulEcho?: string;
+  fruitId?: string;
+  named?: boolean;
+  history: string[];
+}
+
 export type TechniqueSource =
   | "WEAPON"
   | "FIGHTING_STYLE"
@@ -1616,6 +1723,10 @@ export interface InventoryItem {
   /** Hand slot when equipped on a crewmate (player uses Equipment instead). */
   equipSlot?: "primary" | "secondary";
   category?: InventoryCategory;
+  /** Naming / soul / seastone / instance mastery for this weapon copy. */
+  weaponProgress?: WeaponProgression;
+  /** Created when a Devil Fruit host weapon is permanently destroyed. */
+  remnant?: FruitboundRemnantMeta;
 }
 
 export interface Equipment {
@@ -1699,6 +1810,12 @@ export interface DevilFruitWorldState {
   ownerCharacterId: string | null;
   history: string[];
   transitRemaining?: number;
+  /** Weapon instance currently hosting this fruit. */
+  hostWeaponInstanceId?: string | null;
+  hostWeaponName?: string | null;
+  /** False = Unknown Devil Fruit (appearance/ability hidden). */
+  identified?: boolean;
+  lastKnownIslandId?: string | null;
 }
 
 export type KnowledgeLevel = "UNKNOWN" | "RUMORED" | "KNOWN" | "CONFIRMED";
@@ -3143,6 +3260,8 @@ export interface ItemDefinition {
   rarity?: ItemRarity;
   /** Weapon types this item can be equipped as (crew assignment checks). */
   weaponType?: WeaponType;
+  /** Ordinary produce that can secretly become a reincarnated Devil Fruit. */
+  ordinaryFruit?: boolean;
 }
 
 export interface RunState {

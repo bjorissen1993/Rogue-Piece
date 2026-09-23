@@ -22,6 +22,7 @@ import type {
   RunState,
 } from "../models/types";
 import { DevilFruitCombatService } from "./DevilFruitCombatService";
+import { WeaponProgressionService } from "./WeaponProgressionService";
 import { WeaponService } from "./WeaponService";
 
 function ensureMasteryState(player: Player): void {
@@ -246,6 +247,11 @@ export const WeaponMasteryService = {
     const skipXpForDf =
       action.type === "TECHNIQUE" &&
       DevilFruitCombatService.isFruitAbilityId(action.abilityId, run.player.devilFruitId);
+
+    for (const instance of WeaponService.findEquippedInstances(run.player)) {
+      WeaponProgressionService.addWielderXp(instance, run.player.id, MASTERY_XP_PER_USE);
+      WeaponProgressionService.noteOwner(instance, run.player.id, run.player.name);
+    }
 
     const leveled: string[] = [];
     for (const track of tracks) {
