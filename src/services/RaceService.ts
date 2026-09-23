@@ -247,6 +247,9 @@ export const RaceService = {
   },
 
   getPlayableRaces(profile: ProfileSave): RaceDefinition[] {
+    if (profile.profileType === "DEVELOPMENT") {
+      return [...RACES];
+    }
     return RACES.filter((race) => {
       const row = progressFor(profile, race.id);
       return row?.playable || race.defaultPlayable;
@@ -265,6 +268,9 @@ export const RaceService = {
     profile: ProfileSave,
     rng: RandomService,
   ): { offers: RaceDefinition[]; profile: ProfileSave } {
+    if (profile.profileType === "DEVELOPMENT") {
+      return { offers: [...RACES], profile };
+    }
     profile.raceOfferPity ??= [];
     const playable = this.getPlayableRaces(profile);
     const human = playable.find((race) => race.id === HUMAN_RACE_ID) ?? getRace(HUMAN_RACE_ID);
@@ -386,6 +392,9 @@ export const RaceService = {
   },
 
   isPlayable(profile: ProfileSave, raceId: string): boolean {
+    if (profile.profileType === "DEVELOPMENT") {
+      return Boolean(getRace(raceId));
+    }
     return Boolean(progressFor(profile, raceId)?.playable);
   },
 

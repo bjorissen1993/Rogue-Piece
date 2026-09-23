@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getDevilFruit } from "../data/devilFruits";
-import { getItemDefinition } from "../data/items";
+import { getItemDefinition, itemSellPrice } from "../data/items";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import type { InventoryCategory, InventoryItem, RunState } from "../models/types";
 import {
@@ -28,6 +28,7 @@ type InventoryOverlayProps = {
   initialSelectedId?: string | null;
   onClose: () => void;
   onUse: (itemId: string, targetCharacterId: string) => void;
+  onSell?: (itemId: string) => void;
   onFruitAction?: (action: "EAT" | "SELL" | "KEEP", fruitId: string) => void;
   onGiveFruitToCrew?: (fruitId: string, characterId: string) => void;
   onEquipWeapon?: (instanceId: string, slot: "primary" | "secondary") => void;
@@ -51,6 +52,7 @@ export function InventoryOverlay({
   initialSelectedId,
   onClose,
   onUse,
+  onSell,
   onFruitAction,
   onGiveFruitToCrew,
   onEquipWeapon,
@@ -86,6 +88,10 @@ export function InventoryOverlay({
   const detailNote = selected ? ItemService.detailNote(selected, inCombat) : null;
   const isFruit = selected?.type === "DEVIL_FRUIT" || Boolean(selected?.fruitId);
   const showUseButton = selected ? ItemService.canUseFromPack(selected, inCombat) : false;
+  const selectedSellPrice =
+    selected && selected.type !== "WEAPON" && !isFruit
+      ? itemSellPrice(selected.itemId || selected.id)
+      : null;
   const collectibleTotal = collectibles.reduce((sum, entry) => sum + entry.quantity, 0);
 
   const selectCollectible = (inventoryId: string) => {
@@ -252,6 +258,10 @@ export function InventoryOverlay({
                           item.type !== "WEAPON" ? getItemDefinition(item.itemId || item.id) : undefined;
                         const itemWeapon = WeaponService.resolveWeaponView(item);
                         const itemShowUse = ItemService.canUseFromPack(item, inCombat);
+                        const itemSell =
+                          item.type !== "WEAPON" && !itemIsFruit
+                            ? itemSellPrice(item.itemId || item.id)
+                            : null;
                         const itemNote = ItemService.detailNote(item, inCombat);
                         return (
                           <li
@@ -404,6 +414,15 @@ export function InventoryOverlay({
                                           type="button"
                                         >
                                           Use on…
+                                        </button>
+                                      ) : null}
+                                      {itemSell && onSell ? (
+                                        <button
+                                          className="ghost-btn"
+                                          onClick={() => onSell(item.itemId || item.id)}
+                                          type="button"
+                                        >
+                                          Sell · ฿{itemSell}
                                         </button>
                                       ) : null}
                                     </div>
@@ -620,6 +639,15 @@ export function InventoryOverlay({
                         type="button"
                       >
                         Use on…
+                      </button>
+                    ) : null}
+                    {selectedSellPrice != null && onSell ? (
+                      <button
+                        className="ghost-btn"
+                        onClick={() => onSell(selected.itemId || selected.id)}
+                        type="button"
+                      >
+                        Sell · ฿{selectedSellPrice}
                       </button>
                     ) : null}
                   </div>

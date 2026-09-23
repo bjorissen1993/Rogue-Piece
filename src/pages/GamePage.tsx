@@ -50,7 +50,15 @@ export function GamePage() {
     choose,
     talkToLocalNpcs,
     fireStoryTrigger,
+    resetStoryChain,
+    completeFishing,
+    buyMarketItem,
+    sellMarketItem,
+    buyClinicItem,
+    sellClinicItem,
     saveIslandFacilityHotspots,
+    consumeIslandHotspot,
+    restoreIslandProbe,
     setIslandMapAsset,
     ensureIslandHubMaps,
     continueResult,
@@ -77,6 +85,7 @@ export function GamePage() {
     resolveEnemyTurn,
     useCombatItem,
     useInventoryItem,
+    sellInventoryItem,
     confirmLevelUp,
     selectTechnique,
     fruitInventoryAction,
@@ -466,8 +475,19 @@ export function GamePage() {
               }}
               onRequestListFallback={() => setHubListFallback(true)}
               onSaveHotspots={saveIslandFacilityHotspots}
+              onConsumeHotspot={consumeIslandHotspot}
+              onRestoreHotspot={restoreIslandProbe}
               onTalkNpcs={talkToLocalNpcs}
               onStoryTrigger={fireStoryTrigger}
+              onResetStoryChain={resetStoryChain}
+              onFinishFishing={completeFishing}
+              onBuyMarketItem={buyMarketItem}
+              onSellMarketItem={sellMarketItem}
+              onBuyClinicItem={buyClinicItem}
+              onSellClinicItem={sellClinicItem}
+              onEnsureWeaponShop={ensureWeaponShop}
+              onBuyWeaponShopItem={buyWeaponShopListing}
+              onSellWeaponShopItem={sellWeaponShopOwned}
               run={run}
               toolsHost={showHubMapTools ? hubToolsHost : null}
             />
@@ -870,6 +890,7 @@ export function GamePage() {
           onFruitAction={fruitInventoryAction}
           onGiveFruitToCrew={giveFruitToCrew}
           onUnequipWeapon={unequipWeapon}
+          onSell={sellInventoryItem}
           onUse={(itemId, targetCharacterId) => {
             useInventoryItem(itemId, targetCharacterId);
           }}

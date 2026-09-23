@@ -28,6 +28,35 @@ const FADE_TICK_MS = 40;
 
 type Listener = (settings: AudioSettings) => void;
 
+/** Cursor's embedded browser / agent tab — never start music there. */
+export function isSilentMusicHost(): boolean {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+  if (navigator.webdriver) {
+    return true;
+  }
+  const ua = navigator.userAgent;
+  if (/HeadlessChrome|Playwright|Puppeteer/i.test(ua)) {
+    return true;
+  }
+  if (/Cursor|Electron/i.test(ua)) {
+    return true;
+  }
+  const brands = (
+    navigator as Navigator & { userAgentData?: { brands?: { brand: string }[] } }
+  ).userAgentData?.brands;
+  if (brands?.some((entry) => /Cursor|Electron|Headless/i.test(entry.brand))) {
+    return true;
+  }
+  if (typeof window !== "undefined" && "cursorBrowser" in window) {
+    return true;
+  }
+  return false;
+}
+
+const hostSilenced = isSilentMusicHost();
+
 function loadSettings(): AudioSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -186,7 +215,7 @@ async function startTrack(
   src: string,
   options: { crossfade: boolean },
 ): Promise<void> {
-  if (!unlocked || mode === "none") return;
+  if (hostSilenced || !unlocked || mode === "none") return;
 
   const token = ++crossfadeToken;
   clearAllFades();
@@ -279,7 +308,7 @@ export const MusicService = {
   },
 
   unlock(): void {
-    if (unlocked) return;
+    if (hostSilenced || unlocked) return;
     unlocked = true;
     if (mode !== "none") {
       void startTrack(pickTrack(poolFor(mode), currentTrack), { crossfade: false });
@@ -318,6 +347,10 @@ export const MusicService = {
 
 /** Call once from the app root to unlock audio after a user gesture. */
 export function installMusicUnlock(): () => void {
+  if (hostSilenced) {
+    MusicService.setMode("none");
+    return () => undefined;
+  }
   const unlock = () => MusicService.unlock();
   const events: Array<keyof WindowEventMap> = ["pointerdown", "keydown", "touchstart"];
   for (const event of events) {

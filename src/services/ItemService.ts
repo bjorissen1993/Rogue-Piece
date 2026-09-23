@@ -1,4 +1,5 @@
-import { computeHealAmount, computeMpRestoreAmount, computeReviveHp, getItemDefinition } from "../data/items";
+import { computeHealAmount, computeMpRestoreAmount, computeReviveHp, getItemDefinition, itemSellPrice } from "../data/items";
+import { isFishCatchItem } from "../data/fishing";
 import type {
   InventoryCategory,
   InventoryItem,
@@ -144,6 +145,9 @@ export function packItems(inventory: InventoryItem[], category: InventoryCategor
 type StoredCategory = Exclude<InventoryCategory, "ALL">;
 
 export function categorizeItem(item: InventoryItem): StoredCategory {
+  if (isFishCatchItem(definitionIdOf(item))) {
+    return "CONSUMABLES";
+  }
   if (item.category && item.category !== "ALL") {
     return item.category;
   }
@@ -204,6 +208,45 @@ export const ItemService = {
         description: def.description,
       }),
     };
+  },
+
+  countOwned(run: RunState, itemId: string): number {
+    return run.player.inventory
+      .filter((item) => (item.itemId || item.id) === itemId)
+      .reduce((sum, item) => sum + (item.quantity ?? 1), 0);
+  },
+
+  remove(run: RunState, itemId: string, quantity = 1): number {
+    const stack = stackOf(run.player, itemId);
+    if (!stack || quantity <= 0) {
+      return 0;
+    }
+    const have = stack.quantity ?? 1;
+    const take = Math.min(have, quantity);
+    stack.quantity = have - take;
+    if (stack.quantity <= 0) {
+      run.player.inventory = run.player.inventory.filter((item) => item !== stack);
+    }
+    return take;
+  },
+
+  sell(run: RunState, itemId: string): { ok: boolean; message: string; berries: number } {
+    const price = itemSellPrice(itemId);
+    const def = getItemDefinition(itemId);
+    if (price == null || !def) {
+      return { ok: false, message: "Nobody wants that here.", berries: 0 };
+    }
+    const stack = stackOf(run.player, itemId);
+    if (!stack || (stack.quantity ?? 1) <= 0) {
+      return { ok: false, message: `You have no ${def.name} to sell.`, berries: 0 };
+    }
+    stack.quantity = (stack.quantity ?? 1) - 1;
+    if (stack.quantity <= 0) {
+      run.player.inventory = run.player.inventory.filter((item) => item !== stack);
+    }
+    run.player.berries += price;
+    run.lastFeedback = `Sold ${def.name} for ฿${price}.`;
+    return { ok: true, message: run.lastFeedback, berries: price };
   },
 
   grant(run: RunState, itemId: string, quantity = 1, profile?: ProfileSave): InventoryItem | null {

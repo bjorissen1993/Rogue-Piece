@@ -936,7 +936,47 @@ export interface LocationAnchor {
   notes?: string;
 }
 
+/**
+ * Named free-form area on a map for AI quest / icon placement.
+ * Visible only on the Anchors author tab. Added in SAVE_VERSION 36.
+ */
+export interface MapAnchorRegion {
+  id: string;
+  name: string;
+  notes?: string;
+  /** Closed polygon in percent of map width/height (0–100). */
+  points: Array<{ xPct: number; yPct: number }>;
+  aiPermission: LocationAnchorAiPermission;
+}
+
 export type StoryChainNodeEditState = "generated" | "edited" | "locked";
+
+export type StoryBeatEnemyStrength = "weak" | "normal" | "strong";
+export type StoryBeatEnemyRole = "normal" | "boss";
+
+/** Author picks for a generated beat (options, custom prompt, battle knobs). */
+export interface StoryBeatObjective {
+  type: "collect_item";
+  itemId: string;
+  count: number;
+  label?: string;
+}
+
+export interface StoryQuestDraft {
+  options?: string[];
+  chosenIndex?: number;
+  customPrompt?: string;
+  adaptedText?: string;
+  enemyCount?: number;
+  enemyStrength?: StoryBeatEnemyStrength;
+  enemyRole?: StoryBeatEnemyRole;
+  battleSuggestion?: string;
+  npcName?: string;
+  dialogueLines?: string[];
+  encounterTitle?: string;
+  encounterDescription?: string;
+  objective?: StoryBeatObjective;
+}
 
 export type StoryChainNodeKind =
   | "start"
@@ -994,16 +1034,31 @@ export interface StoryChainNode {
   /** Nested map icon on this (or another) island map. */
   placedHotspotId?: string;
   locationAnchorId?: string;
+  /** Named map region the generator picked for this beat. SAVE_VERSION 36. */
+  locationRegionId?: string;
   /** Match hint from generation — not nested until the author places it. */
   suggestedHotspotId?: string;
   editState?: StoryChainNodeEditState;
   trigger?: StoryChainTrigger;
+  questDraft?: StoryQuestDraft;
   /** Stable key so sectional regen can replace generated nodes without touching edited/locked. */
   generationKey?: string;
   /** Cross-island hop (same idea as HotspotLink.toIslandId). */
   toIslandId?: string;
   toMapAssetId?: string;
 }
+
+export type StoryBeatPlanKind = "talk" | "event" | "battle" | "investigate" | "boss";
+
+/** Authored beat in player order. Counts are derived from this list when present. */
+export interface StoryBeatPlanItem {
+  id: string;
+  kind: StoryBeatPlanKind;
+  /** Optional hint shown when that beat is picked. */
+  note?: string;
+}
+
+export type StoryChainStartHub = "MARKET" | "INN" | "HARBOR" | "TRAINING_GROUNDS" | "LIBRARY";
 
 export interface StoryChainStart {
   premise?: string;
@@ -1013,6 +1068,10 @@ export interface StoryChainStart {
   bossBattle?: boolean;
   eventsCount?: number;
   investigationsCount?: number;
+  /** Player-facing order of beats after the opening. */
+  beatPlan?: StoryBeatPlanItem[];
+  /** Hub that holds the quest icon for the opening. */
+  startHub?: StoryChainStartHub;
   tone?: StoryChainTone | string;
   /** 1–5. */
   importance?: number;
@@ -1104,6 +1163,10 @@ export interface PendingStoryTravel {
 export type IslandMapLayoutExtras = {
   locationAnchors?: LocationAnchor[] | null;
   storyChains?: StoryChain[] | null;
+  /** Global map icon scale (1 = default). Added in SAVE_VERSION 35. */
+  iconScale?: number | null;
+  /** Named free-form AI placement regions. Added in SAVE_VERSION 36. */
+  anchorRegions?: MapAnchorRegion[] | null;
 };
 
 export interface DialogueBeat {
@@ -1255,7 +1318,8 @@ export type IslandSpecialMarkerId =
   | "DELIVERIES"
   | "ESCORT"
   | "JOBS"
-  | "MISSING_PERSONS";
+  | "MISSING_PERSONS"
+  | "LOCATION_ANCHOR";
 
 /**
  * Authored sequential stage / outcome on a map hotspot (quest chain step).
@@ -1393,6 +1457,16 @@ export interface IslandMapLayout {
    * Added in SAVE_VERSION 31.
    */
   storyChains?: StoryChain[];
+  /**
+   * Global scale for all icons on this map (1 = default).
+   * Added in SAVE_VERSION 35.
+   */
+  iconScale?: number;
+  /**
+   * Named free-form areas for AI icon placement.
+   * Added in SAVE_VERSION 36.
+   */
+  anchorRegions?: MapAnchorRegion[];
 }
 
 /**
@@ -1444,6 +1518,7 @@ export interface IslandFacilityHotspot {
   /**
    * One-shot probe: hide this icon after the player uses it once.
    * Added in SAVE_VERSION 30. (`disappearAfterUse` is accepted on load as an alias.)
+   * Explore / Investigate / Search / Scout always consume (SAVE_VERSION 34).
    */
   consumeOnUse?: boolean;
   /** Free-text design notes for this placement (AI/dev flesh-out later). */
@@ -1483,6 +1558,10 @@ export interface PlayerShip {
   speed: number;
   /** Hull integrity 0–100. */
   condition: number;
+  /** Hold units the vessel can carry (item quantities). */
+  cargoCapacity?: number;
+  /** Art key in `/icons/Ships` (`Ship1`–`Ship5`). Defaults to Ship1. */
+  hullId?: string;
 }
 
 /** Active voyage between islands while activityMode is SAILING. */
@@ -2352,6 +2431,8 @@ export interface Island {
    * Each map asset has an independent layout; play mode uses `mapLayouts[mapAssetId]`.
    * Scenes live on `mapLayouts[mapAssetId].scenes` (SAVE_VERSION 29).
    * Location anchors and story chains were added in SAVE_VERSION 31.
+   * Global iconScale was added in SAVE_VERSION 35.
+   * Anchor regions + persisted consume ids were added in SAVE_VERSION 36.
    * Added in SAVE_VERSION 28.
    */
   mapLayouts?: Record<string, IslandMapLayout>;
@@ -2365,7 +2446,17 @@ export interface Island {
    * (e.g. `map_quest`, `map_event` after exploring).
    */
   discoveryFlags?: string[];
-  /** Times the player has used Explore on this island (gates explore_count hotspot unlocks). */
+  /**
+   * Hotspot ids consumed in play (Explore / Investigate / Search / Scout).
+   * Persist so one-shot probes stay gone after leaving the hub. SAVE_VERSION 36.
+   */
+  consumedHotspotIds?: string[];
+  /**
+   * Hotspot ids revealed in play by a one-shot probe.
+   * Persist so reveal targets stay visible after leaving the hub. SAVE_VERSION 36.
+   */
+  revealedHotspotIds?: string[];
+  /** @deprecated Explore-count unlocks are gone; kept on old saves only. */
   exploreCount?: number;
   /** 0–100 local attention / heat — escalates from time, bounty, and hostile acts. */
   pressureLevel?: number;

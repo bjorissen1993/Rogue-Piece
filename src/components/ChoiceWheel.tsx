@@ -12,7 +12,7 @@ const WHEEL_ARC_SPREAD = 1.18;
 /** Shift the whole arc toward the right wall (rem). */
 const WHEEL_ARC_WALL_NUDGE = 4.6;
 const WHEEL_VERTICAL_SIDE_SCALE = 0.7;
-const WHEEL_ANIM_MS = 280;
+export const WHEEL_ANIM_MS = 240;
 
 export type ChoiceWheelOption = {
   id: string;
@@ -124,10 +124,13 @@ export function ChoiceWheel({
 
   // Sync parent readout before paint so mobile combat never shows icon/Confirm without text.
   useLayoutEffect(() => {
+    if (motion !== 0) {
+      return;
+    }
     const current = options[wrapIndex(focus, options.length)] ?? null;
     onHoverHint(current?.hint ?? null);
     onFocusChange(current);
-  }, [focus, options.length, optionsKey, options[focus]?.id, options[focus]?.hint, onHoverHint, onFocusChange]);
+  }, [focus, motion, options.length, optionsKey, options[focus]?.id, options[focus]?.hint, onHoverHint, onFocusChange]);
 
   useEffect(() => {
     return () => {
@@ -157,6 +160,11 @@ export function ChoiceWheel({
     locked.current = true;
     setInstant(false);
     setMotion(dir);
+    const upcoming = options[wrapIndex(focus + dir, options.length)] ?? null;
+    if (upcoming) {
+      onHoverHint(upcoming.hint);
+      onFocusChange(upcoming);
+    }
     window.setTimeout(() => {
       // Snap without transition so the focus slot does not animate back to center.
       setInstant(true);

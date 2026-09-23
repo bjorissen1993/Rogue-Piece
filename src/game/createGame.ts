@@ -27,6 +27,7 @@ import { CrewService } from "../services/CrewService";
 import { MedicalRecoveryService } from "../services/MedicalRecoveryService";
 import { RunEndResolutionService } from "../services/RunEndResolutionService";
 import { LegacyService } from "../services/LegacyService";
+import { DEFAULT_SHIP_CARGO_CAPACITY, DEFAULT_SHIP_HULL_ID } from "./constants";
 
 export { createEmptyProfile, emptyStatistics } from "./profileFactory";
 
@@ -155,6 +156,8 @@ export function createRunState(
       name: `${options.name}'s Ship`,
       speed: 1,
       condition: 100,
+      cargoCapacity: DEFAULT_SHIP_CARGO_CAPACITY,
+      hullId: DEFAULT_SHIP_HULL_ID,
     },
     activeVoyage: null,
     lastEncounterCategory: null,

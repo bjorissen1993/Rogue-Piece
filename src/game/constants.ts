@@ -1,4 +1,4 @@
-export const SAVE_VERSION = 33;
+export const SAVE_VERSION = 36;
 
 /** Primary shore navigation encounter (Island State hub). */
 export const ISLAND_HUB_ENCOUNTER_ID = "island_hub";
@@ -7,6 +7,10 @@ export const AT_SEA_ENCOUNTER_ID = "at_sea";
 
 /** Default player ship speed in distance-units per time slot. */
 export const DEFAULT_SHIP_SPEED = 1;
+/** Default hold capacity in item-quantity units. */
+export const DEFAULT_SHIP_CARGO_CAPACITY = 40;
+/** Default hull art key (`/icons/Ships/Ship1.png`). */
+export const DEFAULT_SHIP_HULL_ID = "Ship1";
 /** Baseline voyage distance between East Blue islands (abstract units). */
 export const DEFAULT_VOYAGE_DISTANCE = 3;
 /** Chance per sailing time slot to pause for a sea event. */

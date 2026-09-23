@@ -2,19 +2,24 @@ import { describe, expect, it } from "vitest";
 import { createEmptyProfile, createRunState } from "../game/createGame";
 import { SAVE_VERSION } from "../game/constants";
 import { IslandService } from "./IslandService";
+import { ItemService } from "./ItemService";
 import { FactionService } from "./FactionService";
 import { CharacterService } from "./CharacterService";
 import {
   StoryChainService,
   matchLocationForKind,
+  nestChildForStoryNode,
   storyChainStructureFingerprint,
 } from "./StoryChainService";
 import {
   createLocationAnchor,
   createStoryChain,
+  facilityIdForStoryChainNode,
   migrateStoryChain,
   unplacedStoryChainNodes,
+  unplacedStoryChainQueue,
 } from "../data/islandMaps";
+import { SEA_KING_MEAT_ITEM_ID } from "../data/items";
 import type { IslandFacilityHotspot, RunState, StoryChain } from "../models/types";
 
 function freshRun(seed = "story-chain-p2"): RunState {
@@ -34,11 +39,24 @@ function innHotspot(): IslandFacilityHotspot {
 }
 
 describe("Story chain Phase 2", () => {
-  it("uses SAVE_VERSION 33", () => {
-    expect(SAVE_VERSION).toBe(33);
+  it("uses SAVE_VERSION 36", () => {
+    expect(SAVE_VERSION).toBe(36);
   });
 
-  it("generates numbered talk/battle/event/investigate/boss nodes between Start and End", () => {
+  function generateAfterEndPlaced(
+    chain: StoryChain,
+    ctx: { hotspots: IslandFacilityHotspot[]; anchors: ReturnType<typeof createLocationAnchor>[]; island?: RunState["islands"][number] },
+  ): StoryChain {
+    const first = StoryChainService.generateStructure(chain, ctx);
+    const end = first.nodes.find((n) => n.kind === "end");
+    if (!end) {
+      return first;
+    }
+    const nested = StoryChainService.nestNode(first, end.id, { hotspotId: end.placedHotspotId ?? "hs_end" });
+    return StoryChainService.generateStructure(nested, ctx);
+  }
+
+  it("generates unplaced beats into the queue without scattering map icons", () => {
     const chain = createStoryChain("Relic hunt");
     chain.start = {
       premise: "A relic went missing from the inn.",
@@ -50,6 +68,9 @@ describe("Story chain Phase 2", () => {
       mustHappen: "The cook admits the theft",
     };
     chain.end = { resolution: "The relic is returned or sold." };
+    expect(StoryChainService.validateForGenerate(chain)).toBeNull();
+    expect(StoryChainService.validateForGenerate(createStoryChain("Empty"))).toMatch(/Premise/);
+
     const next = StoryChainService.generateStructure(chain, { hotspots: [innHotspot()], anchors: [] });
     expect(next.id).toBe(chain.id);
     expect(next.nodes[0]?.kind).toBe("start");
@@ -63,14 +84,41 @@ describe("Story chain Phase 2", () => {
     expect(next.nodes.some((n) => n.label === "The cook admits the theft" && n.editState === "locked")).toBe(
       true,
     );
-    expect(unplacedStoryChainNodes(next).length).toBe(next.nodes.length);
+    expect(unplacedStoryChainQueue(next).some((n) => n.kind === "end")).toBe(true);
+    expect(facilityIdForStoryChainNode(next, next.nodes.find((n) => n.kind === "boss")!)).toBe(
+      "CHALLENGE",
+    );
     expect(next.generationFingerprint).toBe(storyChainStructureFingerprint(chain.start));
+    const middles = next.nodes.filter((n) => n.kind !== "start" && n.kind !== "end");
+    expect(middles.filter((n) => n.kind === "talk" || n.kind === "event").every((n) => n.placedHotspotId === "hs_inn")).toBe(
+      true,
+    );
+    expect(
+      middles
+        .filter((n) => n.kind === "battle" || n.kind === "boss" || n.kind === "investigate")
+        .every((n) => !n.placedHotspotId && (n.editState === "generated" || n.editState === "locked")),
+    ).toBe(true);
+  });
+
+  it("does not auto-place generated beats onto existing map icons", () => {
+    const chain = createStoryChain("No scatter");
+    chain.start = { premise: "A lead", dialogueBeats: 1, eventsCount: 1, battlesCount: 1 };
+    const existing: IslandFacilityHotspot[] = [
+      { hotspotId: "hs_quest", facilityId: "QUEST", xPct: 20, yPct: 20 },
+      { hotspotId: "hs_event", facilityId: "EVENT", xPct: 40, yPct: 40 },
+      { hotspotId: "hs_talk", facilityId: "TALK", xPct: 60, yPct: 60 },
+    ];
+    const next = generateAfterEndPlaced(chain, { hotspots: existing, anchors: [] });
+    const generated = next.nodes.filter((n) => n.kind !== "start" && n.kind !== "end");
+    expect(generated.length).toBeGreaterThan(0);
+    expect(generated.every((n) => !n.placedHotspotId)).toBe(true);
+    expect(generated.some((n) => n.editState === "generated")).toBe(true);
   });
 
   it("keeps locked and edited nodes when regenerating a section", () => {
     const chain = createStoryChain("Keep edited");
     chain.start = { dialogueBeats: 2, battlesCount: 0 };
-    let next = StoryChainService.generateStructure(chain, { hotspots: [], anchors: [] });
+    let next = generateAfterEndPlaced(chain, { hotspots: [], anchors: [] });
     const firstTalk = next.nodes.find((n) => n.generationKey === "talk:0")!;
     firstTalk.editState = "edited";
     firstTalk.label = "Custom dock rumor";
@@ -102,12 +150,30 @@ describe("Story chain Phase 2", () => {
       anchors: [createLocationAnchor("Sealed well", ["well"], "never")],
     });
     expect(neverOnly.locationAnchorId).toBeUndefined();
+
+    const region = matchLocationForKind("explore", {
+      hotspots: [],
+      anchors: [],
+      regions: [
+        {
+          id: "reg_caves",
+          name: "East caves",
+          points: [
+            { xPct: 60, yPct: 40 },
+            { xPct: 80, yPct: 40 },
+            { xPct: 70, yPct: 60 },
+          ],
+          aiPermission: "auto",
+        },
+      ],
+    });
+    expect(region.locationRegionId).toBe("reg_caves");
   });
 
   it("nests a node onto a hotspot and suboption trigger", () => {
     const chain = createStoryChain("Nest me");
     chain.start = { dialogueBeats: 1 };
-    const generated = StoryChainService.generateStructure(chain, { hotspots: [innHotspot()], anchors: [] });
+    const generated = generateAfterEndPlaced(chain, { hotspots: [innHotspot()], anchors: [] });
     const talk = generated.nodes.find((n) => n.kind === "talk")!;
     const nested = StoryChainService.nestNode(generated, talk.id, {
       hotspotId: "hs_inn",
@@ -144,7 +210,7 @@ describe("Story chain Phase 2", () => {
     const island = IslandService.getCurrentIsland(run)!;
     const chain = createStoryChain("Queued", island.id, island.mapAssetId ?? undefined);
     chain.start = { dialogueBeats: 1, premise: "Meet at the inn" };
-    const generated = StoryChainService.generateStructure(chain, {
+    const generated = generateAfterEndPlaced(chain, {
       hotspots: island.facilityHotspots ?? [],
       anchors: [],
       island,
@@ -239,7 +305,7 @@ describe("Story chain Phase 2", () => {
     const island = IslandService.getCurrentIsland(run)!;
     const chain = createStoryChain("Hooks", island.id, island.mapAssetId ?? undefined);
     chain.start = { dialogueBeats: 0, battlesCount: 1 };
-    const generated = StoryChainService.generateStructure(chain, {
+    const generated = generateAfterEndPlaced(chain, {
       hotspots: island.facilityHotspots ?? [],
       anchors: [],
       island,
@@ -273,7 +339,7 @@ describe("Story chain Phase 2", () => {
     expect(other).toBeTruthy();
     const chain = createStoryChain("Across the sea", island.id, island.mapAssetId ?? undefined);
     chain.start = { dialogueBeats: 1, battlesCount: 0, premise: "Leave a clue at the inn." };
-    const generated = StoryChainService.generateStructure(chain, {
+    const generated = generateAfterEndPlaced(chain, {
       hotspots: [innHotspot()],
       anchors: [],
       island,
@@ -303,5 +369,293 @@ describe("Story chain Phase 2", () => {
       mapAssetId: other!.mapAssetId ?? undefined,
     });
     expect(continued).toMatch(/Across the sea/);
+  });
+
+  it("nests market / training beats under the hub icon and offers three options", () => {
+    const chain = createStoryChain("Market brawl");
+    chain.start = {
+      premise: "A crate of smuggled fruit vanished from the stalls.",
+      eventsCount: 1,
+      battlesCount: 1,
+      tone: "mystery",
+    };
+    chain.end = { resolution: "The crate is found or the fence is named." };
+    const market: IslandFacilityHotspot = { hotspotId: "hs_market", facilityId: "MARKET", xPct: 50, yPct: 50 };
+    const training: IslandFacilityHotspot = {
+      hotspotId: "hs_train",
+      facilityId: "TRAINING_GROUNDS",
+      xPct: 70,
+      yPct: 40,
+    };
+    const next = StoryChainService.generateStructure(chain, {
+      hotspots: [market, training],
+      anchors: [],
+    });
+    const event = next.nodes.find((n) => n.kind === "event")!;
+    const battle = next.nodes.find((n) => n.kind === "battle")!;
+    expect(event.placedHotspotId).toBe("hs_market");
+    expect(event.trigger?.kind).toBe("suboption");
+    expect(event.trigger?.childId).toMatch(/^STORY:/);
+    expect(event.questDraft?.options).toHaveLength(3);
+    expect(battle.placedHotspotId).toBe("hs_train");
+    expect(battle.trigger?.childId).toBe("TRAIN_SPAR");
+    expect(battle.questDraft?.enemyCount).toBe(3);
+    const picked = StoryChainService.applyBeatChoice(next, event.id, { index: 1 }, "Market");
+    expect(picked.nodes.find((n) => n.id === event.id)?.questDraft?.chosenIndex).toBe(1);
+    expect(picked.nodes.find((n) => n.id === event.id)?.notes).toBeTruthy();
+    const custom = StoryChainService.applyBeatChoice(
+      picked,
+      event.id,
+      { customPrompt: "A monkey steals the ledger" },
+      "Market",
+    );
+    expect(custom.nodes.find((n) => n.id === event.id)?.notes).toMatch(/monkey steals the ledger/i);
+    const tuned = StoryChainService.applyBattleDraft(custom, battle.id, {
+      enemyCount: 5,
+      enemyStrength: "strong",
+      enemyRole: "boss",
+    });
+    expect(tuned.nodes.find((n) => n.id === battle.id)?.questDraft?.enemyCount).toBe(5);
+    expect(tuned.nodes.find((n) => n.id === battle.id)?.kind).toBe("boss");
+  });
+
+  it("nests weapon-shop beats as their own story children, not under Buy / Sell", () => {
+    const childId = nestChildForStoryNode("WEAPON_SHOP", { id: "n_blade", kind: "event" });
+    expect(childId).toBe("STORY:n_blade");
+    expect(childId).not.toBe("WEAPON_BUY_SELL");
+    const remapped = migrateStoryChain({
+      id: "schain_legacy_weapon",
+      name: "Old smithy thread",
+      start: {},
+      end: {},
+      nodes: [
+        {
+          id: "n_old",
+          order: 1,
+          kind: "talk",
+          trigger: { kind: "suboption", childId: "WEAPON_BUY", ref: "hs_weapons:WEAPON_BUY" },
+        },
+      ],
+    });
+    const oldBeat = remapped?.nodes.find((node) => node.id === "n_old");
+    expect(oldBeat?.trigger?.childId).toBe("WEAPON_BUY_SELL");
+    expect(oldBeat?.trigger?.ref).toBe("hs_weapons:WEAPON_BUY_SELL");
+  });
+
+  it("generates beats in authored plan order and nests the start under Market", () => {
+    const chain = createStoryChain("Fishing quest");
+    chain.start = {
+      premise: "The merchant at the market is out of fish.",
+      startHub: "MARKET",
+      beatPlan: [
+        { id: "p-talk", kind: "talk", note: "He says the fish is not enough and needs more." },
+        { id: "p-event", kind: "event", note: "Fishing choices; one path finds a sea king." },
+        { id: "p-battle", kind: "battle", note: "Battle the sea king." },
+      ],
+      tone: "adventure",
+    };
+    chain.end = { resolution: "Bring the sea king back to the merchant to finish the quest." };
+    const market: IslandFacilityHotspot = { hotspotId: "hs_market", facilityId: "MARKET", xPct: 50, yPct: 50 };
+    const next = StoryChainService.generateStructure(chain, { hotspots: [market], anchors: [] });
+    const start = next.nodes.find((n) => n.kind === "start")!;
+    const middles = next.nodes.filter((n) => n.kind !== "start" && n.kind !== "end");
+    expect(start.placedHotspotId).toBe("hs_market");
+    expect(start.trigger?.kind).toBe("suboption");
+    expect(start.trigger?.childId).toMatch(/^STORY:/);
+    expect(start.questDraft?.npcName).toBeTruthy();
+    expect(start.questDraft?.dialogueLines?.length).toBeGreaterThan(0);
+    expect(middles.map((n) => n.kind)).toEqual(["talk", "event", "battle"]);
+    expect(middles[1]?.questDraft?.objective).toEqual({
+      type: "collect_item",
+      itemId: "fish",
+      count: 5,
+      label: "Catch 5 fish",
+    });
+    expect(middles[0]?.notes).toMatch(/not enough/i);
+    expect(middles[1]?.notes).toMatch(/sea king/i);
+    expect(middles[2]?.notes).toMatch(/sea king/i);
+    expect(middles[0]?.questDraft?.options?.[0]).toMatch(/not enough/i);
+    const end = next.nodes.find((n) => n.kind === "end")!;
+    expect(end.placedHotspotId).toBe("hs_market");
+    expect(end.questDraft?.objective).toEqual({
+      type: "collect_item",
+      itemId: SEA_KING_MEAT_ITEM_ID,
+      count: 1,
+      label: "Bring Sea King meat to the merchant",
+    });
+  });
+
+  it("fires a market quest child without opening the shop action", () => {
+    const run = freshRun("market-quest-child");
+    const island = IslandService.getCurrentIsland(run)!;
+    const chain = createStoryChain("Fishing Quest", island.id);
+    chain.start = { premise: "The merchant is out of fish.", startHub: "MARKET" };
+    chain.end = { resolution: "Return the sea king." };
+    const market: IslandFacilityHotspot = { hotspotId: "hs_market", facilityId: "MARKET", xPct: 50, yPct: 50 };
+    const generated = StoryChainService.generateStructure(chain, { hotspots: [market], anchors: [], island });
+    IslandService.setFacilityHotspots(island, [market], [], { storyChains: [generated] });
+    const start = generated.nodes.find((n) => n.kind === "start")!;
+    const shopLine = StoryChainService.fireEvent(run, {
+      kind: "suboption",
+      hotspotId: "hs_market",
+      childId: "HUB_VISIT",
+      islandId: island.id,
+    });
+    expect(shopLine).toBeNull();
+    const questLine = StoryChainService.fireEvent(run, {
+      kind: "suboption",
+      hotspotId: "hs_market",
+      childId: `STORY:${start.id}`,
+      islandId: island.id,
+    });
+    expect(questLine).toMatch(/Fishing Quest|out of fish/i);
+    expect(run.dynamicEncounter?.id).toMatch(/^story:/);
+    expect(run.dynamicEncounter?.dialogueBeats?.[0]?.speakerName).toBeTruthy();
+    expect(run.currentEncounterId).toBe(run.dynamicEncounter?.id);
+  });
+
+  it("keeps later beats locked until the previous action is done, and skips fishing if the crate is full", () => {
+    const run = freshRun("story-sequence");
+    const island = IslandService.getCurrentIsland(run)!;
+    const chain = createStoryChain("Fishing Quest", island.id);
+    chain.start = {
+      premise: "The merchant at the market is out of fish.",
+      startHub: "MARKET",
+      beatPlan: [
+        { id: "p-event", kind: "event", note: "Catch five fish at the shallows." },
+        { id: "p-talk", kind: "talk", note: "He says it is still not enough." },
+      ],
+    };
+    chain.end = { resolution: "Bring the sea king back." };
+    const market: IslandFacilityHotspot = { hotspotId: "hs_market", facilityId: "MARKET", xPct: 50, yPct: 50 };
+    const fishing: IslandFacilityHotspot = { hotspotId: "hs_fish", facilityId: "FISHING", xPct: 20, yPct: 80 };
+    const generated = StoryChainService.generateStructure(chain, {
+      hotspots: [market, fishing],
+      anchors: [],
+      island,
+    });
+    IslandService.setFacilityHotspots(island, [market, fishing], [], { storyChains: [generated] });
+    const start = generated.nodes.find((n) => n.kind === "start")!;
+    const event = generated.nodes.find((n) => n.kind === "event")!;
+    const talk = generated.nodes.find((n) => n.kind === "talk")!;
+    expect(event.placedHotspotId).toBe("hs_fish");
+    expect(StoryChainService.isPlayableStoryAction(run, [generated], `STORY:${start.id}`)).toBe(true);
+    expect(StoryChainService.isPlayableStoryAction(run, [generated], `STORY:${event.id}`)).toBe(false);
+    StoryChainService.fireEvent(run, {
+      kind: "suboption",
+      hotspotId: "hs_market",
+      childId: `STORY:${start.id}`,
+      islandId: island.id,
+    });
+    expect(StoryChainService.isPlayableStoryAction(run, [generated], `STORY:${event.id}`)).toBe(true);
+    expect(StoryChainService.isPlayableStoryAction(run, [generated], `STORY:${talk.id}`)).toBe(false);
+    ItemService.grant(run, "fish", 5);
+    StoryChainService.syncObjectives(run);
+    expect(StoryChainService.isPlayableStoryAction(run, [generated], `STORY:${event.id}`)).toBe(false);
+    expect(StoryChainService.isPlayableStoryAction(run, [generated], `STORY:${talk.id}`)).toBe(true);
+  });
+
+  it("resets a thread so the opening quest can fire again", () => {
+    const run = freshRun("story-reset");
+    const island = IslandService.getCurrentIsland(run)!;
+    const chain = createStoryChain("Fish Shortage", island.id);
+    chain.start = { premise: "The merchant is out of fish.", startHub: "MARKET" };
+    chain.end = { resolution: "Done." };
+    const market: IslandFacilityHotspot = { hotspotId: "hs_market", facilityId: "MARKET", xPct: 50, yPct: 50 };
+    const generated = StoryChainService.generateStructure(chain, { hotspots: [market], anchors: [], island });
+    IslandService.setFacilityHotspots(island, [market], [], { storyChains: [generated] });
+    const start = generated.nodes.find((n) => n.kind === "start")!;
+    StoryChainService.fireEvent(run, {
+      kind: "suboption",
+      hotspotId: "hs_market",
+      childId: `STORY:${start.id}`,
+      islandId: island.id,
+    });
+    expect(run.storyChainProgress?.some((p) => p.firedNodeIds.includes(start.id))).toBe(true);
+    StoryChainService.resetChain(run, generated.id);
+    expect(run.storyChainProgress?.some((p) => p.chainId === generated.id)).toBe(false);
+    expect(StoryChainService.isPlayableStoryAction(run, [generated], `STORY:${start.id}`)).toBe(true);
+    const again = StoryChainService.fireEvent(run, {
+      kind: "suboption",
+      hotspotId: "hs_market",
+      childId: `STORY:${start.id}`,
+      islandId: island.id,
+    });
+    expect(again).toBeTruthy();
+  });
+
+  it("arms the Sea King fishing hook only after the merchant says five fish is not enough", () => {
+    const run = freshRun("sea-king-hook-gate");
+    const island = IslandService.getCurrentIsland(run)!;
+    const chain = createStoryChain("Fishing Quest", island.id);
+    chain.start = {
+      premise: "The merchant at the market is out of fish.",
+      startHub: "MARKET",
+      beatPlan: [
+        { id: "p-event", kind: "event", note: "Catch five fish at the shallows." },
+        { id: "p-talk", kind: "talk", note: "He says it is still not enough." },
+        { id: "p-battle", kind: "battle", note: "Battle the sea king." },
+      ],
+    };
+    chain.end = { resolution: "Bring the sea king back." };
+    const market: IslandFacilityHotspot = { hotspotId: "hs_market", facilityId: "MARKET", xPct: 50, yPct: 50 };
+    const fishing: IslandFacilityHotspot = { hotspotId: "hs_fish", facilityId: "FISHING", xPct: 20, yPct: 80 };
+    const generated = StoryChainService.generateStructure(chain, {
+      hotspots: [market, fishing],
+      anchors: [],
+      island,
+    });
+    IslandService.setFacilityHotspots(island, [market, fishing], [], { storyChains: [generated] });
+    const start = generated.nodes.find((n) => n.kind === "start")!;
+    const talk = generated.nodes.find((n) => n.kind === "talk")!;
+    const battle = generated.nodes.find((n) => n.kind === "battle")!;
+
+    expect(StoryChainService.seaKingHookAvailable(run)).toBeNull();
+
+    StoryChainService.fireEvent(run, {
+      kind: "suboption",
+      hotspotId: "hs_market",
+      childId: `STORY:${start.id}`,
+      islandId: island.id,
+    });
+    expect(StoryChainService.seaKingHookAvailable(run)).toBeNull();
+
+    ItemService.grant(run, "fish", 5);
+    StoryChainService.syncObjectives(run);
+    expect(StoryChainService.seaKingHookAvailable(run)).toBeNull();
+
+    StoryChainService.markFired(run, generated.id, talk.id);
+    expect(StoryChainService.seaKingHookAvailable(run)).toEqual({
+      chainId: generated.id,
+      battleNodeId: battle.id,
+    });
+
+    StoryChainService.markSeaKingHooked(run);
+    expect(StoryChainService.seaKingHookAvailable(run)).toBeNull();
+
+    const end = generated.nodes.find((n) => n.kind === "end")!;
+    expect(end.placedHotspotId).toBe("hs_market");
+    expect(end.questDraft?.objective?.itemId).toBe(SEA_KING_MEAT_ITEM_ID);
+    expect(StoryChainService.isPlayableStoryAction(run, [generated], `STORY:${end.id}`)).toBe(true);
+
+    StoryChainService.fireEvent(run, {
+      kind: "suboption",
+      hotspotId: "hs_market",
+      childId: `STORY:${end.id}`,
+      islandId: island.id,
+    });
+    expect(run.storyChainProgress?.find((p) => p.chainId === generated.id)?.effectsApplied).toBeFalsy();
+    expect(StoryChainService.isPlayableStoryAction(run, [generated], `STORY:${end.id}`)).toBe(true);
+
+    ItemService.grant(run, SEA_KING_MEAT_ITEM_ID, 1);
+    StoryChainService.fireEvent(run, {
+      kind: "suboption",
+      hotspotId: "hs_market",
+      childId: `STORY:${end.id}`,
+      islandId: island.id,
+    });
+    expect(ItemService.countOwned(run, SEA_KING_MEAT_ITEM_ID)).toBe(0);
+    expect(run.storyChainProgress?.find((p) => p.chainId === generated.id)?.effectsApplied).toBe(true);
+    expect(StoryChainService.isPlayableStoryAction(run, [generated], `STORY:${end.id}`)).toBe(false);
   });
 });

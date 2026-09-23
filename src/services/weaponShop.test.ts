@@ -4,6 +4,13 @@ import { WEAPON_ARCHETYPES } from "../data/weaponArchetypes";
 import type { RunState, WeaponShopTheme } from "../models/types";
 import { createRng } from "./RandomService";
 import { WeaponGenerationService } from "./WeaponGenerationService";
+import {
+  WEAPON_SHOP_TABS,
+  matchesWeaponTab,
+  weaponCategoryTitle,
+  weaponIconSrc,
+  weaponShopRarityGlow,
+} from "../data/weaponShopUi";
 import { WeaponShopService } from "./WeaponShopService";
 import { WeaponService } from "./WeaponService";
 
@@ -119,5 +126,49 @@ describe("WeaponGenerationService", () => {
       named += stock.listings.filter((entry) => entry.weapon.isNamed).length;
     }
     expect(named).toBeLessThan(12);
+  });
+});
+
+describe("Weapon shop overlay catalog", () => {
+  it("tabs All plus weapon-type icons", () => {
+    expect(WEAPON_SHOP_TABS.map((tab) => tab.id)).toEqual([
+      "all",
+      "BLADE",
+      "POLEARM",
+      "BLUNT",
+      "RANGED",
+      "UNUSUAL",
+    ]);
+    expect(WEAPON_SHOP_TABS.find((tab) => tab.id === "BLADE")?.iconSrc).toBe("/icons/Weapons/Weapon_Sword.png");
+    expect(weaponCategoryTitle("POLEARM")).toBe("Polearm");
+    expect(matchesWeaponTab("BLADE", "all")).toBe(true);
+    expect(matchesWeaponTab("BLADE", "BLUNT")).toBe(false);
+  });
+
+  it("maps archetypes to weapon art and rarity glow", () => {
+    expect(weaponIconSrc({ archetypeId: "cutlass", category: "BLADE" })).toBe("/icons/Weapons/Weapon_Sword.png");
+    expect(weaponIconSrc({ archetypeId: "greatsword", category: "BLADE" })).toBe(
+      "/icons/Weapons/Weapon_Sword_2Handed.png",
+    );
+    expect(weaponIconSrc({ archetypeId: "axe", category: "UNUSUAL" })).toBe("/icons/Weapons/Weapon_Axe.png");
+    expect(weaponIconSrc({ archetypeId: "pistol", category: "RANGED" })).toBe("/icons/Weapons/Weapon_Pistol.png");
+    expect(weaponShopRarityGlow("LEGENDARY")).toContain("shop-item-rarity--legendary");
+    expect(weaponShopRarityGlow("RARE", "SEA_STONE_ALLOY")).toContain("shop-item-rarity--sea-king");
+  });
+
+  it("buys a unique listing and sells an owned weapon", () => {
+    const run = freshRun();
+    run.player.berries = 9999;
+    const stock = WeaponShopService.ensureStock(run, createRng("overlay-buy"), { theme: "GENERAL" });
+    const listing = stock.listings[0]!;
+    const bought = WeaponShopService.purchase(run, stock.shopKey, listing.listingId);
+    expect(bought.ok).toBe(true);
+    expect(bought.instanceId).toBeTruthy();
+    expect(WeaponShopService.availableListings(stock).some((entry) => entry.listingId === listing.listingId)).toBe(
+      false,
+    );
+    const sold = WeaponShopService.sellOwned(run, bought.instanceId!);
+    expect(sold.ok).toBe(true);
+    expect(run.player.inventory.some((item) => item.id === bought.instanceId)).toBe(false);
   });
 });

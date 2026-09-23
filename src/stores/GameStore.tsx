@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { endRun, startRun } from "../game/createGame";
 import { MAX_ACTIVE_FIGHTERS, MAX_SUPPORT_SLOTS } from "../game/constants";
 import type {
@@ -38,7 +38,10 @@ import { EncounterHistoryService } from "../services/EncounterHistoryService";
 import { FactionMissionService } from "../services/FactionMissionService";
 import { FactionService } from "../services/FactionService";
 import { DialogueService } from "../services/DialogueService";
-import { StoryChainService } from "../services/StoryChainService";
+import { StoryChainService, STORY_ENCOUNTER_PREFIX } from "../services/StoryChainService";
+import { FishingService } from "../services/FishingService";
+import { ClinicShopService } from "../services/ClinicShopService";
+import { MarketShopService } from "../services/MarketShopService";
 import { IslandService } from "../services/IslandService";
 import { ItemService } from "../services/ItemService";
 import { RaceService } from "../services/RaceService";
@@ -64,7 +67,7 @@ import { LootDispositionService } from "../services/LootDispositionService";
 import { PartyCombatService } from "../services/PartyCombatService";
 import { createSeed } from "../utils/ids";
 import { DEVIL_FRUITS } from "../data/devilFruits";
-import { isKnownIslandMapAssetId } from "../data/islandMaps";
+import { allHotspotsOnIsland, findHotspotOnIsland, isKnownIslandMapAssetId, revealIdsForProbe } from "../data/islandMaps";
 import type { StatName } from "../models/types";
 
 export type Screen = "profileSelect" | "profileMenu" | "playMenu" | "newRun" | "game" | "gameOver";
@@ -120,9 +123,17 @@ type GameStoreValue = {
     scenes?: IslandMapScene[] | null,
     extras?: IslandMapLayoutExtras,
   ) => void;
+  consumeIslandHotspot: (hotspotId: string, revealIds?: string[]) => void;
+  restoreIslandProbe: (hotspotId: string) => void;
   /** Talk-to-NPC stub: personality-aware template line; persists dialogue memory. */
   talkToLocalNpcs: (parentHotspotId?: string) => string;
   fireStoryTrigger: (event: StoryTriggerEvent) => string | null;
+  resetStoryChain: (chainId: string) => void;
+  completeFishing: (result: import("../services/FishingService").FishingSessionResult) => string;
+  buyMarketItem: (itemId: string, quantity?: number) => string;
+  sellMarketItem: (itemId: string, quantity?: number) => string;
+  buyClinicItem: (itemId: string, quantity?: number) => string;
+  sellClinicItem: (itemId: string, quantity?: number) => string;
   setIslandMapAsset: (mapAssetId: string) => void;
   /** Assign map art / facilities for older saves when entering the island hub. */
   ensureIslandHubMaps: () => void;
@@ -137,8 +148,8 @@ type GameStoreValue = {
   buyWeaponShopListing: (
     listingId: string,
     options?: { equip?: boolean; tradeInInstanceId?: string },
-  ) => void;
-  sellWeaponShopOwned: (instanceId: string) => void;
+  ) => string;
+  sellWeaponShopOwned: (instanceId: string) => string;
   refreshWeaponShop: (theme?: WeaponShopTheme) => void;
   ensureItemMarket: (kind: import("../models/types").ItemMarketKind) => void;
   buyItemMarketListing: (kind: import("../models/types").ItemMarketKind, listingId: string) => void;
@@ -153,6 +164,7 @@ type GameStoreValue = {
   resolveEnemyTurn: () => void;
   useCombatItem: (itemId: string, targetCharacterId?: string) => void;
   useInventoryItem: (itemId: string, targetCharacterId?: string) => void;
+  sellInventoryItem: (itemId: string) => void;
   equipWeapon: (instanceId: string, slot?: "primary" | "secondary") => void;
   unequipWeapon: (instanceId: string) => void;
   setZoanForm: (formId: ZoanFormId) => void;
@@ -285,6 +297,8 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   const [selectedLocationId, setSelectedLocationId] = useState("east_blue_port");
   const [characterName, setCharacterName] = useState("");
   const [debugFeedback, setDebugFeedback] = useState<string | null>(null);
+  const pendingConsumedHotspotId = useRef<string | null>(null);
+  const pendingRevealedHotspotIds = useRef<string[]>([]);
 
   const bump = useCallback(() => setTick((value) => value + 1), []);
   const saves = useMemo(() => SaveService.listProfiles(), [tick]);
@@ -431,6 +445,22 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       }
       const next = structuredClone(profile);
       const run = next.activeRun!;
+      const island = IslandService.getCurrentIsland(run);
+      if (island && pendingConsumedHotspotId.current) {
+        const consumedId = pendingConsumedHotspotId.current;
+        IslandService.consumeHotspot(island, consumedId);
+        const probe = findHotspotOnIsland(island, consumedId);
+        const reveals = pendingRevealedHotspotIds.current.length
+          ? pendingRevealedHotspotIds.current
+          : probe
+            ? revealIdsForProbe(probe, allHotspotsOnIsland(island))
+            : [];
+        if (reveals.length) {
+          IslandService.revealHotspots(island, reveals);
+        }
+        pendingConsumedHotspotId.current = null;
+        pendingRevealedHotspotIds.current = [];
+      }
       if (participantIds?.length) {
         run.pendingParticipantIds = participantIds;
         run.pendingParticipantId = participantIds[0] ?? null;
@@ -459,6 +489,55 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
         return;
       }
       IslandService.setFacilityHotspots(island, hotspots, scenes, extras);
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const consumeIslandHotspot = useCallback(
+    (hotspotId: string, revealIds: string[] = []) => {
+      pendingConsumedHotspotId.current = hotspotId;
+      pendingRevealedHotspotIds.current = revealIds;
+      if (!profile?.activeRun) {
+        return;
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const island = IslandService.getCurrentIsland(run);
+      if (!island) {
+        return;
+      }
+      const probe = findHotspotOnIsland(island, hotspotId);
+      const resolvedReveals =
+        revealIds.length > 0
+          ? revealIds
+          : probe
+            ? revealIdsForProbe(probe, allHotspotsOnIsland(island))
+            : [];
+      pendingRevealedHotspotIds.current = resolvedReveals;
+      IslandService.consumeHotspot(island, hotspotId);
+      IslandService.revealHotspots(island, resolvedReveals);
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const restoreIslandProbe = useCallback(
+    (hotspotId: string) => {
+      if (!profile?.activeRun) {
+        return;
+      }
+      if (pendingConsumedHotspotId.current === hotspotId) {
+        pendingConsumedHotspotId.current = null;
+        pendingRevealedHotspotIds.current = [];
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const island = IslandService.getCurrentIsland(run);
+      if (!island) {
+        return;
+      }
+      IslandService.restoreProbe(island, hotspotId);
       persist(next);
     },
     [profile, persist],
@@ -493,6 +572,89 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       const line = StoryChainService.fireEvent(run, event, next);
       persist(next);
       return line;
+    },
+    [profile, persist],
+  );
+
+  const resetStoryChain = useCallback(
+    (chainId: string) => {
+      if (!profile?.activeRun) {
+        return;
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const storyId = `${STORY_ENCOUNTER_PREFIX}${chainId}`;
+      const inStory = Boolean(run.currentEncounterId?.startsWith(storyId));
+      StoryChainService.resetChain(run, chainId);
+      if (inStory) {
+        EncounterEngine.enterIslandHub(run);
+      }
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const completeFishing = useCallback(
+    (result: import("../services/FishingService").FishingSessionResult) => {
+      if (!profile?.activeRun || !result.attempted) {
+        return "";
+      }
+      const next = structuredClone(profile);
+      const line = FishingService.applySession(next.activeRun!, result, next);
+      persist(next);
+      return line;
+    },
+    [profile, persist],
+  );
+
+  const buyMarketItem = useCallback(
+    (itemId: string, quantity = 1) => {
+      if (!profile?.activeRun) {
+        return "";
+      }
+      const next = structuredClone(profile);
+      const result = MarketShopService.buy(next.activeRun!, itemId, next, quantity);
+      persist(next);
+      return result.message;
+    },
+    [profile, persist],
+  );
+
+  const sellMarketItem = useCallback(
+    (itemId: string, quantity = 1) => {
+      if (!profile?.activeRun) {
+        return "";
+      }
+      const next = structuredClone(profile);
+      const result = MarketShopService.sell(next.activeRun!, itemId, quantity);
+      persist(next);
+      return result.message;
+    },
+    [profile, persist],
+  );
+
+  const buyClinicItem = useCallback(
+    (itemId: string, quantity = 1) => {
+      if (!profile?.activeRun) {
+        return "";
+      }
+      const next = structuredClone(profile);
+      const result = ClinicShopService.buy(next.activeRun!, itemId, next, quantity);
+      persist(next);
+      return result.message;
+    },
+    [profile, persist],
+  );
+
+  const sellClinicItem = useCallback(
+    (itemId: string, quantity = 1) => {
+      if (!profile?.activeRun) {
+        return "";
+      }
+      const next = structuredClone(profile);
+      const result = ClinicShopService.sell(next.activeRun!, itemId, quantity);
+      persist(next);
+      return result.message;
     },
     [profile, persist],
   );
@@ -649,7 +811,9 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
 
   const buyWeaponShopListing = useCallback(
     (listingId: string, options?: { equip?: boolean; tradeInInstanceId?: string }) => {
-      if (!profile?.activeRun) return;
+      if (!profile?.activeRun) {
+        return "";
+      }
       const next = structuredClone(profile);
       const run = next.activeRun!;
       const rng = createRng(`${run.seed}_wshop_${run.currentIslandId ?? "sea"}_${run.day}`);
@@ -657,18 +821,22 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       const result = WeaponShopService.purchase(run, stock.shopKey, listingId, options);
       run.lastFeedback = result.reason;
       persist(next);
+      return result.reason;
     },
     [profile, persist],
   );
 
   const sellWeaponShopOwned = useCallback(
     (instanceId: string) => {
-      if (!profile?.activeRun) return;
+      if (!profile?.activeRun) {
+        return "";
+      }
       const next = structuredClone(profile);
       const run = next.activeRun!;
       const result = WeaponShopService.sellOwned(run, instanceId);
       run.lastFeedback = result.reason;
       persist(next);
+      return result.reason;
     },
     [profile, persist],
   );
@@ -817,6 +985,18 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
         return;
       }
       persist(EncounterEngine.useOutOfCombatItem(profile, itemId, targetCharacterId));
+    },
+    [profile, persist],
+  );
+
+  const sellInventoryItem = useCallback(
+    (itemId: string) => {
+      if (!profile?.activeRun) {
+        return;
+      }
+      const next = structuredClone(profile);
+      ItemService.sell(next.activeRun!, itemId);
+      persist(next);
     },
     [profile, persist],
   );
@@ -2254,8 +2434,16 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     cancelResetDev,
     choose,
     saveIslandFacilityHotspots,
+    consumeIslandHotspot,
+    restoreIslandProbe,
     talkToLocalNpcs,
     fireStoryTrigger,
+    resetStoryChain,
+    completeFishing,
+    buyMarketItem,
+    sellMarketItem,
+    buyClinicItem,
+    sellClinicItem,
     setIslandMapAsset,
     ensureIslandHubMaps,
     continueResult,
@@ -2282,6 +2470,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     resolveEnemyTurn,
     useCombatItem,
     useInventoryItem,
+    sellInventoryItem,
     equipWeapon,
     unequipWeapon,
     setZoanForm,

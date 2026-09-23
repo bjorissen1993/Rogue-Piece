@@ -8,9 +8,24 @@ import type { IslandFacilityHotspot, RunState } from "../models/types";
 import {
   childActionsForFacility,
   FACILITY_CHILD_ACTIONS,
+  MAP_CHILD_ACTIONS,
+  clampIconScale,
+  createLocationAnchor,
+  createMapAnchorRegion,
+  hotspotAuthorName,
+  hotspotIdsOwnedByStoryChain,
+  omitHotspotsAndRefs,
+  revealIdsForProbe,
+  revealSourcesForHotspot,
+  getMapLayoutAnchorRegions,
+  getMapLayoutIconScale,
+  isHotspotVisibleInPlay,
   migrateHotspot,
   migrateIslandMapLayouts,
+  playHotspotUsesHubChoice,
   resolveChildActionsForHotspot,
+  specialMarkerIconSrc,
+  storyChainNodeOriginLabel,
 } from "../data/islandMaps";
 
 function freshRun(seed = "island-phase1"): RunState {
@@ -260,6 +275,45 @@ describe("Island facilities (Phase 1)", () => {
     expect(migrated.consumeOnUse).toBe(true);
   });
 
+  it("migrates Explore probes to consumeOnUse (SAVE_VERSION 34)", () => {
+    const unset = migrateHotspot({
+      hotspotId: "ex",
+      facilityId: "EXPLORE",
+      xPct: 50,
+      yPct: 80,
+      unlock: { mode: "always" },
+    });
+    expect(unset.consumeOnUse).toBe(true);
+
+    const wasFalse = migrateHotspot({
+      hotspotId: "ex2",
+      facilityId: "EXPLORE",
+      xPct: 50,
+      yPct: 80,
+      unlock: { mode: "always" },
+      consumeOnUse: false,
+    });
+    expect(wasFalse.consumeOnUse).toBe(true);
+
+    const scout = migrateHotspot({
+      hotspotId: "sc1",
+      facilityId: "SCOUT",
+      xPct: 40,
+      yPct: 40,
+      unlock: { mode: "always" },
+    });
+    expect(scout.consumeOnUse).toBe(true);
+
+    const quest = migrateHotspot({
+      hotspotId: "q1",
+      facilityId: "QUEST",
+      xPct: 20,
+      yPct: 20,
+      unlock: { mode: "always" },
+    });
+    expect(quest.consumeOnUse).toBeUndefined();
+  });
+
   it("allows multiple instances of the same icon type", () => {
     const run = freshRun("hotspot-multi");
     const island = IslandService.getCurrentIsland(run)!;
@@ -269,10 +323,14 @@ describe("Island facilities (Phase 1)", () => {
       { hotspotId: "g3", facilityId: "GATHER", xPct: 70, yPct: 60, unlock: { mode: "always" } },
       { hotspotId: "ex", facilityId: "EXPLORE", xPct: 50, yPct: 80, unlock: { mode: "always" } },
     ]);
-    const resolved = IslandService.resolveHotspots(island, run);
-    const gathers = resolved.filter((h) => h.facilityId === "GATHER");
-    expect(gathers).toHaveLength(3);
-    expect(new Set(gathers.map((h) => h.hotspotId)).size).toBe(3);
+    const placed = (island.facilityHotspots ?? []).filter((h) => h.facilityId === "GATHER");
+    expect(placed).toHaveLength(3);
+    expect(new Set(placed.map((h) => h.hotspotId)).size).toBe(3);
+    const editor = IslandService.resolveHotspots(island, run, true);
+    expect(editor.filter((h) => h.facilityId === "GATHER")).toHaveLength(3);
+    expect(IslandService.resolveHotspots(island, run).filter((h) => h.facilityId === "GATHER")).toHaveLength(
+      0,
+    );
   });
 
   it("hides quest markers until island discovery flags unlock them", () => {
@@ -302,44 +360,164 @@ describe("Island facilities (Phase 1)", () => {
     expect(editor.filter((h) => h.facilityId === "QUEST" || h.facilityId === "EVENT")).toHaveLength(2);
   });
 
-  it("unlocks markers after explore count and migrates legacy hotspots", () => {
-    const run = freshRun("hotspot-explore-count");
+  it("hides reveal targets until an explore probe is used", () => {
+    const run = freshRun("hotspot-explore-reveal");
     const island = IslandService.getCurrentIsland(run)!;
-    // Legacy shape without hotspotId / unlock rule
     IslandService.setFacilityHotspots(island, [
       { facilityId: "HARBOR", xPct: 20, yPct: 70 } as never,
-      { facilityId: "EXPLORE", xPct: 50, yPct: 80, alwaysVisible: true } as never,
       {
+        hotspotId: "ex_caves",
+        facilityId: "EXPLORE",
+        xPct: 50,
+        yPct: 80,
+        purpose: "East caves",
+        alwaysVisible: true,
+        revealsHotspotIds: ["hs_gather"],
+      } as never,
+      {
+        hotspotId: "hs_gather",
         facilityId: "GATHER",
         xPct: 40,
         yPct: 40,
-        unlock: { mode: "explore_count", exploreCount: 2 },
+        unlock: { mode: "always" },
       } as never,
     ]);
-    expect(island.facilityHotspots?.every((h) => Boolean(h.hotspotId))).toBe(true);
     expect(island.facilityHotspots?.find((h) => h.facilityId === "GATHER")?.unlock?.mode).toBe(
-      "explore_count",
+      "always",
     );
-
     expect(IslandService.resolveHotspots(island, run).some((h) => h.facilityId === "GATHER")).toBe(
       false,
     );
-    IslandService.recordExplore(island);
-    expect(IslandService.resolveHotspots(island, run).some((h) => h.facilityId === "GATHER")).toBe(
-      false,
-    );
-    IslandService.recordExplore(island);
-    expect(island.exploreCount).toBe(2);
+    const explore = island.facilityHotspots?.find((h) => h.hotspotId === "ex_caves")!;
+    const gather = island.facilityHotspots?.find((h) => h.hotspotId === "hs_gather")!;
+    expect(hotspotAuthorName(explore)).toBe("East caves");
+    expect(revealSourcesForHotspot("hs_gather", island.facilityHotspots ?? []).map((h) => h.hotspotId)).toEqual([
+      "ex_caves",
+    ]);
+    expect(isHotspotVisibleInPlay(gather, island, run)).toBe(false);
+    IslandService.revealHotspots(island, ["hs_gather"]);
+    expect(island.revealedHotspotIds).toContain("hs_gather");
+    expect(isHotspotVisibleInPlay(gather, island, run)).toBe(true);
     expect(IslandService.resolveHotspots(island, run).some((h) => h.facilityId === "GATHER")).toBe(
       true,
     );
+    const folded = migrateHotspot({
+      hotspotId: "old_count",
+      facilityId: "GATHER",
+      xPct: 10,
+      yPct: 10,
+      unlock: { mode: "explore_count", exploreCount: 2 },
+    });
+    expect(folded.unlock?.mode).toBe("always");
+  });
+
+  it("hides gather until the nearest explore probe is used", () => {
+    const run = freshRun("gather-needs-explore");
+    const island = IslandService.getCurrentIsland(run)!;
+    IslandService.setFacilityHotspots(island, [
+      { facilityId: "HARBOR", xPct: 18, yPct: 72 } as never,
+      {
+        hotspotId: "ex_hills",
+        facilityId: "EXPLORE",
+        xPct: 48,
+        yPct: 36,
+        purpose: "Hill path",
+        alwaysVisible: true,
+      } as never,
+      {
+        hotspotId: "hs_gather",
+        facilityId: "GATHER",
+        xPct: 50,
+        yPct: 32,
+        unlock: { mode: "always" },
+      } as never,
+    ]);
+    const gather = island.facilityHotspots?.find((h) => h.hotspotId === "hs_gather")!;
+    const explore = island.facilityHotspots?.find((h) => h.hotspotId === "ex_hills")!;
+    expect(gather.unlock?.mode).toBe("always");
+    expect(explore.revealsHotspotIds).toBeUndefined();
+    expect(IslandService.resolveHotspots(island, run).some((h) => h.facilityId === "GATHER")).toBe(
+      false,
+    );
+    expect(isHotspotVisibleInPlay(gather, island, run)).toBe(false);
+    expect(revealIdsForProbe(explore, island.facilityHotspots ?? [])).toEqual(["hs_gather"]);
+
+    IslandService.consumeHotspot(island, "ex_hills");
+    expect(isHotspotVisibleInPlay(gather, island, run)).toBe(true);
+    IslandService.revealHotspots(island, revealIdsForProbe(explore, island.facilityHotspots ?? []));
+    expect(island.revealedHotspotIds).toContain("hs_gather");
+    expect(IslandService.resolveHotspots(island, run).some((h) => h.facilityId === "GATHER")).toBe(
+      true,
+    );
+  });
+
+  it("only reveals the gather nearest the used explore", () => {
+    const run = freshRun("gather-nearest-explore");
+    const island = IslandService.getCurrentIsland(run)!;
+    IslandService.setFacilityHotspots(island, [
+      {
+        hotspotId: "ex_west",
+        facilityId: "EXPLORE",
+        xPct: 20,
+        yPct: 30,
+        alwaysVisible: true,
+      } as never,
+      {
+        hotspotId: "g_west",
+        facilityId: "GATHER",
+        xPct: 22,
+        yPct: 28,
+        unlock: { mode: "always" },
+      } as never,
+      {
+        hotspotId: "ex_east",
+        facilityId: "EXPLORE",
+        xPct: 80,
+        yPct: 70,
+        alwaysVisible: true,
+      } as never,
+      {
+        hotspotId: "g_east",
+        facilityId: "GATHER",
+        xPct: 78,
+        yPct: 68,
+        unlock: { mode: "always" },
+      } as never,
+    ]);
+    const west = island.facilityHotspots?.find((h) => h.hotspotId === "g_west")!;
+    const east = island.facilityHotspots?.find((h) => h.hotspotId === "g_east")!;
+    const westExplore = island.facilityHotspots?.find((h) => h.hotspotId === "ex_west")!;
+    expect(isHotspotVisibleInPlay(west, island, run)).toBe(false);
+    expect(isHotspotVisibleInPlay(east, island, run)).toBe(false);
+    expect(revealIdsForProbe(westExplore, island.facilityHotspots ?? [])).toEqual(["g_west"]);
+
+    IslandService.consumeHotspot(island, "ex_west");
+    IslandService.revealHotspots(island, revealIdsForProbe(westExplore, island.facilityHotspots ?? []));
+    expect(isHotspotVisibleInPlay(west, island, run)).toBe(true);
+    expect(isHotspotVisibleInPlay(east, island, run)).toBe(false);
   });
 
   it("lists child actions for parent facilities including reusable Talk", () => {
     expect(FACILITY_CHILD_ACTIONS.HARBOR).toContain("HARBOR_CREW");
     expect(FACILITY_CHILD_ACTIONS.INN).toContain("TALK_NPCS");
     expect(childActionsForFacility("INN").some((a) => a.id === "TALK_NPCS")).toBe(true);
-    expect(childActionsForFacility("MARKET")).toHaveLength(0);
+    expect(childActionsForFacility("MARKET").map((a) => a.id)).toEqual(["MARKET_BUY_SELL"]);
+    expect(childActionsForFacility("WEAPON_SHOP").map((a) => a.id)).toEqual(["WEAPON_BUY_SELL"]);
+    expect(childActionsForFacility("CLINIC").map((a) => a.id)).toEqual([
+      "CLINIC_MEDICINE",
+      "CLINIC_HEAL",
+      "CLINIC_HOSPITAL",
+    ]);
+    expect(MAP_CHILD_ACTIONS.HARBOR_SHIP.resolve).toEqual({ type: "overlay", overlay: "ship" });
+    expect(MAP_CHILD_ACTIONS.HARBOR_CARGO.resolve).toEqual({
+      type: "overlay",
+      overlay: "ship",
+      focus: "cargo",
+    });
+    expect(MAP_CHILD_ACTIONS.HARBOR_DEPART.resolve).toEqual({
+      type: "hub_choice",
+      choiceId: "harbor",
+    });
   });
 
   it("resolves optional Talk and per-child unlock overrides on parent hotspots", () => {
@@ -385,7 +563,132 @@ describe("Island facilities (Phase 1)", () => {
       run,
     );
     expect(marketWithTalk.some((a) => a.id === "TALK_NPCS")).toBe(true);
-    expect(marketWithTalk.some((a) => a.id === "HUB_VISIT")).toBe(true);
+    expect(marketWithTalk.some((a) => a.id === "MARKET_BUY_SELL")).toBe(true);
+    expect(marketWithTalk.some((a) => a.id === "HUB_VISIT")).toBe(false);
+  });
+
+  it("opens Market as a hub menu with shop plus nested story quests", () => {
+    const market: IslandFacilityHotspot = {
+      hotspotId: "hs_market",
+      facilityId: "MARKET",
+      xPct: 50,
+      yPct: 50,
+      unlock: { mode: "always" },
+    };
+    const shopOnly = resolveChildActionsForHotspot(market);
+    expect(shopOnly.some((a) => a.id === "MARKET_BUY_SELL" && a.resolve.type === "overlay")).toBe(true);
+    expect(shopOnly.some((a) => a.id === "HUB_VISIT")).toBe(false);
+
+    const withQuest = resolveChildActionsForHotspot(market, undefined, undefined, {
+      storyChains: [
+        {
+          id: "schain_fish",
+          name: "Fishing Quest",
+          start: {},
+          end: {},
+          nodes: [
+            {
+              id: "n_start",
+              order: 1,
+              kind: "start",
+              placedHotspotId: "hs_market",
+              trigger: { kind: "suboption", childId: "HUB_VISIT", ref: "hs_market:HUB_VISIT" },
+            },
+          ],
+        },
+      ],
+    });
+    expect(withQuest.some((a) => a.id === "MARKET_BUY_SELL" && a.resolve.type === "overlay")).toBe(true);
+    expect(withQuest.some((a) => a.id === "STORY:n_start" && a.resolve.type === "story")).toBe(true);
+    expect(withQuest.find((a) => a.id === "STORY:n_start")?.label).toBe("Fishing Quest");
+  });
+
+  it("opens Weapon Shop and Clinic medicine as map overlays", () => {
+    const weapons = resolveChildActionsForHotspot({
+      hotspotId: "hs_weapons",
+      facilityId: "WEAPON_SHOP",
+      xPct: 40,
+      yPct: 40,
+      unlock: { mode: "always" },
+    });
+    expect(weapons.some((a) => a.id === "WEAPON_BUY_SELL" && a.resolve.type === "overlay")).toBe(true);
+    expect(weapons.some((a) => a.id === "HUB_VISIT")).toBe(false);
+
+    const clinic = resolveChildActionsForHotspot({
+      hotspotId: "hs_clinic",
+      facilityId: "CLINIC",
+      xPct: 60,
+      yPct: 50,
+      unlock: { mode: "always" },
+    });
+    const medicine = clinic.find((a) => a.id === "CLINIC_MEDICINE");
+    expect(medicine?.resolve).toEqual({ type: "overlay", overlay: "clinic" });
+    expect(clinic.some((a) => a.id === "CLINIC_HEAL" && a.resolve.type === "hub_choice")).toBe(true);
+  });
+
+  it("keeps weapon-shop story quests as their own child beside the overlay", () => {
+    const withQuest = resolveChildActionsForHotspot(
+      {
+        hotspotId: "hs_weapons",
+        facilityId: "WEAPON_SHOP",
+        xPct: 40,
+        yPct: 40,
+        unlock: { mode: "always" },
+      },
+      undefined,
+      undefined,
+      {
+        storyChains: [
+          {
+            id: "schain_steel",
+            name: "Missing Blade",
+            start: {},
+            end: {},
+            nodes: [
+              {
+                id: "n_start",
+                order: 1,
+                kind: "start",
+                placedHotspotId: "hs_weapons",
+                trigger: { kind: "suboption", childId: "HUB_VISIT", ref: "hs_weapons:HUB_VISIT" },
+              },
+            ],
+          },
+        ],
+      },
+    );
+    expect(withQuest.some((a) => a.id === "WEAPON_BUY_SELL" && a.resolve.type === "overlay")).toBe(true);
+    expect(withQuest.some((a) => a.id === "STORY:n_start" && a.resolve.type === "story")).toBe(true);
+  });
+
+  it("removes only story fiches when a thread is deleted, not shared hubs", () => {
+    const market: IslandFacilityHotspot = { hotspotId: "hs_market", facilityId: "MARKET", xPct: 50, yPct: 50 };
+    const start: IslandFacilityHotspot = { hotspotId: "hs_start", facilityId: "QUEST", xPct: 40, yPct: 40 };
+    const talk: IslandFacilityHotspot = { hotspotId: "hs_talk", facilityId: "TALK", xPct: 45, yPct: 42 };
+    const chain = {
+      id: "c1",
+      name: "Fish Shortage",
+      start: {},
+      end: {},
+      nodes: [
+        { id: "n1", order: 1, kind: "start" as const, placedHotspotId: "hs_market" },
+        { id: "n2", order: 2, kind: "talk" as const, placedHotspotId: "hs_talk" },
+        { id: "n3", order: 3, kind: "start" as const, placedHotspotId: "hs_start" },
+      ],
+    };
+    const owned = hotspotIdsOwnedByStoryChain(chain, [market, start, talk]);
+    expect(owned).toEqual(["hs_talk", "hs_start"]);
+    const next = omitHotspotsAndRefs(
+      [
+        market,
+        start,
+        talk,
+        { ...market, hotspotId: "hs_other", links: [{ id: "l1", toHotspotId: "hs_talk" }] },
+      ],
+      owned,
+    );
+    expect(next.map((h) => h.hotspotId)).toEqual(["hs_market", "hs_other"]);
+    expect(next.find((h) => h.hotspotId === "hs_other")?.links).toEqual([]);
   });
 
   it("migrates childOverrides on hotspot lists", () => {
@@ -406,7 +709,21 @@ describe("Island facilities (Phase 1)", () => {
     expect(inn?.hotspotId).toBeTruthy();
     expect(inn?.childOverrides).toHaveLength(1);
     expect(inn?.childOverrides?.[0]?.childId).toBe("TALK_NPCS");
-    expect(inn?.childOverrides?.[0]?.unlock?.mode).toBe("explore_count");
+    expect(inn?.childOverrides?.[0]?.unlock?.mode).toBe("always");
+
+    IslandService.setFacilityHotspots(island, [
+      {
+        facilityId: "WEAPON_SHOP",
+        xPct: 30,
+        yPct: 30,
+        childOverrides: [
+          { childId: "WEAPON_BUY", included: true },
+          { childId: "WEAPON_SELL", included: false },
+        ],
+      } as never,
+    ]);
+    const shop = island.facilityHotspots?.find((h) => h.facilityId === "WEAPON_SHOP");
+    expect(shop?.childOverrides).toEqual([{ childId: "WEAPON_BUY_SELL", included: true }]);
   });
 
   it("unlocks map markers from explore outcomes via discovery flags", () => {
@@ -469,6 +786,146 @@ describe("Island facilities (Phase 1)", () => {
     // With many rolls, marine base should appear often — verify generate includes basics + optional specials shape.
     expect(forced.filter((facility) => facility.kind === "BASIC")).toHaveLength(5);
     expect(forced.every((facility) => facility.unlocked)).toBe(true);
+  });
+
+  it("persists map iconScale on save (SAVE_VERSION 35)", () => {
+    const run = freshRun("icon-scale");
+    const island = IslandService.getCurrentIsland(run)!;
+    IslandService.setFacilityHotspots(island, island.facilityHotspots ?? [], [], {
+      iconScale: 1.35,
+    });
+    expect(getMapLayoutIconScale(island, island.mapAssetId)).toBe(1.35);
+    migrateIslandMapLayouts(island);
+    expect(island.mapLayouts?.[island.mapAssetId!]?.iconScale).toBe(1.35);
+    expect(clampIconScale(9)).toBe(1.8);
+    expect(clampIconScale(undefined)).toBe(1);
+  });
+
+  it("hides consumed explore probes and location anchors in play (SAVE_VERSION 36)", () => {
+    const run = freshRun("consume-probes");
+    const island = IslandService.getCurrentIsland(run)!;
+    const explore: IslandFacilityHotspot = {
+      hotspotId: "ex_gone",
+      facilityId: "EXPLORE",
+      xPct: 50,
+      yPct: 80,
+      unlock: { mode: "always" },
+      alwaysVisible: true,
+      consumeOnUse: true,
+    };
+    const anchor: IslandFacilityHotspot = {
+      hotspotId: "anc1",
+      facilityId: "LOCATION_ANCHOR",
+      xPct: 40,
+      yPct: 40,
+      unlock: { mode: "always" },
+      alwaysVisible: true,
+    };
+    expect(isHotspotVisibleInPlay(explore, island, run)).toBe(true);
+    expect(isHotspotVisibleInPlay(anchor, island, run)).toBe(false);
+    IslandService.consumeHotspot(island, "ex_gone");
+    expect(island.consumedHotspotIds).toContain("ex_gone");
+    expect(isHotspotVisibleInPlay(explore, island, run)).toBe(false);
+    migrateIslandMapLayouts(island);
+    expect(island.consumedHotspotIds).toContain("ex_gone");
+  });
+
+  it("restores a broken explore consume so the probe and its reveals can be used again", () => {
+    const run = freshRun("restore-broken-explore");
+    const island = IslandService.getCurrentIsland(run)!;
+    IslandService.setFacilityHotspots(island, [
+      { facilityId: "HARBOR", xPct: 20, yPct: 70 } as never,
+      {
+        hotspotId: "ex_caves",
+        facilityId: "EXPLORE",
+        xPct: 50,
+        yPct: 80,
+        purpose: "East caves",
+        alwaysVisible: true,
+        consumeOnUse: true,
+        revealsHotspotIds: ["hs_gather"],
+      } as never,
+      {
+        hotspotId: "hs_gather",
+        facilityId: "GATHER",
+        xPct: 40,
+        yPct: 40,
+        unlock: { mode: "always" },
+      } as never,
+    ]);
+    const explore = island.facilityHotspots?.find((h) => h.hotspotId === "ex_caves")!;
+    const gather = island.facilityHotspots?.find((h) => h.hotspotId === "hs_gather")!;
+    IslandService.consumeHotspot(island, "ex_caves");
+    expect(island.consumedHotspotIds).toContain("ex_caves");
+    expect(isHotspotVisibleInPlay(explore, island, run)).toBe(true);
+    expect(isHotspotVisibleInPlay(gather, island, run)).toBe(false);
+    migrateIslandMapLayouts(island);
+    expect(island.consumedHotspotIds ?? []).not.toContain("ex_caves");
+    expect(isHotspotVisibleInPlay(explore, island, run)).toBe(true);
+
+    IslandService.consumeHotspot(island, "ex_caves");
+    IslandService.revealHotspots(island, ["hs_gather"]);
+    expect(isHotspotVisibleInPlay(explore, island, run)).toBe(false);
+    expect(isHotspotVisibleInPlay(gather, island, run)).toBe(true);
+    IslandService.restoreProbe(island, "ex_caves");
+    expect(island.consumedHotspotIds ?? []).not.toContain("ex_caves");
+    expect(island.revealedHotspotIds ?? []).not.toContain("hs_gather");
+    expect(isHotspotVisibleInPlay(explore, island, run)).toBe(true);
+    expect(isHotspotVisibleInPlay(gather, island, run)).toBe(false);
+  });
+
+  it("persists named anchor regions on a map layout (SAVE_VERSION 36)", () => {
+    const run = freshRun("anchor-regions");
+    const island = IslandService.getCurrentIsland(run)!;
+    const region = createMapAnchorRegion(
+      "East caves",
+      [
+        { xPct: 60, yPct: 40 },
+        { xPct: 80, yPct: 42 },
+        { xPct: 72, yPct: 62 },
+      ],
+      "auto",
+    );
+    IslandService.setFacilityHotspots(island, island.facilityHotspots ?? [], [], {
+      anchorRegions: [region],
+    });
+    const stored = getMapLayoutAnchorRegions(island, island.mapAssetId);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.name).toBe("East caves");
+    expect(stored[0]?.points).toHaveLength(3);
+    expect(stored[0]?.aiPermission).toBe("auto");
+    migrateIslandMapLayouts(island);
+    expect(island.mapLayouts?.[island.mapAssetId!]?.anchorRegions?.[0]?.name).toBe("East caves");
+  });
+
+  it("routes Quest / thread-begin clicks away from Task Board", () => {
+    const quest: IslandFacilityHotspot = {
+      hotspotId: "q1",
+      facilityId: "QUEST",
+      xPct: 40,
+      yPct: 40,
+    };
+    const event: IslandFacilityHotspot = {
+      hotspotId: "e1",
+      facilityId: "EVENT",
+      xPct: 50,
+      yPct: 50,
+    };
+    const tasks: IslandFacilityHotspot = {
+      hotspotId: "t1",
+      facilityId: "TASK_BOARD",
+      xPct: 30,
+      yPct: 30,
+    };
+    expect(playHotspotUsesHubChoice(quest, { hasNestedStory: true, storyFired: true })).toBe(false);
+    expect(playHotspotUsesHubChoice(quest)).toBe(false);
+    expect(playHotspotUsesHubChoice(event, { hasNestedStory: true })).toBe(false);
+    expect(playHotspotUsesHubChoice(event)).toBe(true);
+    expect(playHotspotUsesHubChoice(tasks, { hasNestedStory: true, storyFired: true })).toBe(true);
+    expect(storyChainNodeOriginLabel("generated")).toBe("Generated");
+    expect(specialMarkerIconSrc("LOCATION_ANCHOR")).toBe("/icons/UI/location.png");
+    const anchor = createLocationAnchor("Cliff well", ["well"], "suggest");
+    expect(anchor.hotspotId).toBeUndefined();
   });
 
   it("returns to the island hub after completing a non-chained shore beat", () => {

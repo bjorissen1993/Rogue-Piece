@@ -1,5 +1,7 @@
 import {
   AT_SEA_ENCOUNTER_ID,
+  DEFAULT_SHIP_CARGO_CAPACITY,
+  DEFAULT_SHIP_HULL_ID,
   DEFAULT_SHIP_SPEED,
   DEFAULT_VOYAGE_DISTANCE,
   SEA_EVENT_CHANCE_PER_SLOT,
@@ -28,6 +30,8 @@ function defaultShip(playerName: string): PlayerShip {
     name: `${playerName}'s Ship`,
     speed: DEFAULT_SHIP_SPEED,
     condition: 100,
+    cargoCapacity: DEFAULT_SHIP_CARGO_CAPACITY,
+    hullId: DEFAULT_SHIP_HULL_ID,
   };
 }
 
@@ -54,6 +58,12 @@ export const VoyageService = {
     }
     if (!Number.isFinite(run.ship.condition)) {
       run.ship.condition = 100;
+    }
+    if (!Number.isFinite(run.ship.cargoCapacity) || (run.ship.cargoCapacity ?? 0) <= 0) {
+      run.ship.cargoCapacity = DEFAULT_SHIP_CARGO_CAPACITY;
+    }
+    if (!run.ship.hullId) {
+      run.ship.hullId = DEFAULT_SHIP_HULL_ID;
     }
     return run.ship;
   },

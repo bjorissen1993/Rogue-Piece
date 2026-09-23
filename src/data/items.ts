@@ -414,6 +414,68 @@ export const ITEMS: ItemDefinition[] = [
     category: "COLLECTABLES",
   },
   {
+    id: "fish",
+    name: "Common Catch",
+    type: "CONSUMABLE",
+    description: "A modest fish from the shallows. Eat it, sell it, or fill a merchant's crate.",
+    consumable: true,
+    useContext: "BOTH",
+    effects: [
+      { type: "HEAL", amount: 6, percentMaxHp: 2 },
+      { type: "RESTORE_MP", amount: 2 },
+    ],
+    category: "CONSUMABLES",
+  },
+  {
+    id: "fish_fine",
+    name: "Choice Catch",
+    type: "CONSUMABLE",
+    description: "Firm and clean. A stall will pay — or it fills a hungry sailor.",
+    consumable: true,
+    useContext: "BOTH",
+    effects: [
+      { type: "HEAL", amount: 10, percentMaxHp: 3 },
+      { type: "RESTORE_MP", amount: 3 },
+    ],
+    category: "CONSUMABLES",
+  },
+  {
+    id: "fish_prime",
+    name: "Prime Catch",
+    type: "CONSUMABLE",
+    description: "A strong fish taken on a fast line. Good eating, better coin.",
+    consumable: true,
+    useContext: "BOTH",
+    effects: [
+      { type: "HEAL", amount: 16, percentMaxHp: 5 },
+      { type: "RESTORE_MP", amount: 4 },
+    ],
+    category: "CONSUMABLES",
+  },
+  {
+    id: "fish_golden",
+    name: "Golden Catch",
+    type: "CONSUMABLE",
+    description: "Struck on a gold mark. Rare enough that a merchant will open the purse.",
+    consumable: true,
+    useContext: "BOTH",
+    effects: [
+      { type: "HEAL", amount: 22, percentMaxHp: 8 },
+      { type: "RESTORE_MP", amount: 6 },
+    ],
+    category: "CONSUMABLES",
+  },
+  {
+    id: "sea_king_meat",
+    name: "Sea King Meat",
+    type: "QUEST",
+    description: "A slab carved from a god of the deep. A merchant asked for this — take it to the stall.",
+    consumable: false,
+    useContext: "PASSIVE",
+    effects: [{ type: "NONE" }],
+    category: "QUEST_ITEMS",
+  },
+  {
     id: "wanted_poster_scrap",
     name: "Wanted Poster Scrap",
     type: "MISC",
@@ -453,6 +515,10 @@ export const ITEM_SHOP_PRICES: Record<string, number> = {
   cooked_fish: 70,
   hearty_meal: 140,
   captains_feast: 420,
+  fish: 15,
+  fish_fine: 35,
+  fish_prime: 70,
+  fish_golden: 140,
   travel_rations: 50,
   brackish_dregs: 6,
   fresh_water: 20,
@@ -477,6 +543,24 @@ export const ITEM_SHOP_PRICES: Record<string, number> = {
   coral_charm: 110,
   old_bounty_ledger: 140,
 };
+
+export const SEA_KING_MEAT_ITEM_ID = "sea_king_meat";
+
+export function isSeaKingMeatItem(itemId: string): boolean {
+  return itemId === SEA_KING_MEAT_ITEM_ID;
+}
+
+export function itemSellPrice(itemId: string): number | null {
+  const def = getItemDefinition(itemId);
+  if (!def || def.type === "KEY" || def.type === "QUEST") {
+    return null;
+  }
+  const shop = ITEM_SHOP_PRICES[itemId];
+  if (shop == null) {
+    return null;
+  }
+  return Math.max(1, Math.round(shop * 0.6));
+}
 
 export function getItemDefinition(id: string): ItemDefinition | undefined {
   return ITEMS.find((item) => item.id === id);

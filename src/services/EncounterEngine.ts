@@ -1751,6 +1751,7 @@ export const EncounterEngine = {
     }
     if (activityMode === "ISLAND") {
       this.enterIslandHub(run, rng);
+      StoryChainService.syncObjectives(run);
       return next;
     }
     this.selectEncounter(run, rng);

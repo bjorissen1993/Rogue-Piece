@@ -18,15 +18,23 @@ import type {
   IslandSpecialMarkerId,
   LocationAnchor,
   LocationAnchorAiPermission,
+  MapAnchorRegion,
   NpcFaction,
   RelationFactionId,
   RunState,
+  StoryBeatEnemyRole,
+  StoryBeatEnemyStrength,
+  StoryBeatObjective,
+  StoryBeatPlanItem,
+  StoryBeatPlanKind,
   StoryChain,
   StoryChainEnd,
   StoryChainNode,
   StoryChainNodeKind,
   StoryChainStart,
+  StoryChainStartHub,
   StoryChainTriggerKind,
+  StoryQuestDraft,
   TimeOfDay,
 } from "../models/types";
 import { createId } from "../utils/ids";
@@ -148,7 +156,6 @@ export const SPECIAL_MARKER_DEFS: Record<IslandSpecialMarkerId, SpecialMarkerDef
     id: "QUEST",
     label: "Quest",
     icon: "Map_Quest.png",
-    hubChoiceId: "map_quest",
     defaultUnlockFlag: "map_quest",
   },
   EVENT: {
@@ -242,6 +249,12 @@ export const SPECIAL_MARKER_DEFS: Record<IslandSpecialMarkerId, SpecialMarkerDef
     icon: "Map_MissingPersons.png",
     defaultUnlockFlag: "map_missing_persons",
   },
+  LOCATION_ANCHOR: {
+    id: "LOCATION_ANCHOR",
+    label: "Location",
+    icon: "location.png",
+    alwaysVisible: true,
+  },
 };
 
 export const ALL_SPECIAL_MARKER_IDS = Object.keys(SPECIAL_MARKER_DEFS) as IslandSpecialMarkerId[];
@@ -321,7 +334,15 @@ export const DEFAULT_MAP_HOTSPOTS: Partial<Record<IslandMapAssetId, IslandFacili
     { hotspotId: "default_library", facilityId: "LIBRARY", xPct: 48, yPct: 22, unlock: { mode: "always" } },
     { hotspotId: "default_marine", facilityId: "MARINE_BASE", xPct: 82, yPct: 28, unlock: { mode: "always" } },
     { hotspotId: "default_auction", facilityId: "AUCTION_HOUSE", xPct: 30, yPct: 38, unlock: { mode: "always" } },
-    { hotspotId: "default_explore", facilityId: "EXPLORE", xPct: 50, yPct: 78, unlock: { mode: "always" }, alwaysVisible: true },
+    {
+      hotspotId: "default_explore",
+      facilityId: "EXPLORE",
+      xPct: 50,
+      yPct: 78,
+      unlock: { mode: "always" },
+      alwaysVisible: true,
+      consumeOnUse: true,
+    },
     {
       hotspotId: "default_quest",
       facilityId: "QUEST",
@@ -350,6 +371,9 @@ export function facilityMapIconSrc(facilityId: IslandFacilityId): string {
 }
 
 export function specialMarkerIconSrc(markerId: IslandSpecialMarkerId): string {
+  if (markerId === "LOCATION_ANCHOR") {
+    return "/icons/UI/location.png";
+  }
   return `${MAP_ICON_DIR}/${SPECIAL_MARKER_DEFS[markerId].icon}`;
 }
 
@@ -384,6 +408,28 @@ export function hotspotHubChoiceId(id: IslandMapHotspotId): string | undefined {
     return FACILITY_HUB_CHOICE_ID[id];
   }
   return SPECIAL_MARKER_DEFS[id].hubChoiceId;
+}
+
+/**
+ * Play-mode: whether a click should still open a hub facility / encounter.
+ * QUEST never opens Task Board. Thread-begin icons with a story chain fire the
+ * story only. TASK_BOARD still opens the Task Board (nested stories live on children).
+ */
+export function playHotspotUsesHubChoice(
+  hotspot: IslandFacilityHotspot,
+  options?: { hasNestedStory?: boolean; storyFired?: boolean },
+): boolean {
+  const id = hotspot.facilityId;
+  if (id === "TASK_BOARD") {
+    return true;
+  }
+  if (id === "QUEST" || id === "LOCATION_ANCHOR") {
+    return false;
+  }
+  if (isThreadBeginMarker(id) && (options?.hasNestedStory || options?.storyFired)) {
+    return false;
+  }
+  return Boolean(hotspotHubChoiceId(id));
 }
 
 /** Full editor palette: facilities + special markers. */
@@ -442,6 +488,18 @@ export function snapPct(value: number, step: number): number {
     return clampPct(value);
   }
   return clampPct(Math.round(value / step) * step);
+}
+
+export const DEFAULT_MAP_ICON_SCALE = 1;
+export const MAP_ICON_SCALE_MIN = 0.6;
+export const MAP_ICON_SCALE_MAX = 1.8;
+
+/** Clamp a persisted / editor icon scale (1 = default size). */
+export function clampIconScale(value: number | null | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_MAP_ICON_SCALE;
+  }
+  return Math.round(Math.max(MAP_ICON_SCALE_MIN, Math.min(MAP_ICON_SCALE_MAX, value)) * 100) / 100;
 }
 
 export function defaultUnlockRuleFor(id: IslandMapHotspotId): HotspotUnlockRule {
@@ -661,6 +719,99 @@ export function supportsConsumeOnUse(id: IslandMapHotspotId): boolean {
   return supportsRevealAuthoring(id);
 }
 
+export function hotspotAuthorName(hotspot: IslandFacilityHotspot): string {
+  return hotspot.purpose?.trim() || hotspotLabel(hotspot.facilityId);
+}
+
+export function revealSourcesForHotspot(
+  hotspotId: string,
+  hotspots: IslandFacilityHotspot[],
+): IslandFacilityHotspot[] {
+  return hotspots.filter((h) => h.revealsHotspotIds?.includes(hotspotId));
+}
+
+/**
+ * Wilderness spots that stay hidden until a nearby Explore (or other probe) is used.
+ * Town facilities stay visible; these are found by exploring that area.
+ */
+export const EXPLORE_DISCOVERY_MARKER_IDS = new Set<IslandSpecialMarkerId>([
+  "GATHER",
+  "FISHING",
+  "HUNTS",
+]);
+
+export function isExploreDiscoveryMarker(id: IslandMapHotspotId): boolean {
+  return EXPLORE_DISCOVERY_MARKER_IDS.has(id as IslandSpecialMarkerId);
+}
+
+function hotspotDistanceSq(a: IslandFacilityHotspot, b: IslandFacilityHotspot): number {
+  const dx = a.xPct - b.xPct;
+  const dy = a.yPct - b.yPct;
+  return dx * dx + dy * dy;
+}
+
+/** Nearest Explore / Investigate / Search / Scout pin, if any. */
+export function nearestRevealProbe(
+  hotspot: IslandFacilityHotspot,
+  hotspots: IslandFacilityHotspot[],
+): IslandFacilityHotspot | undefined {
+  let best: IslandFacilityHotspot | undefined;
+  let bestD = Number.POSITIVE_INFINITY;
+  for (const candidate of hotspots) {
+    if (candidate.hotspotId === hotspot.hotspotId) {
+      continue;
+    }
+    if (!supportsRevealAuthoring(candidate.facilityId)) {
+      continue;
+    }
+    const distance = hotspotDistanceSq(hotspot, candidate);
+    if (distance < bestD) {
+      best = candidate;
+      bestD = distance;
+    }
+  }
+  return best;
+}
+
+/**
+ * Probes that should reveal this pin: authored `revealsHotspotIds` first,
+ * otherwise the nearest probe for discovery markers (Gather / Fishing / Hunts).
+ */
+export function probeRevealSourcesForHotspot(
+  hotspot: IslandFacilityHotspot,
+  hotspots: IslandFacilityHotspot[],
+): IslandFacilityHotspot[] {
+  const explicit = revealSourcesForHotspot(hotspot.hotspotId, hotspots);
+  if (explicit.length > 0) {
+    return explicit;
+  }
+  if (!isExploreDiscoveryMarker(hotspot.facilityId)) {
+    return [];
+  }
+  const nearest = nearestRevealProbe(hotspot, hotspots);
+  return nearest ? [nearest] : [];
+}
+
+/** Authored reveal ids plus orphan discovery markers assigned to this probe. */
+export function revealIdsForProbe(
+  probe: IslandFacilityHotspot,
+  hotspots: IslandFacilityHotspot[],
+): string[] {
+  const ids = new Set(
+    (probe.revealsHotspotIds ?? []).map((id) => String(id).trim()).filter(Boolean),
+  );
+  for (const hotspot of hotspots) {
+    if (hotspot.hotspotId === probe.hotspotId || !isExploreDiscoveryMarker(hotspot.facilityId)) {
+      continue;
+    }
+    const sources = probeRevealSourcesForHotspot(hotspot, hotspots);
+    if (sources.some((source) => source.hotspotId === probe.hotspotId)) {
+      ids.add(hotspot.hotspotId);
+    }
+  }
+  return [...ids];
+}
+
 function migrateRevealsHotspotIds(
   raw: Partial<IslandFacilityHotspot> & { disappearAfterUse?: boolean },
   links: HotspotLink[],
@@ -683,7 +834,11 @@ function migrateRevealsHotspotIds(
 
 function migrateConsumeOnUse(
   raw: Partial<IslandFacilityHotspot> & { disappearAfterUse?: boolean },
+  facilityId: IslandMapHotspotId,
 ): boolean | undefined {
+  if (supportsRevealAuthoring(facilityId)) {
+    return true;
+  }
   if (raw.consumeOnUse === true || raw.disappearAfterUse === true) {
     return true;
   }
@@ -788,6 +943,171 @@ export function migrateLocationAnchors(
   return anchors;
 }
 
+export function migrateConsumedHotspotIds(
+  raw: string[] | null | undefined,
+): string[] {
+  if (!raw?.length) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const entry of raw) {
+    const id = String(entry ?? "").trim();
+    if (!id || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+export function allHotspotsOnIsland(island: Island): IslandFacilityHotspot[] {
+  const seen = new Set<string>();
+  const out: IslandFacilityHotspot[] = [];
+  const add = (list?: IslandFacilityHotspot[]) => {
+    for (const hotspot of list ?? []) {
+      const id = String(hotspot?.hotspotId ?? "").trim();
+      if (!id || seen.has(id)) {
+        continue;
+      }
+      seen.add(id);
+      out.push(hotspot);
+    }
+  };
+  for (const layout of Object.values(island.mapLayouts ?? {})) {
+    add(layout?.hotspots);
+  }
+  add(island.facilityHotspots);
+  return out;
+}
+
+export function findHotspotOnIsland(
+  island: Island,
+  hotspotId: string,
+): IslandFacilityHotspot | undefined {
+  const id = String(hotspotId ?? "").trim();
+  if (!id) {
+    return undefined;
+  }
+  return allHotspotsOnIsland(island).find((hotspot) => hotspot.hotspotId === id);
+}
+
+/** True when a one-shot probe was saved as used but its reveal targets never landed. */
+export function isBrokenConsumedProbe(
+  hotspot: IslandFacilityHotspot,
+  island: Island,
+  extraRevealedIds?: ReadonlySet<string>,
+): boolean {
+  const reveals = hotspot.revealsHotspotIds ?? [];
+  if (!reveals.length) {
+    return false;
+  }
+  return !reveals.every(
+    (id) => extraRevealedIds?.has(id) || island.revealedHotspotIds?.includes(id),
+  );
+}
+
+/**
+ * Drop consumed probes whose reveals never persisted, so Explore can be used again.
+ */
+export function healBrokenProbeUses(island: Island): void {
+  const consumed = migrateConsumedHotspotIds(island.consumedHotspotIds);
+  if (!consumed.length) {
+    return;
+  }
+  const revealed = new Set(migrateConsumedHotspotIds(island.revealedHotspotIds));
+  const keep = consumed.filter((id) => {
+    const probe = findHotspotOnIsland(island, id);
+    if (!probe) {
+      return true;
+    }
+    return !isBrokenConsumedProbe(probe, island, revealed);
+  });
+  island.consumedHotspotIds = keep.length > 0 ? keep : undefined;
+}
+
+export function createMapAnchorRegion(
+  name = "",
+  points: Array<{ xPct: number; yPct: number }> = [],
+  aiPermission: LocationAnchorAiPermission = "suggest",
+): MapAnchorRegion {
+  return {
+    id: createId("areg"),
+    name: name.trim() || "Unnamed area",
+    points: points.map((p) => ({
+      xPct: clampPct(p.xPct),
+      yPct: clampPct(p.yPct),
+    })),
+    aiPermission,
+  };
+}
+
+export function migrateMapAnchorRegion(
+  raw: Partial<MapAnchorRegion> | null | undefined,
+): MapAnchorRegion | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const points = Array.isArray(raw.points)
+    ? raw.points
+        .map((p) => ({
+          xPct: clampPct(typeof p?.xPct === "number" ? p.xPct : Number.NaN),
+          yPct: clampPct(typeof p?.yPct === "number" ? p.yPct : Number.NaN),
+        }))
+        .filter((p) => Number.isFinite(p.xPct) && Number.isFinite(p.yPct))
+    : [];
+  if (points.length < 3) {
+    return null;
+  }
+  const permission = (typeof raw.aiPermission === "string" ? raw.aiPermission : "suggest") as LocationAnchorAiPermission;
+  return {
+    id: raw.id && String(raw.id).trim() ? String(raw.id) : createId("areg"),
+    name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : "Unnamed area",
+    notes: typeof raw.notes === "string" ? raw.notes : undefined,
+    points,
+    aiPermission: ANCHOR_PERMISSIONS.has(permission) ? permission : "suggest",
+  };
+}
+
+export function migrateMapAnchorRegions(
+  raw: Array<Partial<MapAnchorRegion>> | null | undefined,
+): MapAnchorRegion[] {
+  if (!raw?.length) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const regions: MapAnchorRegion[] = [];
+  for (const entry of raw) {
+    const next = migrateMapAnchorRegion(entry);
+    if (!next) {
+      continue;
+    }
+    if (seen.has(next.id)) {
+      next.id = createId("areg");
+    }
+    seen.add(next.id);
+    regions.push(next);
+  }
+  return regions;
+}
+
+export function regionCentroid(
+  points: Array<{ xPct: number; yPct: number }>,
+): { xPct: number; yPct: number } | null {
+  if (!points.length) {
+    return null;
+  }
+  const sum = points.reduce(
+    (acc, p) => ({ xPct: acc.xPct + p.xPct, yPct: acc.yPct + p.yPct }),
+    { xPct: 0, yPct: 0 },
+  );
+  return {
+    xPct: clampPct(sum.xPct / points.length),
+    yPct: clampPct(sum.yPct / points.length),
+  };
+}
+
 const STORY_NODE_KINDS = new Set<StoryChainNodeKind>([
   "start",
   "end",
@@ -820,7 +1140,7 @@ export function createStoryChain(name: string, islandId?: string, mapAssetId?: s
     name: name.trim() || "Untitled chain",
     islandId,
     mapAssetId,
-    start: {},
+    start: { startHub: "MARKET" },
     end: {},
     nodes: [
       createStoryChainNode(1, "start", "Start"),
@@ -831,6 +1151,166 @@ export function createStoryChain(name: string, islandId?: string, mapAssetId?: s
 
 export function unplacedStoryChainNodes(chain: StoryChain): StoryChainNode[] {
   return chain.nodes.filter((n) => !n.placedHotspotId).sort((a, b) => a.order - b.order);
+}
+
+export function storyChainStartIsPlaced(chain: StoryChain): boolean {
+  return chain.nodes.some((n) => n.kind === "start" && Boolean(n.placedHotspotId));
+}
+
+export function storyChainEndIsPlaced(chain: StoryChain): boolean {
+  return chain.nodes.some((n) => n.kind === "end" && Boolean(n.placedHotspotId));
+}
+
+/** Unplaced fiches in order — Start, generated middles, End. Never auto-dropped on the map. */
+export function unplacedStoryChainQueue(chain: StoryChain): StoryChainNode[] {
+  return unplacedStoryChainNodes(chain);
+}
+
+export function storyChainLoopReady(chain: StoryChain): boolean {
+  const startPlaced = storyChainStartIsPlaced(chain);
+  const endPlaced = storyChainEndIsPlaced(chain);
+  return (
+    startPlaced &&
+    endPlaced &&
+    Boolean(chain.start.premise?.trim()) &&
+    Boolean(chain.end.resolution?.trim())
+  );
+}
+
+export function isThreadBeginMarker(id: IslandMapHotspotId): boolean {
+  return id === "QUEST" || id === "EVENT" || id === "TALK" || id === "CHALLENGE" || id === "INVESTIGATE";
+}
+
+/** Fiches this chain placed. Shared hubs (Market, Fishing, Inn) stay. */
+export function hotspotIdsOwnedByStoryChain(
+  chain: StoryChain,
+  hotspots: IslandFacilityHotspot[],
+  otherChains: StoryChain[] = [],
+): string[] {
+  const stillUsed = new Set<string>();
+  for (const other of otherChains) {
+    for (const node of other.nodes) {
+      if (node.placedHotspotId) {
+        stillUsed.add(node.placedHotspotId);
+      }
+    }
+  }
+  const owned: string[] = [];
+  for (const node of chain.nodes) {
+    const id = node.placedHotspotId;
+    if (!id || stillUsed.has(id) || owned.includes(id)) {
+      continue;
+    }
+    const hotspot = hotspots.find((entry) => entry.hotspotId === id);
+    if (hotspot && isThreadBeginMarker(hotspot.facilityId)) {
+      owned.push(id);
+    }
+  }
+  return owned;
+}
+
+export function omitHotspotsAndRefs(
+  hotspots: IslandFacilityHotspot[],
+  removeIds: Iterable<string>,
+): IslandFacilityHotspot[] {
+  const banned = new Set(removeIds);
+  if (banned.size === 0) {
+    return hotspots;
+  }
+  return hotspots
+    .filter((hotspot) => !banned.has(hotspot.hotspotId))
+    .map((hotspot) => {
+      const links = hotspot.links?.filter((link) => !link.toHotspotId || !banned.has(link.toHotspotId));
+      const reveals = hotspot.revealsHotspotIds?.filter((id) => !banned.has(id));
+      return {
+        ...hotspot,
+        links: links && links.length > 0 ? links : hotspot.links ? [] : hotspot.links,
+        revealsHotspotIds: reveals && reveals.length > 0 ? reveals : hotspot.revealsHotspotIds ? [] : hotspot.revealsHotspotIds,
+      };
+    });
+}
+
+export type HotspotListKind = "location" | "battle" | "event" | "quest" | "explore" | "talk" | "other";
+
+export function storyChainNodeOriginLabel(editState?: StoryChainNode["editState"]): string {
+  if (editState === "generated") {
+    return "Generated";
+  }
+  if (editState === "edited") {
+    return "Edited";
+  }
+  if (editState === "locked") {
+    return "Locked";
+  }
+  return "";
+}
+
+export function hotspotListKind(id: IslandMapHotspotId): HotspotListKind {
+  if (id === "LOCATION_ANCHOR") {
+    return "location";
+  }
+  if (id === "EXPLORE" || id === "SEARCH" || id === "SCOUT" || id === "INVESTIGATE") {
+    return "explore";
+  }
+  if (id === "QUEST") {
+    return "quest";
+  }
+  if (id === "EVENT") {
+    return "event";
+  }
+  if (id === "TALK") {
+    return "talk";
+  }
+  if (id === "CHALLENGE" || id === "TRAINING_GROUNDS" || id === "HUNTS") {
+    return "battle";
+  }
+  if (isFacilityHotspotId(id)) {
+    return "location";
+  }
+  return "other";
+}
+
+function facilityIdForStoryNodeKind(kind: StoryChainNodeKind): IslandMapHotspotId {
+  switch (kind) {
+    case "talk":
+      return "TALK";
+    case "explore":
+      return "EXPLORE";
+    case "investigate":
+      return "INVESTIGATE";
+    case "event":
+      return "EVENT";
+    case "battle":
+    case "boss":
+      return "CHALLENGE";
+    case "start":
+      return "QUEST";
+    case "end":
+      return "EVENT";
+    default:
+      return "QUEST";
+  }
+}
+
+/** Map a story-chain node to a palette icon the author can drop. End uses the last beat. */
+export function facilityIdForStoryChainNode(chain: StoryChain, node: StoryChainNode): IslandMapHotspotId {
+  if (node.kind === "end") {
+    const middles = chain.nodes
+      .filter((n) => n.kind !== "start" && n.kind !== "end")
+      .sort((a, b) => a.order - b.order);
+    const last = middles[middles.length - 1];
+    if (last) {
+      return facilityIdForStoryNodeKind(last.kind);
+    }
+    if (chain.start.bossBattle || (chain.start.battlesCount ?? 0) > 0) {
+      return "CHALLENGE";
+    }
+    if ((chain.start.dialogueBeats ?? 0) > 0) {
+      return "TALK";
+    }
+    return "EVENT";
+  }
+  return facilityIdForStoryNodeKind(node.kind);
 }
 
 export function addStoryChainBeat(chain: StoryChain, label?: string): StoryChain {
@@ -845,6 +1325,85 @@ export function addStoryChainBeat(chain: StoryChain, label?: string): StoryChain
   nodes.push(createStoryChainNode(insertOrder, "beat", label || `Beat ${insertOrder}`));
   nodes.sort((a, b) => a.order - b.order);
   return { ...chain, nodes };
+}
+
+function migrateStoryBeatObjective(raw: unknown): StoryBeatObjective | undefined {
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const objective = raw as Partial<StoryBeatObjective>;
+  if (objective.type !== "collect_item") {
+    return undefined;
+  }
+  if (typeof objective.itemId !== "string" || !objective.itemId.trim()) {
+    return undefined;
+  }
+  const count =
+    typeof objective.count === "number" && Number.isFinite(objective.count)
+      ? Math.max(1, Math.floor(objective.count))
+      : 1;
+  return {
+    type: "collect_item",
+    itemId: objective.itemId.trim(),
+    count,
+    label: typeof objective.label === "string" && objective.label.trim() ? objective.label.trim() : undefined,
+  };
+}
+
+function migrateStoryQuestDraft(raw: unknown): StoryQuestDraft | undefined {
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const draft = raw as Partial<StoryQuestDraft>;
+  const options = Array.isArray(draft.options)
+    ? draft.options.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : undefined;
+  const strength: StoryBeatEnemyStrength | undefined =
+    draft.enemyStrength === "weak" || draft.enemyStrength === "normal" || draft.enemyStrength === "strong"
+      ? draft.enemyStrength
+      : undefined;
+  const role: StoryBeatEnemyRole | undefined =
+    draft.enemyRole === "normal" || draft.enemyRole === "boss" ? draft.enemyRole : undefined;
+  const next: StoryQuestDraft = {
+    options: options?.length ? options : undefined,
+    chosenIndex:
+      typeof draft.chosenIndex === "number" && Number.isFinite(draft.chosenIndex)
+        ? Math.max(0, Math.floor(draft.chosenIndex))
+        : undefined,
+    customPrompt:
+      typeof draft.customPrompt === "string" && draft.customPrompt.trim()
+        ? draft.customPrompt.trim()
+        : undefined,
+    adaptedText:
+      typeof draft.adaptedText === "string" && draft.adaptedText.trim()
+        ? draft.adaptedText.trim()
+        : undefined,
+    enemyCount:
+      typeof draft.enemyCount === "number" && Number.isFinite(draft.enemyCount)
+        ? Math.max(1, Math.min(8, Math.floor(draft.enemyCount)))
+        : undefined,
+    enemyStrength: strength,
+    enemyRole: role,
+    battleSuggestion:
+      typeof draft.battleSuggestion === "string" && draft.battleSuggestion.trim()
+        ? draft.battleSuggestion.trim()
+        : undefined,
+    npcName:
+      typeof draft.npcName === "string" && draft.npcName.trim() ? draft.npcName.trim() : undefined,
+    dialogueLines: Array.isArray(draft.dialogueLines)
+      ? draft.dialogueLines.filter((line): line is string => typeof line === "string" && line.trim().length > 0)
+      : undefined,
+    encounterTitle:
+      typeof draft.encounterTitle === "string" && draft.encounterTitle.trim()
+        ? draft.encounterTitle.trim()
+        : undefined,
+    encounterDescription:
+      typeof draft.encounterDescription === "string" && draft.encounterDescription.trim()
+        ? draft.encounterDescription.trim()
+        : undefined,
+    objective: migrateStoryBeatObjective(draft.objective),
+  };
+  return Object.values(next).some((value) => value !== undefined) ? next : undefined;
 }
 
 export function migrateStoryChainNode(
@@ -873,6 +1432,10 @@ export function migrateStoryChainNode(
       typeof raw.locationAnchorId === "string" && raw.locationAnchorId.trim()
         ? raw.locationAnchorId.trim()
         : undefined,
+    locationRegionId:
+      typeof raw.locationRegionId === "string" && raw.locationRegionId.trim()
+        ? raw.locationRegionId.trim()
+        : undefined,
     editState:
       raw.editState === "generated" || raw.editState === "edited" || raw.editState === "locked"
         ? raw.editState
@@ -886,6 +1449,7 @@ export function migrateStoryChainNode(
       typeof raw.suggestedHotspotId === "string" && raw.suggestedHotspotId.trim()
         ? raw.suggestedHotspotId.trim()
         : undefined,
+    questDraft: migrateStoryQuestDraft(raw.questDraft),
     toIslandId:
       typeof raw.toIslandId === "string" && raw.toIslandId.trim() ? raw.toIslandId.trim() : undefined,
     toMapAssetId:
@@ -923,10 +1487,20 @@ function migrateStoryChainTrigger(
       : undefined;
   const day =
     typeof raw.day === "number" && Number.isFinite(raw.day) ? Math.max(0, Math.floor(raw.day)) : undefined;
+  const childId =
+    typeof raw.childId === "string" && raw.childId.trim()
+      ? canonicalMapChildId(raw.childId.trim())
+      : undefined;
+  const rawRef = typeof raw.ref === "string" && raw.ref.trim() ? raw.ref.trim() : undefined;
+  const ref = rawRef
+    ? rawRef.includes(":")
+      ? `${rawRef.slice(0, rawRef.indexOf(":"))}:${canonicalMapChildId(rawRef.slice(rawRef.indexOf(":") + 1))}`
+      : rawRef
+    : undefined;
   return {
     kind: STORY_TRIGGER_KINDS.has(kind) ? kind : "map_icon",
-    ref: typeof raw.ref === "string" && raw.ref.trim() ? raw.ref.trim() : undefined,
-    childId: typeof raw.childId === "string" && raw.childId.trim() ? raw.childId.trim() : undefined,
+    ref,
+    childId,
     islandId: typeof raw.islandId === "string" && raw.islandId.trim() ? raw.islandId.trim() : undefined,
     mapAssetId:
       typeof raw.mapAssetId === "string" && raw.mapAssetId.trim() ? raw.mapAssetId.trim() : undefined,
@@ -937,6 +1511,50 @@ function migrateStoryChainTrigger(
         ? raw.activityType.trim()
         : undefined,
   };
+}
+
+const STORY_BEAT_PLAN_KINDS = new Set<StoryBeatPlanKind>([
+  "talk",
+  "event",
+  "battle",
+  "investigate",
+  "boss",
+]);
+
+const STORY_START_HUBS = new Set<StoryChainStartHub>([
+  "MARKET",
+  "INN",
+  "HARBOR",
+  "TRAINING_GROUNDS",
+  "LIBRARY",
+]);
+
+function migrateStoryBeatPlan(raw: unknown): StoryBeatPlanItem[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const plan = raw
+    .map((item, index) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const row = item as Partial<StoryBeatPlanItem>;
+      const kind = row.kind;
+      if (!kind || !STORY_BEAT_PLAN_KINDS.has(kind)) {
+        return null;
+      }
+      const id = typeof row.id === "string" && row.id.trim() ? row.id.trim() : `${kind}:${index}`;
+      const note = typeof row.note === "string" && row.note.trim() ? row.note : undefined;
+      return { id, kind, note };
+    })
+    .filter((item): item is StoryBeatPlanItem => Boolean(item));
+  return plan.length > 0 ? plan : undefined;
+}
+
+function migrateStoryStartHub(raw: unknown): StoryChainStartHub | undefined {
+  return typeof raw === "string" && STORY_START_HUBS.has(raw as StoryChainStartHub)
+    ? (raw as StoryChainStartHub)
+    : undefined;
 }
 
 function migrateStoryChainPayloadStart(raw: Partial<StoryChainStart> | null | undefined): StoryChainStart {
@@ -957,6 +1575,8 @@ function migrateStoryChainPayloadStart(raw: Partial<StoryChainStart> | null | un
     bossBattle: typeof raw.bossBattle === "boolean" ? raw.bossBattle : undefined,
     eventsCount: num(raw.eventsCount),
     investigationsCount: num(raw.investigationsCount),
+    beatPlan: migrateStoryBeatPlan(raw.beatPlan),
+    startHub: migrateStoryStartHub(raw.startHub),
     tone: typeof raw.tone === "string" && raw.tone.trim() ? raw.tone.trim() : undefined,
     importance:
       typeof raw.importance === "number" && Number.isFinite(raw.importance)
@@ -1193,8 +1813,7 @@ export function migrateHotspot(raw: Partial<IslandFacilityHotspot> & { facilityI
     } else if (raw.visibleWhen?.startsWith("quest:")) {
       unlock = { mode: "quest", questId: raw.visibleWhen.slice(6) };
     } else if (raw.visibleWhen?.startsWith("explore:")) {
-      const n = Number(raw.visibleWhen.slice(8));
-      unlock = { mode: "explore_count", exploreCount: Number.isFinite(n) ? n : 1 };
+      unlock = { mode: "always" };
     } else {
       unlock = defaultUnlockRuleFor(raw.facilityId);
     }
@@ -1203,13 +1822,16 @@ export function migrateHotspot(raw: Partial<IslandFacilityHotspot> & { facilityI
   if (unlock.mode === "flag" && !unlock.flag && raw.unlockFlag) {
     unlock.flag = raw.unlockFlag;
   }
+  if (unlock.mode === "explore_count") {
+    unlock = { mode: "always" };
+  }
 
   const childOverrides = migrateChildOverrides(raw.childOverrides);
   const questConfig = migrateQuestConfig(raw.questConfig, raw.facilityId);
   const stages = migrateHotspotStages(raw.stages);
   const links = migrateHotspotLinks(raw.links);
   const revealsHotspotIds = migrateRevealsHotspotIds(raw, links);
-  const consumeOnUse = migrateConsumeOnUse(raw);
+  const consumeOnUse = migrateConsumeOnUse(raw, raw.facilityId);
   const sceneId =
     typeof raw.sceneId === "string" && raw.sceneId.trim() ? raw.sceneId.trim() : undefined;
   const notes = typeof raw.notes === "string" ? raw.notes : undefined;
@@ -1239,6 +1861,16 @@ export function migrateHotspot(raw: Partial<IslandFacilityHotspot> & { facilityI
   });
 }
 
+const LEGACY_CHILD_ACTION_IDS: Record<string, CatalogChildActionId> = {
+  WEAPON_BUY: "WEAPON_BUY_SELL",
+  WEAPON_SELL: "WEAPON_BUY_SELL",
+};
+
+/** Map retired child ids (e.g. separate weapon buy/sell) onto the current catalog. */
+export function canonicalMapChildId(childId: string): string {
+  return LEGACY_CHILD_ACTION_IDS[childId] ?? childId;
+}
+
 function migrateChildOverrides(
   raw: HotspotChildOverride[] | null | undefined,
 ): HotspotChildOverride[] {
@@ -1248,7 +1880,8 @@ function migrateChildOverrides(
   const seen = new Set<string>();
   const next: HotspotChildOverride[] = [];
   for (const entry of raw) {
-    const childId = typeof entry?.childId === "string" ? entry.childId.trim() : "";
+    const rawId = typeof entry?.childId === "string" ? entry.childId.trim() : "";
+    const childId = rawId ? canonicalMapChildId(rawId) : "";
     if (!childId || seen.has(childId)) {
       continue;
     }
@@ -1258,7 +1891,8 @@ function migrateChildOverrides(
       override.included = entry.included;
     }
     if (entry.unlock && typeof entry.unlock === "object" && entry.unlock.mode) {
-      override.unlock = { ...entry.unlock };
+      override.unlock =
+        entry.unlock.mode === "explore_count" ? { mode: "always" } : { ...entry.unlock };
     }
     next.push(override);
   }
@@ -1287,10 +1921,17 @@ export function migrateHotspotList(
  * into the slot for the current `mapAssetId` (SAVE_VERSION 28+).
  * Preserves scenes on each layout (SAVE_VERSION 29).
  * Preserves location anchors and story chains (SAVE_VERSION 31+ / 32 / 33).
+ * Explore probes migrate to consumeOnUse (SAVE_VERSION 34).
+ * Global iconScale persists on each layout (SAVE_VERSION 35).
+ * Anchor regions + consumed hotspot ids persist (SAVE_VERSION 36).
  */
 export function migrateIslandMapLayouts(island: Island): Island {
   island.mapLayouts = island.mapLayouts ?? {};
   const layouts = island.mapLayouts;
+  const consumed = migrateConsumedHotspotIds(island.consumedHotspotIds);
+  island.consumedHotspotIds = consumed.length > 0 ? consumed : undefined;
+  const revealed = migrateConsumedHotspotIds(island.revealedHotspotIds);
+  island.revealedHotspotIds = revealed.length > 0 ? revealed : undefined;
 
   for (const [key, layout] of Object.entries(layouts)) {
     if (!layout || typeof layout !== "object") {
@@ -1300,11 +1941,18 @@ export function migrateIslandMapLayouts(island: Island): Island {
     const scenes = migrateMapScenes(layout.scenes);
     const locationAnchors = migrateLocationAnchors(layout.locationAnchors);
     const storyChains = migrateStoryChains(layout.storyChains);
+    const iconScale =
+      typeof layout.iconScale === "number" && Number.isFinite(layout.iconScale)
+        ? clampIconScale(layout.iconScale)
+        : undefined;
+    const anchorRegions = migrateMapAnchorRegions(layout.anchorRegions);
     layouts[key] = {
       hotspots: migrateHotspotList(layout.hotspots ?? []),
       scenes: scenes.length > 0 ? scenes : undefined,
       locationAnchors: locationAnchors.length > 0 ? locationAnchors : undefined,
       storyChains: storyChains.length > 0 ? storyChains : undefined,
+      iconScale,
+      anchorRegions: anchorRegions.length > 0 ? anchorRegions : undefined,
     };
   }
 
@@ -1323,6 +1971,8 @@ export function migrateIslandMapLayouts(island: Island): Island {
   } else {
     island.facilityHotspots = island.facilityHotspots ?? [];
   }
+
+  healBrokenProbeUses(island);
 
   return island;
 }
@@ -1356,6 +2006,26 @@ export function getMapLayoutStoryChains(
     return [];
   }
   return migrateStoryChains(island.mapLayouts?.[mapAssetId]?.storyChains);
+}
+
+export function getMapLayoutIconScale(
+  island: Island | null | undefined,
+  mapAssetId: string | null | undefined,
+): number {
+  if (!island || !mapAssetId) {
+    return DEFAULT_MAP_ICON_SCALE;
+  }
+  return clampIconScale(island.mapLayouts?.[mapAssetId]?.iconScale);
+}
+
+export function getMapLayoutAnchorRegions(
+  island: Island | null | undefined,
+  mapAssetId: string | null | undefined,
+): MapAnchorRegion[] {
+  if (!island || !mapAssetId) {
+    return [];
+  }
+  return migrateMapAnchorRegions(island.mapLayouts?.[mapAssetId]?.anchorRegions);
 }
 
 /** Read hotspots for a specific map asset (island override → empty). */
@@ -1409,11 +2079,25 @@ export function setMapLayoutHotspots(
     extras && extras.storyChains !== undefined
       ? migrateStoryChains(extras.storyChains)
       : migrateStoryChains(prev?.storyChains);
+  const nextIconScale =
+    extras && extras.iconScale !== undefined
+      ? extras.iconScale == null
+        ? undefined
+        : clampIconScale(extras.iconScale)
+      : typeof prev?.iconScale === "number"
+        ? clampIconScale(prev.iconScale)
+        : undefined;
+  const nextRegions =
+    extras && extras.anchorRegions !== undefined
+      ? migrateMapAnchorRegions(extras.anchorRegions)
+      : migrateMapAnchorRegions(prev?.anchorRegions);
   island.mapLayouts[mapAssetId] = {
     hotspots: migrated,
     scenes: nextScenes.length > 0 ? nextScenes : undefined,
     locationAnchors: nextAnchors.length > 0 ? nextAnchors : undefined,
     storyChains: nextChains.length > 0 ? nextChains : undefined,
+    iconScale: nextIconScale,
+    anchorRegions: nextRegions.length > 0 ? nextRegions : undefined,
   };
   if (island.mapAssetId === mapAssetId || !island.mapAssetId) {
     island.facilityHotspots = migrated;
@@ -1430,7 +2114,11 @@ export function withMarkerDefaults(hotspot: IslandFacilityHotspot): IslandFacili
     hotspot.revealsHotspotIds?.length
       ? [...new Set(hotspot.revealsHotspotIds.map((id) => String(id).trim()).filter(Boolean))]
       : undefined;
-  const consumeOnUse = hotspot.consumeOnUse === true ? true : undefined;
+  const consumeOnUse = supportsRevealAuthoring(hotspot.facilityId)
+    ? true
+    : hotspot.consumeOnUse === true
+      ? true
+      : undefined;
   if (!isSpecialMarkerId(hotspot.facilityId)) {
     return {
       ...hotspot,
@@ -1516,10 +2204,8 @@ export function unlockRuleSatisfied(
   switch (unlock.mode) {
     case "always":
       return true;
-    case "explore_count": {
-      const need = Math.max(1, unlock.exploreCount ?? 1);
-      return (island.exploreCount ?? 0) >= need;
-    }
+    case "explore_count":
+      return true;
     case "flag":
       return flagPresent(run, island, unlock.flag ?? "");
     case "quest": {
@@ -1543,6 +2229,35 @@ export function isHotspotVisibleInPlay(
 ): boolean {
   if (hotspot.hidden) {
     return false;
+  }
+  if (hotspot.facilityId === "LOCATION_ANCHOR") {
+    return false;
+  }
+  if (island.consumedHotspotIds?.includes(hotspot.hotspotId)) {
+    if (!isBrokenConsumedProbe(hotspot, island)) {
+      return false;
+    }
+  }
+  const layoutHotspots =
+    (island.mapAssetId ? island.mapLayouts?.[island.mapAssetId]?.hotspots : undefined) ??
+    island.facilityHotspots ??
+    [];
+  const revealSources = probeRevealSourcesForHotspot(hotspot, layoutHotspots);
+  if (revealSources.length > 0) {
+    const explicitlyLinked = layoutHotspots.some((h) => h.revealsHotspotIds?.includes(hotspot.hotspotId));
+    const revealed = Boolean(island.revealedHotspotIds?.includes(hotspot.hotspotId));
+    if (explicitlyLinked) {
+      if (!revealed) {
+        return false;
+      }
+    } else if (!revealed) {
+      const sourceUsed = revealSources.some((source) =>
+        island.consumedHotspotIds?.includes(source.hotspotId),
+      );
+      if (!sourceUsed) {
+        return false;
+      }
+    }
   }
 
   const id = hotspot.facilityId;
@@ -1582,8 +2297,7 @@ export function isHotspotVisibleInPlay(
       return questPresent(run, hotspot.visibleWhen.slice(6));
     }
     if (hotspot.visibleWhen.startsWith("explore:")) {
-      const n = Number(hotspot.visibleWhen.slice(8));
-      return (island.exploreCount ?? 0) >= (Number.isFinite(n) ? n : 1);
+      return true;
     }
     if (hotspot.visibleWhen.startsWith("facility:")) {
       const facilityId = hotspot.visibleWhen.slice(9) as IslandFacilityId;
@@ -1773,11 +2487,16 @@ export function exportHotspotsJson(
       const scenes = migrateMapScenes(layout.scenes);
       const locationAnchors = migrateLocationAnchors(layout.locationAnchors);
       const storyChains = migrateStoryChains(layout.storyChains);
+      const iconScale =
+        typeof layout.iconScale === "number" ? clampIconScale(layout.iconScale) : undefined;
+      const anchorRegions = migrateMapAnchorRegions(layout.anchorRegions);
       mapLayouts[key] = {
         hotspots: migrateHotspotList(layout.hotspots ?? []).map(serializeHotspot),
         scenes: scenes.length > 0 ? scenes : undefined,
         locationAnchors: locationAnchors.length > 0 ? locationAnchors : undefined,
         storyChains: storyChains.length > 0 ? storyChains : undefined,
+        iconScale,
+        anchorRegions: anchorRegions.length > 0 ? anchorRegions : undefined,
       };
     }
   }
@@ -1790,11 +2509,19 @@ export function exportHotspotsJson(
   const currentChains = migrateStoryChains(
     extras?.storyChains ?? mapLayouts[mapAssetId]?.storyChains ?? allLayouts?.[mapAssetId]?.storyChains,
   );
+  const currentIconScale = clampIconScale(
+    extras?.iconScale ?? mapLayouts[mapAssetId]?.iconScale ?? allLayouts?.[mapAssetId]?.iconScale,
+  );
+  const currentRegions = migrateMapAnchorRegions(
+    extras?.anchorRegions ?? mapLayouts[mapAssetId]?.anchorRegions ?? allLayouts?.[mapAssetId]?.anchorRegions,
+  );
   mapLayouts[mapAssetId] = {
     hotspots: hotspots.map(serializeHotspot),
     scenes: currentScenes.length > 0 ? currentScenes : undefined,
     locationAnchors: currentAnchors.length > 0 ? currentAnchors : undefined,
     storyChains: currentChains.length > 0 ? currentChains : undefined,
+    iconScale: currentIconScale,
+    anchorRegions: currentRegions.length > 0 ? currentRegions : undefined,
   };
 
   return JSON.stringify(
@@ -1850,7 +2577,8 @@ export function createPalettePlacement(
     links,
     stages,
     revealsHotspotIds,
-    consumeOnUse: extras?.consumeOnUse === true ? true : undefined,
+    consumeOnUse:
+      supportsRevealAuthoring(id) || extras?.consumeOnUse === true ? true : undefined,
     notes: extras?.notes,
     purpose: extras?.purpose,
     alwaysVisible: rule.mode === "always" ? true : undefined,
@@ -1863,7 +2591,7 @@ export function unlockRuleSummary(unlock?: HotspotUnlockRule): string {
     return "Always unlocked";
   }
   if (unlock.mode === "explore_count") {
-    return `After ${unlock.exploreCount ?? 1} explore(s)`;
+    return "Always unlocked";
   }
   if (unlock.mode === "flag") {
     return `Flag: ${unlock.flag || "—"}`;
@@ -1875,8 +2603,14 @@ export function unlockRuleSummary(unlock?: HotspotUnlockRule): string {
 
 export type MapChildActionResolve =
   | { type: "hub_choice"; choiceId: string }
-  | { type: "overlay"; overlay: "crew" | "inventory" | "harbor" }
-  | { type: "stub"; message: string };
+  | {
+      type: "overlay";
+      overlay: "crew" | "inventory" | "harbor" | "market" | "clinic" | "weapon" | "ship";
+      /** Ship screen: Cargo hotspot lands on the hold tab. */
+      focus?: "vessel" | "cargo";
+    }
+  | { type: "stub"; message: string }
+  | { type: "story" };
 
 export type CatalogChildActionId =
   | "HARBOR_CREW"
@@ -1888,6 +2622,7 @@ export type CatalogChildActionId =
   | "INN_EAT_DRINK"
   | "INN_REST"
   | "TALK_NPCS"
+  | "MARKET_BUY_SELL"
   | "TRAIN_ASSIGN"
   | "TRAIN_VIEW"
   | "TRAIN_SPAR"
@@ -1898,8 +2633,7 @@ export type CatalogChildActionId =
   | "TASK_ESCORT"
   | "TASK_MISSING"
   | "TASK_HUNTS"
-  | "WEAPON_BUY"
-  | "WEAPON_SELL"
+  | "WEAPON_BUY_SELL"
   | "CLINIC_MEDICINE"
   | "CLINIC_HEAL"
   | "CLINIC_HOSPITAL"
@@ -1930,11 +2664,75 @@ export type CatalogChildActionId =
 export type MapChildActionId = CatalogChildActionId | "HUB_VISIT";
 
 export type MapChildActionDef = {
-  id: MapChildActionId;
+  id: string;
   label: string;
   icon: string;
   resolve: MapChildActionResolve;
 };
+
+export const STORY_CHILD_PREFIX = "STORY:";
+
+export function isLeafHubFacility(facilityId: IslandMapHotspotId): boolean {
+  return (
+    isFacilityHotspotId(facilityId) &&
+    (FACILITY_CHILD_ACTIONS[facilityId] ?? []).length === 0 &&
+    Boolean(FACILITY_HUB_CHOICE_ID[facilityId])
+  );
+}
+
+export function storyChildActionId(node: Pick<StoryChainNode, "id" | "trigger">): string {
+  const childId = node.trigger?.childId;
+  if (childId && childId !== HUB_VISIT_CHILD_ID && !childId.startsWith(STORY_CHILD_PREFIX)) {
+    return childId;
+  }
+  return `${STORY_CHILD_PREFIX}${node.id}`;
+}
+
+export function shouldExposeStoryChild(node: StoryChainNode): boolean {
+  const childId = node.trigger?.childId;
+  return !childId || childId === HUB_VISIT_CHILD_ID || childId.startsWith(STORY_CHILD_PREFIX);
+}
+
+function storyChildIcon(node: StoryChainNode): string {
+  const marker = facilityIdForStoryNodeKind(node.kind);
+  if (isFacilityHotspotId(marker)) {
+    return FACILITY_MAP_ICON[marker];
+  }
+  return SPECIAL_MARKER_DEFS[marker as IslandSpecialMarkerId]?.icon ?? "Map_Quest.png";
+}
+
+export function storyChildActionsForHotspot(
+  hotspot: IslandFacilityHotspot,
+  chains: StoryChain[] | undefined,
+): MapChildActionDef[] {
+  if (!chains?.length) {
+    return [];
+  }
+  const actions: MapChildActionDef[] = [];
+  const seen = new Set<string>();
+  for (const chain of chains) {
+    for (const node of chain.nodes) {
+      if (node.placedHotspotId !== hotspot.hotspotId || !shouldExposeStoryChild(node)) {
+        continue;
+      }
+      const id = storyChildActionId(node);
+      if (seen.has(id)) {
+        continue;
+      }
+      seen.add(id);
+      actions.push({
+        id,
+        label:
+          node.kind === "start"
+            ? chain.name.trim() || "Quest"
+            : node.label?.trim() || chain.name.trim() || hotspotLabel(facilityIdForStoryNodeKind(node.kind)),
+        icon: storyChildIcon(node),
+        resolve: { type: "story" },
+      });
+    }
+  }
+  return actions;
+}
 
 /** Reusable / parent-scoped child actions (icons under `/icons/UI/New`). */
 export const MAP_CHILD_ACTIONS: Record<CatalogChildActionId, MapChildActionDef> = {
@@ -1948,7 +2746,7 @@ export const MAP_CHILD_ACTIONS: Record<CatalogChildActionId, MapChildActionDef> 
     id: "HARBOR_SHIP",
     label: "Ship",
     icon: "Map_Ship.png",
-    resolve: { type: "overlay", overlay: "harbor" },
+    resolve: { type: "overlay", overlay: "ship" },
   },
   HARBOR_INVENTORY: {
     id: "HARBOR_INVENTORY",
@@ -1960,7 +2758,7 @@ export const MAP_CHILD_ACTIONS: Record<CatalogChildActionId, MapChildActionDef> 
     id: "HARBOR_CARGO",
     label: "Cargo",
     icon: "Map_Cargo.png",
-    resolve: { type: "overlay", overlay: "inventory" },
+    resolve: { type: "overlay", overlay: "ship", focus: "cargo" },
   },
   HARBOR_FLEET: {
     id: "HARBOR_FLEET",
@@ -1992,6 +2790,12 @@ export const MAP_CHILD_ACTIONS: Record<CatalogChildActionId, MapChildActionDef> 
     label: "Talk to NPCs",
     icon: "Map_Talk.png",
     resolve: { type: "stub", message: "No one nearby wants to talk." },
+  },
+  MARKET_BUY_SELL: {
+    id: "MARKET_BUY_SELL",
+    label: "Buy / Sell",
+    icon: "Map_MarketBuy-Sell.png",
+    resolve: { type: "overlay", overlay: "market" },
   },
   TRAIN_ASSIGN: {
     id: "TRAIN_ASSIGN",
@@ -2053,23 +2857,17 @@ export const MAP_CHILD_ACTIONS: Record<CatalogChildActionId, MapChildActionDef> 
     icon: "Map_Hunts.png",
     resolve: { type: "stub", message: "Hunts — coming soon." },
   },
-  WEAPON_BUY: {
-    id: "WEAPON_BUY",
-    label: "Buy Weapons",
+  WEAPON_BUY_SELL: {
+    id: "WEAPON_BUY_SELL",
+    label: "Buy / Sell",
     icon: "Map_WeaponsBuy-Sell.png",
-    resolve: { type: "hub_choice", choiceId: "weapon_shop" },
-  },
-  WEAPON_SELL: {
-    id: "WEAPON_SELL",
-    label: "Sell Weapons",
-    icon: "Map_WeaponsBuy-Sell.png",
-    resolve: { type: "hub_choice", choiceId: "weapon_shop" },
+    resolve: { type: "overlay", overlay: "weapon" },
   },
   CLINIC_MEDICINE: {
     id: "CLINIC_MEDICINE",
-    label: "Buy Medicine",
+    label: "Buy / Sell",
     icon: "Map_MedicineBuy-Sell.png",
-    resolve: { type: "hub_choice", choiceId: "clinic" },
+    resolve: { type: "overlay", overlay: "clinic" },
   },
   CLINIC_HEAL: {
     id: "CLINIC_HEAL",
@@ -2221,9 +3019,10 @@ export const MAP_CHILD_ACTIONS: Record<CatalogChildActionId, MapChildActionDef> 
 export const FACILITY_CHILD_ACTIONS: Partial<Record<IslandFacilityId, CatalogChildActionId[]>> = {
   HARBOR: ["HARBOR_CREW", "HARBOR_SHIP", "HARBOR_INVENTORY", "HARBOR_CARGO", "HARBOR_FLEET", "HARBOR_DEPART"],
   INN: ["INN_EAT_DRINK", "INN_REST", "TALK_NPCS"],
+  MARKET: ["MARKET_BUY_SELL"],
   TRAINING_GROUNDS: ["TRAIN_ASSIGN", "TRAIN_VIEW", "TRAIN_SPAR", "TRAIN_SPECIAL"],
   TASK_BOARD: ["TASK_BOUNTIES", "TASK_JOBS", "TASK_DELIVERIES", "TASK_ESCORT", "TASK_MISSING", "TASK_HUNTS"],
-  WEAPON_SHOP: ["WEAPON_BUY", "WEAPON_SELL"],
+  WEAPON_SHOP: ["WEAPON_BUY_SELL"],
   CLINIC: ["CLINIC_MEDICINE", "CLINIC_HEAL", "CLINIC_HOSPITAL"],
   SHIPYARD: ["SHIP_BUY", "SHIP_REPAIR", "SHIP_UPGRADE", "SHIP_SUPPLIES", "SHIP_CUSTOMIZE"],
   BLACK_MARKET: ["BM_RARE", "BM_CONTRABAND", "BM_INFO"],
@@ -2350,7 +3149,7 @@ export function resolveChildActionsForHotspot(
   hotspot: IslandFacilityHotspot,
   island?: Island | null,
   run?: RunState | null,
-  options?: { forEditor?: boolean },
+  options?: { forEditor?: boolean; storyChains?: StoryChain[] },
 ): MapChildActionDef[] {
   const facilityId = hotspot.facilityId;
   if (!isFacilityHotspotId(facilityId)) {
@@ -2382,11 +3181,16 @@ export function resolveChildActionsForHotspot(
     .filter((id) => id !== "TALK_NPCS")
     .some((id) => isChildIncluded(facilityId, id, hotspot));
   const needsHubVisit =
-    resolved.length > 0 &&
-    !catalogNonTalkIncluded &&
-    Boolean(FACILITY_HUB_CHOICE_ID[facilityId]);
-  if (needsHubVisit && !resolved.some((a) => a.resolve.type === "hub_choice")) {
+    (resolved.length > 0 && !catalogNonTalkIncluded && Boolean(FACILITY_HUB_CHOICE_ID[facilityId])) ||
+    isLeafHubFacility(facilityId);
+  if (needsHubVisit && !resolved.some((a) => a.id === HUB_VISIT_CHILD_ID || a.resolve.type === "hub_choice")) {
     resolved.unshift(buildHubVisitAction(facilityId));
+  }
+
+  for (const action of storyChildActionsForHotspot(hotspot, options?.storyChains)) {
+    if (!resolved.some((existing) => existing.id === action.id)) {
+      resolved.push(action);
+    }
   }
 
   return resolved;
@@ -2439,6 +3243,7 @@ export function hasVisibleChildActions(
   hotspot: IslandFacilityHotspot,
   island?: Island | null,
   run?: RunState | null,
+  storyChains?: StoryChain[],
 ): boolean {
-  return resolveChildActionsForHotspot(hotspot, island, run).length > 0;
+  return resolveChildActionsForHotspot(hotspot, island, run, { storyChains }).length > 0;
 }

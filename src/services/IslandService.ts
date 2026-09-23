@@ -13,9 +13,13 @@ import type {
 import { createId } from "../utils/ids";
 import { getLocation } from "../data/locations";
 import {
+  allHotspotsOnIsland,
+  findHotspotOnIsland,
+  revealIdsForProbe,
   getMapLayoutHotspots,
   isHotspotVisibleInPlay,
   isKnownIslandMapAssetId,
+  migrateConsumedHotspotIds,
   migrateHotspotList,
   migrateIslandMapLayouts,
   pickIslandMapAssetId,
@@ -445,6 +449,55 @@ export const IslandService = {
   ): void {
     migrateIslandMapLayouts(island);
     setMapLayoutHotspots(island, island.mapAssetId, hotspots, scenes, extras);
+  },
+
+  /** Persist a one-shot probe so it stays gone after leaving the hub. */
+  consumeHotspot(island: Island, hotspotId: string): void {
+    const id = String(hotspotId ?? "").trim();
+    if (!id) {
+      return;
+    }
+    const next = migrateConsumedHotspotIds([...(island.consumedHotspotIds ?? []), id]);
+    island.consumedHotspotIds = next.length > 0 ? next : undefined;
+  },
+
+  /** Persist icons revealed by a probe so they stay visible after leaving the hub. */
+  revealHotspots(island: Island, hotspotIds: string[]): void {
+    if (!hotspotIds.length) {
+      return;
+    }
+    const next = migrateConsumedHotspotIds([...(island.revealedHotspotIds ?? []), ...hotspotIds]);
+    island.revealedHotspotIds = next.length > 0 ? next : undefined;
+  },
+
+  /** Put a one-shot probe back in play and hide icons that only it had revealed. */
+  restoreProbe(island: Island, hotspotId: string): void {
+    const id = String(hotspotId ?? "").trim();
+    if (!id) {
+      return;
+    }
+    migrateIslandMapLayouts(island);
+    const probe = findHotspotOnIsland(island, id);
+    const consumed = new Set(migrateConsumedHotspotIds(island.consumedHotspotIds));
+    const layout = allHotspotsOnIsland(island);
+    const exclusive = (probe ? revealIdsForProbe(probe, layout) : []).filter((revealId) => {
+      return !layout.some(
+        (other) =>
+          other.hotspotId !== id &&
+          consumed.has(other.hotspotId) &&
+          revealIdsForProbe(other, layout).includes(revealId),
+      );
+    });
+    consumed.delete(id);
+    const nextConsumed = migrateConsumedHotspotIds(Array.from(consumed));
+    island.consumedHotspotIds = nextConsumed.length > 0 ? nextConsumed : undefined;
+    if (exclusive.length) {
+      const drop = new Set(exclusive);
+      const nextRevealed = migrateConsumedHotspotIds(island.revealedHotspotIds).filter(
+        (revealId) => !drop.has(revealId),
+      );
+      island.revealedHotspotIds = nextRevealed.length > 0 ? nextRevealed : undefined;
+    }
   },
 
   /** Persist hotspots for an explicit map asset (editor / multi-map). */

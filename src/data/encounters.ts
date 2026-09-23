@@ -255,12 +255,13 @@ export const ENCOUNTERS: Encounter[] = [
             canEscape: true,
             canSurrender: true,
             win: {
-              text: "It sounds impossible even as you do it. The beast peels away, bleeding into its own kingdom. Word of this will travel.",
+              text: "It sounds impossible even as you do it. The beast peels away, bleeding into its own kingdom. You carve a slab of meat from the carcass before the tide takes it.",
               berriesChange: 400,
               bountyChange: 2000,
               statChanges: { strength: 1 },
               worldNews: "Sailors swear {playerName} wounded a Sea King and lived.",
               addMilestones: ["defeated_sea_king"],
+              grantItemIds: ["sea_king_meat"],
             },
             lose: {
               text: "Teeth like oars close on the rail. You survive by luck and a lot of blood.",

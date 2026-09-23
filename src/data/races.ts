@@ -242,6 +242,28 @@ export const RACES: RaceDefinition[] = [
   },
 ];
 
+const RACE_ART_FILES: Record<string, string> = {
+  HUMAN: "Race_Human.png",
+  FISH_MAN: "Race_Fishmen.png",
+  MERFOLK: "Race_Merfolk.png",
+  MINK: "Race_Mink.png",
+  GIANT: "Race_Giant.png",
+  SKY_PERSON: "Race_SkyPeople.png",
+  LONGARM: "Race_Longarm.png",
+  LONGLEG: "Race_Longleg.png",
+  SNAKENECK: "Race_Snakeneck.png",
+  THREE_EYE: "Race_ThreeEyed.png",
+  TONTATTA: "Race_TontattaDwarf.png",
+  ANCIENT_GIANT: "Race_AncientGiant.png",
+  BUCCANEER: "Race_Buccaneer.png",
+  LUNARIAN: "Race_Lunarian.png",
+};
+
+export function raceArtSrc(raceId: string): string {
+  const file = RACE_ART_FILES[raceId] ?? "Race_Human.png";
+  return `/icons/Races/${file}`;
+}
+
 export function getRace(id: string): RaceDefinition | undefined {
   return RACES.find((race) => race.id === id);
 }

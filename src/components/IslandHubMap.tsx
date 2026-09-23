@@ -9,6 +9,16 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { FishingMinigame } from "./FishingMinigame";
+import {
+  nearestRadialChildLabel,
+  radialOrbitAuraRadius,
+  radialOrbitWaveScale,
+} from "./islandHubRadialWave";
+import { ClinicShopOverlay } from "./ClinicShopOverlay";
+import { MarketShopOverlay } from "./MarketShopOverlay";
+import { ShipOverlay } from "./ShipOverlay";
+import { WeaponTradeShopOverlay } from "./WeaponTradeShopOverlay";
 import type {
   EncounterChoice,
   HotspotChildOverride,
@@ -27,22 +37,35 @@ import type {
   IslandMapScene,
   LocationAnchor,
   LocationAnchorAiPermission,
+  MapAnchorRegion,
   NpcFaction,
   RelationFactionId,
   RunState,
+  StoryBeatPlanItem,
+  StoryBeatPlanKind,
   StoryChain,
+  StoryChainStartHub,
   StoryTriggerEvent,
 } from "../models/types";
 import type { EncounterChoiceLockMap } from "./encounter/EncounterChoiceGrid";
 import { IslandService } from "../services/IslandService";
+import { WeaponShopService } from "../services/WeaponShopService";
 import {
   StoryChainService,
+  STORY_BEAT_PLAN_KIND_OPTIONS,
+  STORY_CHAIN_START_HUBS,
   STORY_CHAIN_TONES,
   STORY_CHAIN_TRIGGER_OPTIONS,
+  countsFromBeatPlan,
+  createBeatPlanItem,
+  nestChildForStoryNode,
+  proposeBeatOptions,
+  resolvedBeatPlan,
   storyChainStructureFingerprint,
 } from "../services/StoryChainService";
 import {
   childActionIconSrc,
+  FACILITY_CHILD_ACTIONS,
   childUnlockRule,
   clampPct,
   createHotspotLink,
@@ -54,13 +77,26 @@ import {
   editorChildSlotsFor,
   exportHotspotsJson,
   addStoryChainBeat,
+  clampIconScale,
   createLocationAnchor,
+  createMapAnchorRegion,
   createStoryChain,
+  createStoryChainNode,
+  DEFAULT_MAP_ICON_SCALE,
+  facilityIdForStoryChainNode,
+  getMapLayoutAnchorRegions,
   getMapLayoutAnchors,
   getMapLayoutHotspots,
+  getMapLayoutIconScale,
   getMapLayoutScenes,
   getMapLayoutStoryChains,
-  unplacedStoryChainNodes,
+  hotspotListKind,
+  isThreadBeginMarker,
+  hotspotIdsOwnedByStoryChain,
+  omitHotspotsAndRefs,
+  storyChainEndIsPlaced,
+  storyChainStartIsPlaced,
+  unplacedStoryChainQueue,
   hasChildActions,
   hasVisibleChildActions,
   HOTSPOT_HANDLER_FACTION_OPTIONS,
@@ -75,22 +111,31 @@ import {
   islandMapSrc,
   isChildIncluded,
   isFacilityHotspotId,
+  isBrokenConsumedProbe,
   isHotspotVisibleInPlay,
+  playHotspotUsesHubChoice,
   listEditorHandlerCrewOptions,
   listEditorHandlerNpcOptions,
   listEditorQuestOrEventOptions,
   PLACEABLE_PALETTE,
   resolveChildActionsForHotspot,
   resolveFacilityHotspots,
+  regionCentroid,
+  hotspotAuthorName,
+  revealIdsForProbe,
+  revealSourcesForHotspot,
   snapPct,
+  storyChainNodeOriginLabel,
   supportsQuestConfig,
   supportsConsumeOnUse,
   supportsRevealAuthoring,
   type MapChildActionDef,
   type CatalogChildActionId,
+  type HotspotListKind,
   unlockRuleSummary,
   upsertChildOverride,
 } from "../data/islandMaps";
+import { shipOverlayOpensHold } from "../data/ships";
 
 type IslandHubMapProps = {
   island: Island;
@@ -108,8 +153,19 @@ type IslandHubMapProps = {
     scenes?: IslandMapScene[] | null,
     extras?: IslandMapLayoutExtras,
   ) => void;
+  onConsumeHotspot?: (hotspotId: string, revealIds?: string[]) => void;
+  onRestoreHotspot?: (hotspotId: string) => void;
   onTalkNpcs?: (parentHotspotId?: string) => string;
   onStoryTrigger?: (event: StoryTriggerEvent) => string | null;
+  onResetStoryChain?: (chainId: string) => void;
+  onFinishFishing?: (result: import("../services/FishingService").FishingSessionResult) => string;
+  onBuyMarketItem?: (itemId: string, quantity?: number) => string;
+  onSellMarketItem?: (itemId: string, quantity?: number) => string;
+  onBuyClinicItem?: (itemId: string, quantity?: number) => string;
+  onSellClinicItem?: (itemId: string, quantity?: number) => string;
+  onEnsureWeaponShop?: () => void;
+  onBuyWeaponShopItem?: (listingId: string) => string;
+  onSellWeaponShopItem?: (instanceId: string) => string;
   onChangeMapAsset?: (mapAssetId: string) => void;
   /** Optional escape hatch to the parchment choice list (manual only). */
   onRequestListFallback?: () => void;
@@ -134,8 +190,222 @@ type RadialOffset = { x: number; y: number };
 
 const SNAP_STEPS = [0, 1, 5] as const;
 const CHILD_MENU_CLOSE_MS = 320;
+
+const THREAD_FIELD_EXAMPLES: Record<string, string> = {
+  name: "The Missing Tide Chart",
+  premise: "A dock clerk vanished after the night watch, leaving a soggy chart marked with an X.",
+  twist: "The clerk hid the chart so a Navy patrol would miss a smuggler route.",
+  dialogue: "2 — two talk scenes (inn rumor, then a witness on the pier).",
+  battles: "1 — a street scrap before you reach the caves.",
+  boss: "Check this if the finale is a named brawl, not a small scrap.",
+  events: "1 — a sudden storm, a wanted-poster drop, or a festival riot.",
+  investigate: "1 — search the clerk's locker or the east cliff caves.",
+  tone: "Mystery — rumors first, steel later.",
+  importance: "3 is island-sized; 5 is a saga hook that follows you to sea.",
+  restrictions: "No killing civilians; keep the Navy from seeing the chart.",
+  mustHappen: "Someone admits they moved the clerk's chart.",
+  mustNot: "The crew does not sink the patrol cutter.",
+  resolution: "The chart is returned, sold, or burned — play picks one.",
+  endTwist: "The X is a decoy; the real cache sits under the lighthouse.",
+  conclusions: "Return the chart\nSell it to a fixer\nBurn it on the beach",
+  unlockHotspot: "Leave blank, or paste a hidden cave icon’s hotspot id.",
+  unlockQuest: "tide_chart_debt",
+  unlockNpc: "An id from the world-character list, e.g. the clerk’s sister.",
+  unlockIsland: "Pick another island only if the trail continues there.",
+  world: "The harbor starts checking night watches.",
+  relationship: "dock_clerk_sister +2",
+  faction: "PIRATES +4",
+  legacy: "They once hid a chart from a patrol.",
+  worldNews: "A tide chart goes missing on a backwater isle.",
+  title: "Chart Thief",
+  nestChild: "Leave as Map icon click, or nest this beat on Inn → Talk to NPCs.",
+};
+
+function ThreadFieldHelp({
+  fieldKey,
+  openKey,
+  onToggle,
+}: {
+  fieldKey: string;
+  openKey: string | null;
+  onToggle: (key: string | null) => void;
+}) {
+  const example = THREAD_FIELD_EXAMPLES[fieldKey];
+  if (!example) {
+    return null;
+  }
+  const open = openKey === fieldKey;
+  return (
+    <span className="island-hub-field-help">
+      <button
+        aria-expanded={open}
+        aria-label={`Example for ${fieldKey}`}
+        className={`island-hub-field-help-btn${open ? " is-open" : ""}`}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onToggle(open ? null : fieldKey);
+        }}
+        type="button"
+      >
+        ?
+      </button>
+      {open ? (
+        <span className="island-hub-field-help-pop" role="tooltip">
+          <strong>Example</strong>
+          {example}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function ThreadFieldLabel({
+  text,
+  fieldKey,
+  openKey,
+  onToggle,
+}: {
+  text: string;
+  fieldKey: string;
+  openKey: string | null;
+  onToggle: (key: string | null) => void;
+}) {
+  return (
+    <span className="island-hub-field-label-row">
+      {text}
+      <ThreadFieldHelp fieldKey={fieldKey} onToggle={onToggle} openKey={openKey} />
+    </span>
+  );
+}
 /** Play-mode focus zoom when a parent radial menu is open (siblings are hidden). */
 export const ISLAND_HUB_FOCUS_ZOOM = 1.22;
+
+const ICON_SPARKLES: Array<{ x: string; y: string; delay: string; dur: string; size: string }> = [
+  { x: "-8px", y: "-68px", delay: "0ms", dur: "1100ms", size: "9px" },
+  { x: "10px", y: "-62px", delay: "120ms", dur: "980ms", size: "8px" },
+  { x: "-14px", y: "-56px", delay: "260ms", dur: "1180ms", size: "7px" },
+  { x: "16px", y: "-54px", delay: "60ms", dur: "1040ms", size: "8px" },
+  { x: "2px", y: "-76px", delay: "200ms", dur: "1220ms", size: "10px" },
+  { x: "-6px", y: "-60px", delay: "380ms", dur: "960ms", size: "7px" },
+  { x: "12px", y: "-70px", delay: "160ms", dur: "1080ms", size: "8px" },
+  { x: "-12px", y: "-48px", delay: "440ms", dur: "1140ms", size: "7px" },
+  { x: "6px", y: "-50px", delay: "320ms", dur: "1000ms", size: "8px" },
+];
+
+function HubIconSparkles() {
+  return (
+    <span aria-hidden className="island-hub-sparkles">
+      {ICON_SPARKLES.map((sparkle, index) => (
+        <i
+          key={index}
+          style={
+            {
+              "--sx": sparkle.x,
+              "--sy": sparkle.y,
+              "--sdelay": sparkle.delay,
+              "--sdur": sparkle.dur,
+              "--ssize": sparkle.size,
+            } as CSSProperties
+          }
+        />
+      ))}
+    </span>
+  );
+}
+
+type AuthorTab = "explore" | "thread" | "list" | "anchors";
+type ListKindFilter = "all" | HotspotListKind;
+
+const AUTHOR_TABS: Array<{ id: AuthorTab; label: string }> = [
+  { id: "list", label: "List" },
+  { id: "thread", label: "Thread" },
+  { id: "explore", label: "Explore" },
+  { id: "anchors", label: "Anchors" },
+];
+
+const LIST_KIND_FILTERS: Array<{ id: ListKindFilter; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "location", label: "Location" },
+  { id: "battle", label: "Battle" },
+  { id: "event", label: "Events" },
+  { id: "quest", label: "Quest" },
+  { id: "explore", label: "Explore" },
+  { id: "talk", label: "Talk" },
+  { id: "other", label: "Other" },
+];
+
+function authorTabForHotspot(id: IslandMapHotspotId): AuthorTab {
+  if (id === "LOCATION_ANCHOR") {
+    return "anchors";
+  }
+  if (isThreadBeginMarker(id)) {
+    return "thread";
+  }
+  return "list";
+}
+
+type MapPctPoint = { xPct: number; yPct: number };
+
+function closedPolygonAttr(points: MapPctPoint[]): string {
+  if (points.length === 0) {
+    return "";
+  }
+  const loop = points.length >= 2 ? [...points, points[0]!] : points;
+  return loop.map((p) => `${p.xPct},${p.yPct}`).join(" ");
+}
+
+function insertPointOnClosestEdge(
+  points: MapPctPoint[],
+  xPct: number,
+  yPct: number,
+): MapPctPoint[] {
+  if (points.length < 2) {
+    return [...points, { xPct, yPct }];
+  }
+  let bestIndex = points.length;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]!;
+    const b = points[(i + 1) % points.length]!;
+    const dx = b.xPct - a.xPct;
+    const dy = b.yPct - a.yPct;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((xPct - a.xPct) * dx + (yPct - a.yPct) * dy) / len2));
+    const hx = a.xPct + t * dx;
+    const hy = a.yPct + t * dy;
+    const dist = Math.hypot(xPct - hx, yPct - hy);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIndex = i + 1;
+    }
+  }
+  const next = [...points];
+  next.splice(bestIndex, 0, { xPct, yPct });
+  return next;
+}
+
+function threadTypeLabel(facilityId: IslandMapHotspotId | undefined): string {
+  if (!facilityId) {
+    return "unplaced";
+  }
+  const kind = hotspotListKind(facilityId);
+  if (kind === "quest" || kind === "event" || kind === "talk") {
+    return kind;
+  }
+  return hotspotLabel(facilityId).toLowerCase();
+}
+
+function storyChainStartFacility(
+  chain: StoryChain,
+  hotspots: IslandFacilityHotspot[],
+): IslandMapHotspotId | undefined {
+  const start = chain.nodes.find((n) => n.kind === "start");
+  if (!start?.placedHotspotId) {
+    return undefined;
+  }
+  return hotspots.find((h) => h.hotspotId === start.placedHotspotId)?.facilityId;
+}
 
 type MapFocusPoint = { xPct: number; yPct: number; scale: number };
 
@@ -157,8 +427,8 @@ export function resolveIslandHubMapFocus(
   };
 }
 
-function radialRadiusForCount(count: number): number {
-  return Math.min(78, Math.max(48, 36 + count * 7));
+function radialRadiusForCount(count: number, iconScale = 1): number {
+  return Math.min(70, Math.max(46, 38 + count * 5)) * iconScale;
 }
 
 /** Even ring around parent; open arc toward map center when a full circle would clip. */
@@ -168,14 +438,16 @@ function computeRadialOffsets(
   yPct: number,
   mapWidth: number,
   mapHeight: number,
+  iconScale = 1,
+  radiusCount = count,
 ): RadialOffset[] {
   if (count <= 0) {
     return [];
   }
-  const radius = radialRadiusForCount(count);
+  const radius = radialRadiusForCount(radiusCount, iconScale);
   const cx = (clampPct(xPct) / 100) * mapWidth;
   const cy = (clampPct(yPct) / 100) * mapHeight;
-  const pad = radius + 44;
+  const pad = radius + 32;
   const fits =
     cx - pad >= 0 && cx + pad <= mapWidth && cy - pad >= 0 && cy + pad <= mapHeight;
 
@@ -211,8 +483,19 @@ export function IslandHubMap({
   toolsHost,
   onChoose,
   onSaveHotspots,
+  onConsumeHotspot,
+  onRestoreHotspot,
   onTalkNpcs,
   onStoryTrigger,
+  onResetStoryChain,
+  onFinishFishing,
+  onBuyMarketItem,
+  onSellMarketItem,
+  onBuyClinicItem,
+  onSellClinicItem,
+  onEnsureWeaponShop,
+  onBuyWeaponShopItem,
+  onSellWeaponShopItem,
   onChangeMapAsset,
   onRequestListFallback,
   onOpenCrew,
@@ -221,7 +504,9 @@ export function IslandHubMap({
   const mapAssetId = island.mapAssetId;
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapFailed, setMapFailed] = useState(false);
-  const [snapStep, setSnapStep] = useState<(typeof SNAP_STEPS)[number]>(1);
+  const [snapStep, setSnapStep] = useState<(typeof SNAP_STEPS)[number]>(0);
+  const [draftIconScale, setDraftIconScale] = useState(DEFAULT_MAP_ICON_SCALE);
+  const [pendingAnchorPlaceId, setPendingAnchorPlaceId] = useState<string | null>(null);
   const [draft, setDraft] = useState<IslandFacilityHotspot[]>([]);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
@@ -238,29 +523,61 @@ export function IslandHubMap({
   const [pendingSceneId, setPendingSceneId] = useState<string | null>(null);
   const [draftScenes, setDraftScenes] = useState<IslandMapScene[]>([]);
   const [draftAnchors, setDraftAnchors] = useState<LocationAnchor[]>([]);
+  const [draftRegions, setDraftRegions] = useState<MapAnchorRegion[]>([]);
+  const [regionDrawMode, setRegionDrawMode] = useState(false);
+  const [regionDraftPoints, setRegionDraftPoints] = useState<Array<{ xPct: number; yPct: number }>>(
+    [],
+  );
+  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+  const [selectedAnchorId, setSelectedAnchorId] = useState<string | null>(null);
+  const [hideOtherIcons, setHideOtherIcons] = useState(false);
+  const [regionPointDrag, setRegionPointDrag] = useState<{
+    regionId: string;
+    index: number;
+    pointerId: number;
+  } | null>(null);
+  const skipRegionClickRef = useRef(false);
+  const [newRegionName, setNewRegionName] = useState("");
   const [draftStoryChains, setDraftStoryChains] = useState<StoryChain[]>([]);
   const [activeChainId, setActiveChainId] = useState<string | null>(null);
-  const [newChainName, setNewChainName] = useState("");
   const [newAnchorText, setNewAnchorText] = useState("");
   const [nestPickNodeId, setNestPickNodeId] = useState<string | null>(null);
   const [nestChildId, setNestChildId] = useState<string>("");
   const [showChainDetails, setShowChainDetails] = useState(true);
+  const [threadHelpKey, setThreadHelpKey] = useState<string | null>(null);
+  const [workshopIndex, setWorkshopIndex] = useState(0);
+  const [customPromptDraft, setCustomPromptDraft] = useState("");
+  const [threadComposer, setThreadComposer] = useState<"setup" | "workshop" | null>(null);
+  const [confirmRemoveChainId, setConfirmRemoveChainId] = useState<string | null>(null);
+  const [authorTab, setAuthorTab] = useState<AuthorTab>("list");
+  const [listDetailOpen, setListDetailOpen] = useState(false);
+  const [threadDetailOpen, setThreadDetailOpen] = useState(false);
+  const [expandedExploreId, setExpandedExploreId] = useState<string | null>(null);
+  const [listKindFilter, setListKindFilter] = useState<ListKindFilter>("all");
   const enterLocationKey = useRef<string | null>(null);
   const [newSceneName, setNewSceneName] = useState("");
   const [linkPickMode, setLinkPickMode] = useState(false);
   /** When set, map clicks add to this hotspot's `revealsHotspotIds` without changing selection. */
   const [revealPickSourceId, setRevealPickSourceId] = useState<string | null>(null);
   const revealPickMode = revealPickSourceId !== null;
-  const [showUnlockPanel, setShowUnlockPanel] = useState(false);
   const [expandedChildId, setExpandedChildId] = useState<CatalogChildActionId | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [imgNonce, setImgNonce] = useState(0);
   const [childMenu, setChildMenu] = useState<ChildMenuState | null>(null);
   const [stubNotice, setStubNotice] = useState<string | null>(null);
+  const [fishingOpen, setFishingOpen] = useState(false);
+  const [marketShopOpen, setMarketShopOpen] = useState(false);
+  const [clinicShopOpen, setClinicShopOpen] = useState(false);
+  const [weaponShopOpen, setWeaponShopOpen] = useState(false);
+  const [shipOverlayOpen, setShipOverlayOpen] = useState(false);
+  const [shipOverlayTab, setShipOverlayTab] = useState<"vessel" | "cargo">("vessel");
   const [hoveredHotspotId, setHoveredHotspotId] = useState<string | null>(null);
   const [hoveredChildLabel, setHoveredChildLabel] = useState<string | null>(null);
   const [sessionConsumedIds, setSessionConsumedIds] = useState<Set<string>>(() => new Set());
   const [sessionRevealedIds, setSessionRevealedIds] = useState<Set<string>>(() => new Set());
+  const childMenuRef = useRef<HTMLDivElement | null>(null);
+  const childOrbitRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const radialLabelRef = useRef<string | null>(null);
   const childMenuCloseTimer = useRef<number | null>(null);
   const statusClearTimer = useRef<number | null>(null);
   const stubClearTimer = useRef<number | null>(null);
@@ -268,11 +585,23 @@ export function IslandHubMap({
   const unlocked = useMemo(() => IslandService.listUnlockedFacilities(island), [island]);
   const facilityIds = useMemo(() => unlocked.map((f) => f.id), [unlocked]);
   const unlockedSet = useMemo(() => new Set(facilityIds), [facilityIds]);
+  const weaponShopStock = useMemo(() => {
+    if (!run) {
+      return null;
+    }
+    const theme = island.weaponShopTheme;
+    if (theme) {
+      return WeaponShopService.getStock(run, WeaponShopService.shopKey(island.id, theme));
+    }
+    const shops = Object.values(run.weaponShops ?? {});
+    return shops.find((entry) => run.day < entry.refreshOnDay) ?? shops[0] ?? null;
+  }, [island.id, island.weaponShopTheme, run]);
 
   const layoutHotspots = useMemo(
     () => getMapLayoutHotspots(island, mapAssetId),
     [island, mapAssetId],
   );
+  const iconScale = editing ? draftIconScale : getMapLayoutIconScale(island, mapAssetId);
 
   const displayHotspots = useMemo(() => {
     if (editing) {
@@ -318,9 +647,17 @@ export function IslandHubMap({
     setPendingSceneId(null);
     setDraftScenes([]);
     setDraftAnchors([]);
+    setDraftRegions([]);
+    setRegionDrawMode(false);
+    setRegionDraftPoints([]);
+    setSelectedRegionId(null);
+    setSelectedAnchorId(null);
+    setHideOtherIcons(false);
+    setRegionPointDrag(null);
+    setNewRegionName("");
+    setPendingAnchorPlaceId(null);
     setDraftStoryChains([]);
     setActiveChainId(null);
-    setNewChainName("");
     setNewAnchorText("");
     setNestPickNodeId(null);
     setNestChildId("");
@@ -328,15 +665,18 @@ export function IslandHubMap({
     setLinkPickMode(false);
     setRevealPickSourceId(null);
     setExpandedChildId(null);
-    setShowUnlockPanel(false);
+    setAuthorTab("list");
+    setListDetailOpen(false);
+    setThreadDetailOpen(false);
+    setExpandedExploreId(null);
     setStatus(null);
     setImgNonce(0);
     setChildMenu(null);
     setStubNotice(null);
     setHoveredHotspotId(null);
     setHoveredChildLabel(null);
-    setSessionConsumedIds(new Set());
-    setSessionRevealedIds(new Set());
+    setSessionConsumedIds(new Set(island.consumedHotspotIds ?? []));
+    setSessionRevealedIds(new Set(island.revealedHotspotIds ?? []));
   }, [island.id, mapAssetId, onEditingChange]);
 
   useEffect(() => {
@@ -384,10 +724,23 @@ export function IslandHubMap({
     }
   }, []);
 
+  const resetRadialOrbitWave = useCallback(() => {
+    radialLabelRef.current = null;
+    for (const node of Object.values(childOrbitRefs.current)) {
+      if (!node) {
+        continue;
+      }
+      node.style.setProperty("--orbit-scale", "1");
+      node.classList.remove("is-nearest");
+    }
+    setHoveredChildLabel(null);
+  }, []);
+
   const dismissChildMenuInstant = useCallback(() => {
     clearChildMenuTimer();
+    resetRadialOrbitWave();
     setChildMenu(null);
-  }, [clearChildMenuTimer]);
+  }, [clearChildMenuTimer, resetRadialOrbitWave]);
 
   const closeChildMenu = useCallback(() => {
     setChildMenu((prev) => {
@@ -401,14 +754,16 @@ export function IslandHubMap({
     });
     clearChildMenuTimer();
     childMenuCloseTimer.current = window.setTimeout(() => {
+      resetRadialOrbitWave();
       setChildMenu(null);
       childMenuCloseTimer.current = null;
     }, CHILD_MENU_CLOSE_MS);
-  }, [clearChildMenuTimer]);
+  }, [clearChildMenuTimer, resetRadialOrbitWave]);
 
   const openChildMenu = useCallback(
     (hotspot: IslandFacilityHotspot) => {
       clearChildMenuTimer();
+      resetRadialOrbitWave();
       setChildMenu({
         parentHotspotId: hotspot.hotspotId,
         facilityId: hotspot.facilityId,
@@ -424,7 +779,7 @@ export function IslandHubMap({
         });
       });
     },
-    [clearChildMenuTimer],
+    [clearChildMenuTimer, resetRadialOrbitWave],
   );
 
   useEffect(() => {
@@ -442,7 +797,7 @@ export function IslandHubMap({
   }, [childMenu, editing, closeChildMenu]);
 
   useEffect(() => {
-    if (!editing || (!revealPickMode && !linkPickMode && !nestPickNodeId)) {
+    if (!editing || (!revealPickMode && !linkPickMode && !nestPickNodeId && !regionDrawMode)) {
       return;
     }
     const onKeyDown = (event: KeyboardEvent) => {
@@ -453,31 +808,25 @@ export function IslandHubMap({
       setRevealPickSourceId(null);
       setLinkPickMode(false);
       setNestPickNodeId(null);
+      setRegionDrawMode(false);
+      setRegionDraftPoints([]);
       setStatus(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editing, revealPickMode, linkPickMode, nestPickNodeId]);
+  }, [editing, revealPickMode, linkPickMode, nestPickNodeId, regionDrawMode]);
 
   useEffect(() => () => clearChildMenuTimer(), [clearChildMenuTimer]);
 
   const activeChain = draftStoryChains.find((c) => c.id === activeChainId) ?? draftStoryChains[0] ?? null;
-  const unplacedNodes = activeChain ? unplacedStoryChainNodes(activeChain) : [];
+  const unplacedNodes = activeChain ? unplacedStoryChainQueue(activeChain) : [];
   const structureKey = activeChain ? storyChainStructureFingerprint(activeChain.start) : "";
 
   useEffect(() => {
     if (!editing || !activeChain) {
       return;
     }
-    const start = activeChain.start;
-    const hasStructure =
-      (start.dialogueBeats ?? 0) > 0 ||
-      (start.battlesCount ?? 0) > 0 ||
-      Boolean(start.bossBattle) ||
-      (start.eventsCount ?? 0) > 0 ||
-      (start.investigationsCount ?? 0) > 0 ||
-      Boolean(start.mustHappen?.trim());
-    if (!hasStructure) {
+    if (!activeChain.generationFingerprint) {
       return;
     }
     if (activeChain.generationFingerprint === structureKey) {
@@ -490,6 +839,7 @@ export function IslandHubMap({
             ? StoryChainService.generateStructure(c, {
                 hotspots: draft,
                 anchors: draftAnchors,
+                regions: draftRegions,
                 island,
               })
             : c,
@@ -497,7 +847,7 @@ export function IslandHubMap({
       );
     }, 400);
     return () => window.clearTimeout(handle);
-  }, [editing, activeChain, structureKey, draft, draftAnchors, island]);
+  }, [editing, activeChain, structureKey, draft, draftAnchors, draftRegions, island]);
 
   useEffect(() => {
     if (editing || !onStoryTrigger || !island.id) {
@@ -529,9 +879,16 @@ export function IslandHubMap({
     setDraftScenes(getMapLayoutScenes(island, mapAssetId));
     const chains = getMapLayoutStoryChains(island, mapAssetId);
     setDraftAnchors(getMapLayoutAnchors(island, mapAssetId));
+    setDraftRegions(getMapLayoutAnchorRegions(island, mapAssetId));
+    setDraftIconScale(getMapLayoutIconScale(island, mapAssetId));
+    setHideOtherIcons(false);
+    setSelectedAnchorId(null);
+    setSelectedRegionId(null);
+    setRegionDrawMode(false);
+    setRegionDraftPoints([]);
+    setPendingAnchorPlaceId(null);
     setDraftStoryChains(chains);
     setActiveChainId(chains[0]?.id ?? null);
-    setNewChainName("");
     setNewAnchorText("");
     setNestPickNodeId(null);
     setNestChildId("");
@@ -551,8 +908,11 @@ export function IslandHubMap({
     setLinkPickMode(false);
     setRevealPickSourceId(null);
     setExpandedChildId(null);
-    setShowUnlockPanel(false);
     dismissChildMenuInstant();
+    setAuthorTab("list");
+    setListDetailOpen(false);
+    setThreadDetailOpen(false);
+    setExpandedExploreId(null);
     setStatus("Select an icon, set unlock / stages / links, then click the map to place.");
   };
 
@@ -573,9 +933,17 @@ export function IslandHubMap({
     setPendingSceneId(null);
     setDraftScenes([]);
     setDraftAnchors([]);
+    setDraftRegions([]);
+    setRegionDrawMode(false);
+    setRegionDraftPoints([]);
+    setSelectedRegionId(null);
+    setSelectedAnchorId(null);
+    setHideOtherIcons(false);
+    setRegionPointDrag(null);
+    setNewRegionName("");
+    setPendingAnchorPlaceId(null);
     setDraftStoryChains([]);
     setActiveChainId(null);
-    setNewChainName("");
     setNewAnchorText("");
     setNestPickNodeId(null);
     setNestChildId("");
@@ -583,13 +951,17 @@ export function IslandHubMap({
     setLinkPickMode(false);
     setRevealPickSourceId(null);
     setExpandedChildId(null);
-    setShowUnlockPanel(false);
+    setListDetailOpen(false);
+    setThreadDetailOpen(false);
+    setExpandedExploreId(null);
     setStatus(null);
   };
 
   const layoutExtras = (): IslandMapLayoutExtras => ({
     locationAnchors: draftAnchors,
     storyChains: draftStoryChains,
+    iconScale: draftIconScale,
+    anchorRegions: draftRegions,
   });
 
   const saveEdit = () => {
@@ -608,9 +980,17 @@ export function IslandHubMap({
     setPendingSceneId(null);
     setDraftScenes([]);
     setDraftAnchors([]);
+    setDraftRegions([]);
+    setRegionDrawMode(false);
+    setRegionDraftPoints([]);
+    setSelectedRegionId(null);
+    setSelectedAnchorId(null);
+    setHideOtherIcons(false);
+    setRegionPointDrag(null);
+    setNewRegionName("");
+    setPendingAnchorPlaceId(null);
     setDraftStoryChains([]);
     setActiveChainId(null);
-    setNewChainName("");
     setNewAnchorText("");
     setNestPickNodeId(null);
     setNestChildId("");
@@ -618,7 +998,9 @@ export function IslandHubMap({
     setLinkPickMode(false);
     setRevealPickSourceId(null);
     setExpandedChildId(null);
-    setShowUnlockPanel(false);
+    setListDetailOpen(false);
+    setThreadDetailOpen(false);
+    setExpandedExploreId(null);
     setStatus("Hotspots + scenes saved for this map only.");
   };
 
@@ -633,7 +1015,7 @@ export function IslandHubMap({
   };
 
   const clearIslandOverrides = () => {
-    onSaveHotspots([], [], { locationAnchors: [], storyChains: [] });
+    onSaveHotspots([], [], { locationAnchors: [], storyChains: [], anchorRegions: [] });
     onEditingChange(false);
     setDraft([]);
     setPaletteId(null);
@@ -649,9 +1031,17 @@ export function IslandHubMap({
     setPendingSceneId(null);
     setDraftScenes([]);
     setDraftAnchors([]);
+    setDraftRegions([]);
+    setRegionDrawMode(false);
+    setRegionDraftPoints([]);
+    setSelectedRegionId(null);
+    setSelectedAnchorId(null);
+    setHideOtherIcons(false);
+    setRegionPointDrag(null);
+    setNewRegionName("");
+    setPendingAnchorPlaceId(null);
     setDraftStoryChains([]);
     setActiveChainId(null);
-    setNewChainName("");
     setNewAnchorText("");
     setNestPickNodeId(null);
     setNestChildId("");
@@ -659,7 +1049,8 @@ export function IslandHubMap({
     setLinkPickMode(false);
     setRevealPickSourceId(null);
     setExpandedChildId(null);
-    setShowUnlockPanel(false);
+    setListDetailOpen(false);
+    setThreadDetailOpen(false);
     setStatus("Cleared overrides for this map — using map defaults.");
   };
 
@@ -677,6 +1068,7 @@ export function IslandHubMap({
         : {
             locationAnchors: getMapLayoutAnchors(island, mapAssetId),
             storyChains: getMapLayoutStoryChains(island, mapAssetId),
+            anchorRegions: getMapLayoutAnchorRegions(island, mapAssetId),
           },
     );
     try {
@@ -711,7 +1103,7 @@ export function IslandHubMap({
     [snapStep],
   );
 
-  const loadAuthoringFromHotspot = (hs: IslandFacilityHotspot) => {
+  const loadAuthoringFromHotspot = (hs: IslandFacilityHotspot, opts?: { keepTab?: boolean }) => {
     setPaletteId(hs.facilityId);
     setPendingUnlock(hs.unlock ?? emptyUnlockDraft(hs.facilityId));
     setPendingChildOverrides(hs.childOverrides ? [...hs.childOverrides] : []);
@@ -722,14 +1114,40 @@ export function IslandHubMap({
     setPendingStages(hs.stages ? [...hs.stages] : []);
     setPendingLinks(hs.links ? [...hs.links] : []);
     setPendingRevealsHotspotIds(hs.revealsHotspotIds ? [...hs.revealsHotspotIds] : []);
-    setPendingConsumeOnUse(hs.consumeOnUse === true);
+    setPendingConsumeOnUse(supportsConsumeOnUse(hs.facilityId) || hs.consumeOnUse === true);
     setPendingNotes(hs.notes ?? "");
     setPendingPurpose(hs.purpose ?? "");
     setPendingSceneId(hs.sceneId ?? null);
     setExpandedChildId(null);
     setLinkPickMode(false);
     setRevealPickSourceId(null);
-    setShowUnlockPanel(true);
+    if (!opts?.keepTab) {
+      const nextTab = authorTabForHotspot(hs.facilityId);
+      setAuthorTab(nextTab);
+      if (nextTab === "list") {
+        setListDetailOpen(true);
+      }
+      if (nextTab === "thread") {
+        setThreadDetailOpen(false);
+        setThreadComposer(null);
+      }
+    }
+    const owning = draftStoryChains.find((c) => c.nodes.some((n) => n.placedHotspotId === hs.hotspotId));
+    if (owning) {
+      setActiveChainId(owning.id);
+      if (!opts?.keepTab && isThreadBeginMarker(hs.facilityId)) {
+        setAuthorTab("thread");
+        setThreadDetailOpen(false);
+        setThreadComposer(
+          owning.generationFingerprint &&
+            owning.nodes.some((n) => n.kind !== "start" && n.kind !== "end")
+            ? "workshop"
+            : "setup",
+        );
+        setWorkshopIndex(0);
+        setCustomPromptDraft("");
+      }
+    }
   };
 
   const patchSelectedHotspot = (patch: Partial<IslandFacilityHotspot>) => {
@@ -761,9 +1179,10 @@ export function IslandHubMap({
       // Stay on the source icon panel; map clicks only add reveal targets.
       // (Add here — pointerdown preventDefault may suppress the click handler.)
       if (instanceId !== revealPickSourceId && hs) {
-        if (!pendingRevealsHotspotIds.includes(instanceId)) {
-          const next = [...pendingRevealsHotspotIds, instanceId];
-          setPendingRevealsHotspotIds(next);
+        const source = draft.find((x) => x.hotspotId === revealPickSourceId);
+        const current = source?.revealsHotspotIds ?? pendingRevealsHotspotIds;
+        if (!current.includes(instanceId)) {
+          const next = [...current, instanceId];
           setDraft((prev) =>
             prev.map((h) =>
               h.hotspotId === revealPickSourceId
@@ -771,6 +1190,9 @@ export function IslandHubMap({
                 : h,
             ),
           );
+          if (selectedInstanceId === revealPickSourceId) {
+            setPendingRevealsHotspotIds(next);
+          }
           setStatus(`Added reveal → ${hotspotLabel(hs.facilityId)}.`);
         }
       }
@@ -779,13 +1201,43 @@ export function IslandHubMap({
     event.currentTarget.setPointerCapture(event.pointerId);
     setSelectedInstanceId(instanceId);
     if (hs) {
-      loadAuthoringFromHotspot(hs);
+      const keepTab = authorTab === "explore" || authorTab === "thread" || authorTab === "anchors";
+      loadAuthoringFromHotspot(hs, { keepTab });
+      if (authorTab === "list") {
+        setListDetailOpen(true);
+      }
+      if (hs.facilityId === "LOCATION_ANCHOR") {
+        const match = draftAnchors.find((a) => a.hotspotId === hs.hotspotId);
+        if (match) {
+          setSelectedAnchorId(match.id);
+        }
+        setAuthorTab("anchors");
+        setSelectedRegionId(null);
+      }
     }
     setDrag({ hotspotId: instanceId, pointerId: event.pointerId });
   };
 
   const onMapPointerMove = (event: ReactPointerEvent) => {
-    if (!editing || !drag || event.pointerId !== drag.pointerId) {
+    if (!editing) {
+      return;
+    }
+    if (regionPointDrag && event.pointerId === regionPointDrag.pointerId) {
+      const { xPct, yPct } = pointerToPct(event.clientX, event.clientY);
+      setDraftRegions((prev) =>
+        prev.map((r) => {
+          if (r.id !== regionPointDrag.regionId) {
+            return r;
+          }
+          return {
+            ...r,
+            points: r.points.map((p, i) => (i === regionPointDrag.index ? { xPct, yPct } : p)),
+          };
+        }),
+      );
+      return;
+    }
+    if (!drag || event.pointerId !== drag.pointerId) {
       return;
     }
     const { xPct, yPct } = pointerToPct(event.clientX, event.clientY);
@@ -795,10 +1247,88 @@ export function IslandHubMap({
   };
 
   const endDrag = (event: ReactPointerEvent) => {
+    if (regionPointDrag && event.pointerId === regionPointDrag.pointerId) {
+      setRegionPointDrag(null);
+      return;
+    }
     if (!drag || event.pointerId !== drag.pointerId) {
       return;
     }
     setDrag(null);
+  };
+
+  const storyLocationCtx = () => ({
+    hotspots: draft,
+    anchors: draftAnchors,
+    regions: draftRegions,
+    island,
+  });
+
+  const bindThreadStartToHotspot = (hotspot: IslandFacilityHotspot) => {
+    setDraftStoryChains((prev) => {
+      let chains = prev;
+      let chain = chains.find((c) => c.id === activeChainId) ?? chains[0];
+      if (!chain) {
+        chain = createStoryChain(
+          hotspot.purpose?.trim() || hotspotLabel(hotspot.facilityId),
+          island.id,
+          mapAssetId ?? undefined,
+        );
+        chains = [...chains, chain];
+      }
+      const start = chain.nodes.find((n) => n.kind === "start");
+      if (!start || start.placedHotspotId) {
+        return chains;
+      }
+      let next = StoryChainService.nestNode(chain, start.id, {
+        hotspotId: hotspot.hotspotId,
+        islandId: island.id,
+        mapAssetId: mapAssetId ?? undefined,
+      });
+      next = StoryChainService.generateStructure(next, {
+        hotspots: [...draft, hotspot],
+        anchors: draftAnchors,
+        regions: draftRegions,
+        island,
+      });
+      setActiveChainId(next.id);
+      setAuthorTab("thread");
+      setThreadDetailOpen(false);
+      setThreadComposer("workshop");
+      setWorkshopIndex(0);
+      setCustomPromptDraft("");
+      return chains.some((c) => c.id === next.id)
+        ? chains.map((c) => (c.id === next.id ? next : c))
+        : [...chains.filter((c) => c.id !== chain.id), next];
+    });
+    setStatus(`Thread start nested on ${hotspotLabel(hotspot.facilityId)}. Fill Start fields to generate End.`);
+  };
+
+  const placeStoryFicheOnMap = (nodeId: string, clientX: number, clientY: number) => {
+    if (!activeChain) {
+      return;
+    }
+    const node = activeChain.nodes.find((n) => n.id === nodeId);
+    if (!node) {
+      return;
+    }
+    const { xPct, yPct } = pointerToPct(clientX, clientY);
+    const facilityId = facilityIdForStoryChainNode(activeChain, node);
+    const placed = createPalettePlacement(
+      facilityId,
+      xPct,
+      yPct,
+      emptyUnlockDraft(facilityId),
+      undefined,
+      supportsQuestConfig(facilityId) ? defaultQuestConfigFor(facilityId) : undefined,
+      { purpose: node.label || node.kind },
+    );
+    setDraft((prev) => [...prev, placed]);
+    setSelectedInstanceId(placed.hotspotId);
+    loadAuthoringFromHotspot(placed);
+    nestNodeOntoHotspot(nodeId, placed, nestChildId || undefined);
+    setNestPickNodeId(null);
+    setStatus(`Placed ${hotspotLabel(facilityId)} for ${node.label || node.kind}.`);
   };
 
   const placeFromPalette = (clientX: number, clientY: number) => {
@@ -825,7 +1355,7 @@ export function IslandHubMap({
         purpose: pendingPurpose || undefined,
         revealsHotspotIds:
           pendingRevealsHotspotIds.length > 0 ? pendingRevealsHotspotIds : undefined,
-        consumeOnUse: pendingConsumeOnUse || undefined,
+        consumeOnUse: supportsConsumeOnUse(paletteId) || pendingConsumeOnUse || undefined,
       },
     );
     setDraft((prev) => [...prev, placed]);
@@ -835,13 +1365,40 @@ export function IslandHubMap({
     setPendingStages(placed.stages ? [...placed.stages] : []);
     setPendingLinks(placed.links ? [...placed.links] : []);
     setPendingRevealsHotspotIds(placed.revealsHotspotIds ? [...placed.revealsHotspotIds] : []);
-    setPendingConsumeOnUse(placed.consumeOnUse === true);
+    setPendingConsumeOnUse(supportsConsumeOnUse(placed.facilityId) || placed.consumeOnUse === true);
     setPendingNotes(placed.notes ?? "");
     setPendingPurpose(placed.purpose ?? "");
     setPendingSceneId(placed.sceneId ?? null);
-    setShowUnlockPanel(true);
+    const nextTab = authorTabForHotspot(paletteId);
+    setAuthorTab(nextTab);
+    if (nextTab === "list") {
+      setListDetailOpen(true);
+    }
+    if (paletteId === "LOCATION_ANCHOR") {
+      const anchorId = pendingAnchorPlaceId;
+      if (anchorId) {
+        setDraftAnchors((prev) =>
+          prev.map((a) => (a.id === anchorId ? { ...a, hotspotId: placed.hotspotId } : a)),
+        );
+        setPendingAnchorPlaceId(null);
+      } else {
+        const auto = createLocationAnchor(
+          placed.purpose || "Unnamed place",
+          [],
+          "suggest",
+          placed.hotspotId,
+        );
+        setDraftAnchors((prev) => [...prev, auto]);
+      }
+      setAuthorTab("anchors");
+    }
+    if (isThreadBeginMarker(paletteId)) {
+      bindThreadStartToHotspot(placed);
+    }
     setStatus(
-      `Placed ${hotspotLabel(paletteId)} (${unlockRuleSummary(unlock)}) — click again to add another.`,
+      paletteId === "LOCATION_ANCHOR"
+        ? `Placed location anchor — drag to reposition, then Save.`
+        : `Placed ${hotspotLabel(paletteId)} (${unlockRuleSummary(unlock)}) — click again to add another.`,
     );
   };
 
@@ -857,13 +1414,39 @@ export function IslandHubMap({
       }
       return;
     }
-    if (!paletteId || drag) {
-      return;
-    }
     if ((event.target as HTMLElement).closest(".island-hub-hotspot")) {
       return;
     }
     if ((event.target as HTMLElement).closest(".island-hub-unlock-panel")) {
+      return;
+    }
+    if (nestPickNodeId && !drag) {
+      placeStoryFicheOnMap(nestPickNodeId, event.clientX, event.clientY);
+      return;
+    }
+    if (regionDrawMode && !drag) {
+      const { xPct, yPct } = pointerToPct(event.clientX, event.clientY);
+      setRegionDraftPoints((prev) => [...prev, { xPct, yPct }]);
+      setStatus(`Area point ${regionDraftPoints.length + 1} — add at least 3, then Finish. First and last stay connected.`);
+      return;
+    }
+    if (skipRegionClickRef.current) {
+      skipRegionClickRef.current = false;
+      return;
+    }
+    if (selectedRegionId && !paletteId && !drag && authorTab === "anchors") {
+      const { xPct, yPct } = pointerToPct(event.clientX, event.clientY);
+      setDraftRegions((prev) =>
+        prev.map((r) =>
+          r.id === selectedRegionId
+            ? { ...r, points: insertPointOnClosestEdge(r.points, xPct, yPct) }
+            : r,
+        ),
+      );
+      setStatus("Added a point on the nearest edge. Drag points to reshape.");
+      return;
+    }
+    if (!paletteId || drag) {
       return;
     }
     placeFromPalette(event.clientX, event.clientY);
@@ -875,13 +1458,20 @@ export function IslandHubMap({
     }
     const removed = draft.find((h) => h.hotspotId === selectedInstanceId);
     setDraft((prev) => prev.filter((h) => h.hotspotId !== selectedInstanceId));
+    if (removed) {
+      setDraftAnchors((prev) =>
+        prev.map((a) => (a.hotspotId === removed.hotspotId ? { ...a, hotspotId: undefined } : a)),
+      );
+    }
     setStatus(
       removed
         ? `Removed ${hotspotLabel(removed.facilityId)} — Save to keep it off this map (re-place from palette to restore).`
         : "Removed hotspot — Save to keep it off this map.",
     );
     setSelectedInstanceId(null);
-    setShowUnlockPanel(false);
+    setListDetailOpen(false);
+    setThreadDetailOpen(false);
+    setExpandedExploreId((id) => (id === selectedInstanceId ? null : id));
   };
 
   const toggleHideSelected = () => {
@@ -979,15 +1569,26 @@ export function IslandHubMap({
     patchSelectedHotspot({ purpose: next.trim() || undefined });
   };
 
+  const applyRevealsForHotspot = (hotspotId: string, next: string[]) => {
+    const unique = [...new Set(next.filter(Boolean))];
+    setDraft((prev) =>
+      prev.map((h) =>
+        h.hotspotId === hotspotId
+          ? { ...h, revealsHotspotIds: unique.length > 0 ? unique : undefined }
+          : h,
+      ),
+    );
+    if (selectedInstanceId === hotspotId) {
+      setPendingRevealsHotspotIds(unique);
+    }
+  };
+
   const applyRevealsToSelectedOrPending = (next: string[]) => {
     const unique = [...new Set(next.filter(Boolean))];
     setPendingRevealsHotspotIds(unique);
-    patchSelectedHotspot({ revealsHotspotIds: unique.length > 0 ? unique : undefined });
-  };
-
-  const applyConsumeOnUseToSelectedOrPending = (next: boolean) => {
-    setPendingConsumeOnUse(next);
-    patchSelectedHotspot({ consumeOnUse: next || undefined });
+    if (selectedInstanceId) {
+      applyRevealsForHotspot(selectedInstanceId, unique);
+    }
   };
 
   const applySceneIdToSelectedOrPending = (next: string | null) => {
@@ -1059,11 +1660,95 @@ export function IslandHubMap({
   };
 
   const createChain = () => {
-    const chain = createStoryChain(newChainName || "New chain", island.id, mapAssetId ?? undefined);
+    const chain = createStoryChain("Untitled thread", island.id, mapAssetId ?? undefined);
     setDraftStoryChains((prev) => [...prev, chain]);
     setActiveChainId(chain.id);
-    setNewChainName("");
-    setStatus(`Created story chain “${chain.name}”.`);
+    setThreadDetailOpen(false);
+    setThreadComposer("setup");
+    setWorkshopIndex(0);
+    setCustomPromptDraft("");
+    setShowChainDetails(true);
+    setStatus("New thread — fill the basics, then generate.");
+  };
+
+  const openThreadDetail = (chainId: string) => {
+    const chain = draftStoryChains.find((c) => c.id === chainId);
+    setActiveChainId(chainId);
+    setThreadDetailOpen(false);
+    const middles = chain?.nodes.filter((n) => n.kind !== "start" && n.kind !== "end") ?? [];
+    setThreadComposer(chain?.generationFingerprint && middles.length > 0 ? "workshop" : "setup");
+    setWorkshopIndex(0);
+    setCustomPromptDraft("");
+    const start = chain?.nodes.find((n) => n.kind === "start");
+    if (start?.placedHotspotId) {
+      const hs = draft.find((h) => h.hotspotId === start.placedHotspotId);
+      if (hs) {
+        setSelectedInstanceId(hs.hotspotId);
+        loadAuthoringFromHotspot(hs, { keepTab: true });
+      }
+    }
+  };
+
+  const removeChain = (chainId: string) => {
+    const chain = draftStoryChains.find((entry) => entry.id === chainId);
+    const leftoverIds = chain
+      ? hotspotIdsOwnedByStoryChain(
+          chain,
+          draft,
+          draftStoryChains.filter((entry) => entry.id !== chainId),
+        )
+      : [];
+    if (leftoverIds.length > 0) {
+      setDraft((prev) => omitHotspotsAndRefs(prev, leftoverIds));
+    }
+    if (selectedInstanceId && leftoverIds.includes(selectedInstanceId)) {
+      setSelectedInstanceId(null);
+    }
+    setDraftStoryChains((prev) => prev.filter((c) => c.id !== chainId));
+    if (activeChainId === chainId) {
+      setActiveChainId(null);
+      setThreadComposer(null);
+    }
+    setConfirmRemoveChainId(null);
+    setStatus(
+      leftoverIds.length > 0
+        ? `Thread removed, including ${leftoverIds.length} placed fiche${leftoverIds.length === 1 ? "" : "s"}.`
+        : "Thread removed.",
+    );
+  };
+
+  const adoptBeginHotspotAsThread = (hotspot: IslandFacilityHotspot) => {
+    const owning = draftStoryChains.find((c) =>
+      c.nodes.some((n) => n.placedHotspotId === hotspot.hotspotId),
+    );
+    if (owning) {
+      openThreadDetail(owning.id);
+      return;
+    }
+    let chain = createStoryChain(
+      hotspot.purpose?.trim() || hotspotLabel(hotspot.facilityId),
+      island.id,
+      mapAssetId ?? undefined,
+    );
+    const start = chain.nodes.find((n) => n.kind === "start");
+    if (start) {
+      chain = StoryChainService.nestNode(chain, start.id, {
+        hotspotId: hotspot.hotspotId,
+        islandId: island.id,
+        mapAssetId: mapAssetId ?? undefined,
+      });
+      chain = StoryChainService.generateStructure(chain, storyLocationCtx());
+    }
+    setDraftStoryChains((prev) => [...prev, chain]);
+    setActiveChainId(chain.id);
+    setSelectedInstanceId(hotspot.hotspotId);
+    loadAuthoringFromHotspot(hotspot, { keepTab: true });
+    setThreadDetailOpen(false);
+    setThreadComposer("setup");
+    setWorkshopIndex(0);
+    setCustomPromptDraft("");
+    setShowChainDetails(true);
+    setStatus(`Started thread “${chain.name}” on ${hotspotLabel(hotspot.facilityId)}.`);
   };
 
   const patchActiveChain = (patch: Partial<StoryChain>) => {
@@ -1071,6 +1756,19 @@ export function IslandHubMap({
       return;
     }
     setDraftStoryChains((prev) => prev.map((c) => (c.id === activeChain.id ? { ...c, ...patch } : c)));
+  };
+
+  const patchBeatPlan = (plan: StoryBeatPlanItem[]) => {
+    if (!activeChain) {
+      return;
+    }
+    patchActiveChain({
+      start: {
+        ...activeChain.start,
+        beatPlan: plan,
+        ...countsFromBeatPlan(plan),
+      },
+    });
   };
 
   const replaceActiveChain = (next: StoryChain) => {
@@ -1081,27 +1779,70 @@ export function IslandHubMap({
     if (!activeChain) {
       return;
     }
-    const next = StoryChainService.generateStructure(activeChain, {
-      hotspots: draft,
-      anchors: draftAnchors,
-      island,
-    });
+    const error = StoryChainService.validateForGenerate(activeChain);
+    if (error) {
+      setShowChainDetails(true);
+      setStatus(error);
+      return;
+    }
+    const next = StoryChainService.generateStructure(activeChain, storyLocationCtx());
     replaceActiveChain(next);
-    setStatus("Generated numbered nodes into the unplaced tray.");
+    setShowChainDetails(false);
+    setThreadHelpKey(null);
+    const middles = next.nodes.filter((n) => n.kind !== "start" && n.kind !== "end").length;
+    setWorkshopIndex(0);
+    setCustomPromptDraft("");
+    setThreadComposer("workshop");
+    setStatus(
+      middles > 0
+        ? `Story workshop ready — ${middles} beat${middles === 1 ? "" : "s"} to pick. Facility icons like Market nest automatically.`
+        : "Generated Start and End. Add dialogue / events / battles, then Generate story again.",
+    );
+  };
+
+  const resetGeneratedChain = () => {
+    if (!activeChain) {
+      return;
+    }
+    const start = activeChain.nodes.find((n) => n.kind === "start") ?? createStoryChainNode(1, "start", "Start");
+    const end = activeChain.nodes.find((n) => n.kind === "end") ?? createStoryChainNode(2, "end", "End");
+    const kept = activeChain.nodes.filter(
+      (n) => n.kind !== "start" && n.kind !== "end" && (n.editState === "edited" || n.editState === "locked"),
+    );
+    const nodes = [start, ...kept, end].map((n, i) => ({ ...n, order: i + 1 }));
+    replaceActiveChain({ ...activeChain, nodes, generationFingerprint: undefined });
+    setShowChainDetails(true);
+    setStatus("Cleared generated fiches. Form fields kept — Generate story when ready.");
   };
 
   const nestNodeOntoHotspot = (nodeId: string, hotspot: IslandFacilityHotspot, childId?: string) => {
     if (!activeChain) {
       return;
     }
-    const next = StoryChainService.nestNode(activeChain, nodeId, {
+    let next = StoryChainService.nestNode(activeChain, nodeId, {
       hotspotId: hotspot.hotspotId,
       childId: childId || undefined,
       islandId: island.id,
       mapAssetId: mapAssetId ?? undefined,
     });
+    const nested = next.nodes.find((n) => n.id === nodeId);
+    if (nested?.kind === "start" || nested?.kind === "end") {
+      next = StoryChainService.generateStructure(next, storyLocationCtx());
+    }
     replaceActiveChain(next);
     setNestPickNodeId(null);
+    if (nested?.kind === "end") {
+      setAuthorTab("thread");
+      setThreadDetailOpen(false);
+      setThreadComposer("workshop");
+      setShowChainDetails(false);
+      setWorkshopIndex(0);
+      setCustomPromptDraft("");
+      setStatus(
+        `End placed. Pick what happens in each beat — Market / Training Grounds nest under those icons.`,
+      );
+      return;
+    }
     setStatus(
       childId
         ? `Nested onto ${hotspotLabel(hotspot.facilityId)} → ${childId}.`
@@ -1128,6 +1869,72 @@ export function IslandHubMap({
     });
   };
 
+  const workshopPlaceName = (node: { locationAnchorId?: string; locationRegionId?: string; placedHotspotId?: string; suggestedHotspotId?: string }) => {
+    if (node.locationRegionId) {
+      const region = draftRegions.find((r) => r.id === node.locationRegionId);
+      if (region?.name.trim()) {
+        return region.name.trim();
+      }
+    }
+    if (node.locationAnchorId) {
+      const pin = draftAnchors.find((a) => a.id === node.locationAnchorId);
+      if (pin?.text.trim()) {
+        return pin.text.trim();
+      }
+    }
+    const hotspotId = node.placedHotspotId || node.suggestedHotspotId;
+    const hotspot = hotspotId ? draft.find((h) => h.hotspotId === hotspotId) : undefined;
+    return hotspot ? hotspot.purpose?.trim() || hotspotLabel(hotspot.facilityId) : undefined;
+  };
+
+  const placeWorkshopNode = (nodeId: string) => {
+    if (!activeChain) {
+      return;
+    }
+    const node = activeChain.nodes.find((n) => n.id === nodeId);
+    if (!node) {
+      return;
+    }
+    const suggested = node.suggestedHotspotId
+      ? draft.find((h) => h.hotspotId === node.suggestedHotspotId)
+      : undefined;
+    if (suggested) {
+      nestNodeOntoHotspot(
+        node.id,
+        suggested,
+        nestChildForStoryNode(suggested.facilityId, node),
+      );
+      return;
+    }
+    const pin = node.locationAnchorId
+      ? draftAnchors.find((a) => a.id === node.locationAnchorId)
+      : undefined;
+    if (pin?.hotspotId) {
+      const pinHotspot = draft.find((h) => h.hotspotId === pin.hotspotId);
+      if (pinHotspot) {
+        nestNodeOntoHotspot(node.id, pinHotspot);
+        return;
+      }
+    }
+    const region = node.locationRegionId
+      ? draftRegions.find((r) => r.id === node.locationRegionId)
+      : undefined;
+    if (region && region.points.length >= 3) {
+      const center = regionCentroid(region.points);
+      const placed = createPalettePlacement(
+        facilityIdForStoryChainNode(activeChain, node),
+        center.xPct,
+        center.yPct,
+        undefined,
+        undefined,
+        undefined,
+        { purpose: region.name || node.label },
+      );
+      setDraft((prev) => [...prev, placed]);
+      nestNodeOntoHotspot(node.id, placed);
+    }
+  };
+
   const addBeatToActiveChain = () => {
     if (!activeChain) {
       return;
@@ -1147,23 +1954,98 @@ export function IslandHubMap({
   };
 
   const addAnchor = () => {
-    const anchor = createLocationAnchor(
-      newAnchorText || "Unnamed place",
-      [],
-      "suggest",
-      selectedInstanceId ?? undefined,
-    );
+    const anchor = createLocationAnchor(newAnchorText || "Unnamed place", [], "suggest");
     setDraftAnchors((prev) => [...prev, anchor]);
     setNewAnchorText("");
-    setStatus("Added location anchor (not nested onto icons yet).");
+    setPendingAnchorPlaceId(anchor.id);
+    setPaletteId("LOCATION_ANCHOR");
+    setSelectedInstanceId(null);
+    setPendingUnlock(emptyUnlockDraft("LOCATION_ANCHOR"));
+    setPendingQuestConfig(null);
+    setPendingChildOverrides([]);
+    setPendingPurpose(anchor.description);
+    setSelectedAnchorId(anchor.id);
+    setAuthorTab("anchors");
+    setStatus("Click the map to place this location-anchor icon.");
   };
 
   const patchAnchor = (anchorId: string, patch: Partial<LocationAnchor>) => {
+    const current = draftAnchors.find((a) => a.id === anchorId);
     setDraftAnchors((prev) => prev.map((a) => (a.id === anchorId ? { ...a, ...patch } : a)));
+    if (current?.hotspotId && patch.description !== undefined) {
+      setDraft((prev) =>
+        prev.map((h) =>
+          h.hotspotId === current.hotspotId ? { ...h, purpose: patch.description } : h,
+        ),
+      );
+    }
+  };
+
+  const focusAnchor = (anchor: LocationAnchor) => {
+    setSelectedAnchorId(anchor.id);
+    setSelectedRegionId(null);
+    if (anchor.hotspotId) {
+      setSelectedInstanceId(anchor.hotspotId);
+      const hs = draft.find((h) => h.hotspotId === anchor.hotspotId);
+      if (hs) {
+        loadAuthoringFromHotspot(hs, { keepTab: true });
+      }
+    } else {
+      setSelectedInstanceId(null);
+    }
+  };
+
+  const finishRegionDraw = () => {
+    if (regionDraftPoints.length < 3) {
+      setStatus("Draw at least 3 points before finishing an area.");
+      return;
+    }
+    const region = createMapAnchorRegion(newRegionName, regionDraftPoints, "suggest");
+    setDraftRegions((prev) => [...prev, region]);
+    setSelectedRegionId(region.id);
+    setRegionDrawMode(false);
+    setRegionDraftPoints([]);
+    setNewRegionName("");
+    setStatus(`Named area “${region.name}” — Save to keep it for AI placement.`);
+  };
+
+  const patchRegion = (regionId: string, patch: Partial<MapAnchorRegion>) => {
+    setDraftRegions((prev) => prev.map((r) => (r.id === regionId ? { ...r, ...patch } : r)));
+  };
+
+  const removeRegion = (regionId: string) => {
+    setDraftRegions((prev) => prev.filter((r) => r.id !== regionId));
+    if (selectedRegionId === regionId) {
+      setSelectedRegionId(null);
+    }
+  };
+
+  const removeRegionPoint = (regionId: string, index: number) => {
+    setDraftRegions((prev) =>
+      prev.map((r) => {
+        if (r.id !== regionId || r.points.length <= 3) {
+          return r;
+        }
+        return { ...r, points: r.points.filter((_, i) => i !== index) };
+      }),
+    );
   };
 
   const removeAnchor = (anchorId: string) => {
+    const removed = draftAnchors.find((a) => a.id === anchorId);
     setDraftAnchors((prev) => prev.filter((a) => a.id !== anchorId));
+    if (removed?.hotspotId) {
+      setDraft((prev) => prev.filter((h) => h.hotspotId !== removed.hotspotId));
+      if (selectedInstanceId === removed.hotspotId) {
+        setSelectedInstanceId(null);
+      }
+    }
+    if (pendingAnchorPlaceId === anchorId) {
+      setPendingAnchorPlaceId(null);
+      if (paletteId === "LOCATION_ANCHOR") {
+        setPaletteId(null);
+      }
+    }
   };
 
   const patchChildOverride = (
@@ -1197,6 +2079,9 @@ export function IslandHubMap({
   const selectPaletteEntry = (id: IslandMapHotspotId) => {
     setPaletteId(id);
     setSelectedInstanceId(null);
+    if (id !== "LOCATION_ANCHOR") {
+      setPendingAnchorPlaceId(null);
+    }
     const unlock = emptyUnlockDraft(id);
     setPendingUnlock(unlock);
     setPendingChildOverrides([]);
@@ -1204,14 +2089,18 @@ export function IslandHubMap({
     setPendingStages([]);
     setPendingLinks([]);
     setPendingRevealsHotspotIds([]);
-    setPendingConsumeOnUse(false);
+    setPendingConsumeOnUse(supportsConsumeOnUse(id));
     setPendingNotes("");
     setPendingPurpose("");
     setPendingSceneId(null);
     setExpandedChildId(null);
     setLinkPickMode(false);
     setRevealPickSourceId(null);
-    setShowUnlockPanel(true);
+    const nextTab = authorTabForHotspot(id);
+    setAuthorTab(nextTab);
+    if (nextTab === "list") {
+      setListDetailOpen(true);
+    }
     const count = placedCounts.get(id) ?? 0;
     setStatus(
       count > 0
@@ -1221,25 +2110,33 @@ export function IslandHubMap({
   };
 
   const applyProbeUseEffects = (hotspot: IslandFacilityHotspot) => {
-    if (hotspot.revealsHotspotIds?.length) {
+    const revealIds = revealIdsForProbe(hotspot, layoutHotspots);
+    if (revealIds.length) {
       setSessionRevealedIds((prev) => {
         const next = new Set(prev);
-        for (const id of hotspot.revealsHotspotIds!) {
+        for (const id of revealIds) {
           next.add(id);
         }
         return next;
       });
     }
-    if (hotspot.consumeOnUse) {
+    if (supportsConsumeOnUse(hotspot.facilityId) || hotspot.consumeOnUse) {
       setSessionConsumedIds((prev) => {
         const next = new Set(prev);
         next.add(hotspot.hotspotId);
         return next;
       });
+      onConsumeHotspot?.(hotspot.hotspotId, revealIds);
     }
   };
 
   const resolveChildAction = (action: MapChildActionDef) => {
+    const parent = childMenu
+      ? displayHotspots.find((h) => h.hotspotId === childMenu.parentHotspotId)
+      : undefined;
+    if (parent && (supportsConsumeOnUse(parent.facilityId) || parent.consumeOnUse)) {
+      applyProbeUseEffects(parent);
+    }
     dismissChildMenuInstant();
     const { resolve } = action;
     if (action.id === "TALK_NPCS") {
@@ -1280,7 +2177,22 @@ export function IslandHubMap({
     if (nestedStory) {
       setStubNotice(nestedStory);
     }
+    if (resolve.type === "story") {
+      if (!nestedStory) {
+        setStubNotice(`${action.label} — the thread is quiet for now.`);
+      }
+      return;
+    }
     if (resolve.type === "hub_choice") {
+      if (resolve.choiceId === "market") {
+        setMarketShopOpen(true);
+        return;
+      }
+      if (resolve.choiceId === "weapon_shop") {
+        onEnsureWeaponShop?.();
+        setWeaponShopOpen(true);
+        return;
+      }
       if (lockReasons?.[resolve.choiceId]) {
         setStubNotice(lockReasons[resolve.choiceId] ?? "That action is locked.");
         return;
@@ -1305,6 +2217,24 @@ export function IslandHubMap({
         onChoose("harbor");
         return;
       }
+      if (resolve.overlay === "ship") {
+        setShipOverlayTab(shipOverlayOpensHold(resolve.focus));
+        setShipOverlayOpen(true);
+        return;
+      }
+      if (resolve.overlay === "market") {
+        setMarketShopOpen(true);
+        return;
+      }
+      if (resolve.overlay === "clinic") {
+        setClinicShopOpen(true);
+        return;
+      }
+      if (resolve.overlay === "weapon") {
+        onEnsureWeaponShop?.();
+        setWeaponShopOpen(true);
+        return;
+      }
     }
     setStubNotice(resolve.type === "stub" ? resolve.message : `${action.label} — coming soon.`);
   };
@@ -1325,20 +2255,38 @@ export function IslandHubMap({
         return;
       }
       if (revealPickSourceId) {
-        if (
-          hotspot.hotspotId !== revealPickSourceId &&
-          !pendingRevealsHotspotIds.includes(hotspot.hotspotId)
-        ) {
-          applyRevealsToSelectedOrPending([
-            ...pendingRevealsHotspotIds,
-            hotspot.hotspotId,
-          ]);
-          setStatus(`Added reveal → ${hotspotLabel(hotspot.facilityId)}.`);
+        if (hotspot.hotspotId !== revealPickSourceId) {
+          const source = draft.find((x) => x.hotspotId === revealPickSourceId);
+          const current =
+            revealPickSourceId === selectedInstanceId
+              ? pendingRevealsHotspotIds
+              : source?.revealsHotspotIds ?? [];
+          if (!current.includes(hotspot.hotspotId)) {
+            applyRevealsForHotspot(revealPickSourceId, [...current, hotspot.hotspotId]);
+            setStatus(`Added reveal → ${hotspotLabel(hotspot.facilityId)}.`);
+          }
         }
         return;
       }
       setSelectedInstanceId(hotspot.hotspotId);
-      loadAuthoringFromHotspot(hotspot);
+      const keepTab = authorTab === "explore" || authorTab === "thread" || authorTab === "anchors";
+      loadAuthoringFromHotspot(hotspot, { keepTab });
+      if (authorTab === "list") {
+        setListDetailOpen(true);
+      }
+      if (hotspot.facilityId === "LOCATION_ANCHOR") {
+        const match = draftAnchors.find((a) => a.hotspotId === hotspot.hotspotId);
+        if (match) {
+          setSelectedAnchorId(match.id);
+        }
+        setAuthorTab("anchors");
+        setSelectedRegionId(null);
+      }
+      return;
+    }
+
+    if (hotspot.facilityId === "FISHING") {
+      setFishingOpen(true);
       return;
     }
 
@@ -1353,7 +2301,30 @@ export function IslandHubMap({
     }
 
     const id = hotspot.facilityId;
-    if (hasVisibleChildActions(hotspot, island, run)) {
+    const chainsForPlay = playStoryChains;
+    const hasNestedStory = chainsForPlay.some((c) =>
+      c.nodes.some((n) => n.placedHotspotId === hotspot.hotspotId),
+    );
+    const openHub = playHotspotUsesHubChoice(hotspot, {
+      hasNestedStory,
+      storyFired: Boolean(story),
+    });
+
+    if (id === "LOCATION_ANCHOR") {
+      if (!story) {
+        setStubNotice(hotspot.purpose?.trim() || "A marked place.");
+      }
+      return;
+    }
+
+    if (!openHub && (id === "QUEST" || hasNestedStory)) {
+      if (!story) {
+        setStubNotice(`${hotspotLabel(id)} — the thread is quiet for now.`);
+      }
+      return;
+    }
+
+    if (hasVisibleChildActions(hotspot, island, run, chainsForPlay)) {
       if (childMenu?.parentHotspotId === hotspot.hotspotId) {
         closeChildMenu();
         return;
@@ -1363,7 +2334,7 @@ export function IslandHubMap({
     }
 
     const choiceId = hotspotHubChoiceId(id);
-    if (!choiceId) {
+    if (!openHub || !choiceId) {
       if (id === "TALK") {
         setStubNotice(story ?? onTalkNpcs?.(hotspot.hotspotId) ?? "Talk to NPCs — coming soon.");
       } else if (supportsRevealAuthoring(id)) {
@@ -1381,6 +2352,17 @@ export function IslandHubMap({
       return;
     }
     if (!choiceById.has(choiceId)) {
+      return;
+    }
+    if (id === "MARKET" || choiceId === "market") {
+      dismissChildMenuInstant();
+      setMarketShopOpen(true);
+      return;
+    }
+    if (id === "WEAPON_SHOP" || choiceId === "weapon_shop") {
+      dismissChildMenuInstant();
+      onEnsureWeaponShop?.();
+      setWeaponShopOpen(true);
       return;
     }
     dismissChildMenuInstant();
@@ -1460,13 +2442,25 @@ export function IslandHubMap({
 
   const hotspotPlayVisible = (hotspot: IslandFacilityHotspot) => {
     if (editing) {
+      if (hotspot.facilityId === "LOCATION_ANCHOR") {
+        return authorTab === "anchors";
+      }
+      if (authorTab === "anchors" && hideOtherIcons) {
+        return false;
+      }
       return true;
     }
-    if (sessionConsumedIds.has(hotspot.hotspotId)) {
+    if (
+      sessionConsumedIds.has(hotspot.hotspotId) &&
+      !isBrokenConsumedProbe(hotspot, island, sessionRevealedIds)
+    ) {
       return false;
     }
     if (sessionRevealedIds.has(hotspot.hotspotId)) {
       return true;
+    }
+    if (StoryChainService.hidesHotspotUntilReady(run, playStoryChains, hotspot)) {
+      return false;
     }
     return isHotspotVisibleInPlay(hotspot, island, run, unlockedSet);
   };
@@ -1475,14 +2469,60 @@ export function IslandHubMap({
     hoveredHotspotId != null
       ? displayHotspots.find((h) => h.hotspotId === hoveredHotspotId)
       : undefined;
-  const hoverNameLabel =
-    hoveredChildLabel ??
-    (hoveredHotspot
-      ? hoveredHotspot.purpose?.trim() || hotspotLabel(hoveredHotspot.facilityId)
-      : null);
+  const isReturnHover = Boolean(
+    childMenu?.open &&
+      hoveredHotspotId === childMenu.parentHotspotId &&
+      !hoveredChildLabel,
+  );
+  const centerOverlayLabel = hoveredChildLabel ?? (isReturnHover ? "Return" : null);
+  const hoverNameLabel = hoveredHotspot
+    ? hoveredHotspot.purpose?.trim() || hotspotLabel(hoveredHotspot.facilityId)
+    : null;
+  const showMainIconTooltip = Boolean(
+    hoverNameLabel && hoveredHotspot && !childMenu?.open && !hoveredChildLabel,
+  );
+
+  const authorTabs = (
+    <div className="island-hub-author-tabs" role="tablist">
+      {AUTHOR_TABS.map((tab) => (
+        <button
+          aria-selected={authorTab === tab.id}
+          className={`island-hub-author-tab${authorTab === tab.id ? " is-active" : ""}`}
+          key={tab.id}
+          onClick={() => {
+            setAuthorTab(tab.id);
+            if (tab.id === "list") {
+              setListDetailOpen(false);
+            }
+            if (tab.id === "thread") {
+              setThreadDetailOpen(false);
+              setThreadComposer(null);
+              setConfirmRemoveChainId(null);
+            } else {
+              setThreadComposer(null);
+            }
+            if (tab.id !== "explore") {
+              setRevealPickSourceId(null);
+            }
+            if (tab.id !== "anchors") {
+              setRegionDrawMode(false);
+              setRegionDraftPoints([]);
+              setPendingAnchorPlaceId(null);
+            }
+          }}
+          role="tab"
+          type="button"
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const showListDetail = Boolean(editing && authorTab === "list" && listDetailOpen && activeMarkerId);
 
   const unlockPanel =
-    editing && showUnlockPanel && (paletteId || selectedMeta) ? (
+    showListDetail ? (
       <aside className="island-hub-unlock-panel" onClick={(e) => e.stopPropagation()}>
         <div className="island-hub-unlock-head">
           <p className="island-hub-unlock-title">
@@ -1490,17 +2530,16 @@ export function IslandHubMap({
           </p>
           <button
             className="ghost-btn island-hub-unlock-close"
-            onClick={() => {
-              setShowUnlockPanel(false);
-              setLinkPickMode(false);
-              setRevealPickSourceId(null);
-            }}
+            onClick={() => setListDetailOpen(false)}
             type="button"
           >
-            Close
+            Back to list
           </button>
         </div>
+        {authorTabs}
         <div className="island-hub-unlock-scroll">
+          {activeMarkerId ? (
+          <>
           <div className="island-hub-unlock-section">
             <p className="island-hub-unlock-children-title">Preview</p>
             <div className="island-hub-unlock-preview">
@@ -1528,23 +2567,6 @@ export function IslandHubMap({
               />
             </label>
           </div>
-
-          {activeMarkerId && supportsConsumeOnUse(activeMarkerId) ? (
-            <div className="island-hub-unlock-section">
-              <p className="island-hub-unlock-children-title">One-shot</p>
-              <label className="island-hub-unlock-child-toggle">
-                <input
-                  checked={pendingConsumeOnUse}
-                  onChange={(e) => applyConsumeOnUseToSelectedOrPending(e.target.checked)}
-                  type="checkbox"
-                />
-                Disappears after use
-              </label>
-              <p className="island-hub-unlock-hint">
-                Hide this probe from the map after the player uses it once.
-              </p>
-            </div>
-          ) : null}
 
           {activeMarkerId && supportsRevealAuthoring(activeMarkerId) ? (
             <div className="island-hub-unlock-section">
@@ -1653,6 +2675,20 @@ export function IslandHubMap({
 
           <div className="island-hub-unlock-section">
             <p className="island-hub-unlock-children-title">Unlock</p>
+            {selectedInstanceId
+              ? (() => {
+                  const sources = revealSourcesForHotspot(selectedInstanceId, draft);
+                  if (sources.length === 0) {
+                    return null;
+                  }
+                  return (
+                    <p className="island-hub-unlock-badge">
+                      Unlocked by exploration of{" "}
+                      {sources.map((s) => hotspotAuthorName(s)).join(", ")}
+                    </p>
+                  );
+                })()
+              : null}
             <label className="island-hub-unlock-field">
               Mode
               <select
@@ -1660,9 +2696,6 @@ export function IslandHubMap({
                   const mode = e.target.value as HotspotUnlockMode;
                   const base = pendingUnlock ?? emptyUnlockDraft(activeMarkerId!);
                   const next: HotspotUnlockRule = { mode };
-                  if (mode === "explore_count") {
-                    next.exploreCount = base.exploreCount ?? 1;
-                  }
                   if (mode === "flag") {
                     next.flag = base.flag ?? "";
                   }
@@ -1671,30 +2704,13 @@ export function IslandHubMap({
                   }
                   applyUnlockToSelectedOrPending(next);
                 }}
-                value={pendingUnlock?.mode ?? "always"}
+                value={pendingUnlock?.mode === "explore_count" ? "always" : pendingUnlock?.mode ?? "always"}
               >
                 <option value="always">Unlocked by default</option>
-                <option value="explore_count">After explore count</option>
                 <option value="flag">After flag / discovery</option>
                 <option value="quest">After quest / event</option>
               </select>
             </label>
-            {pendingUnlock?.mode === "explore_count" ? (
-              <label className="island-hub-unlock-field">
-                Explore count
-                <input
-                  min={1}
-                  onChange={(e) =>
-                    applyUnlockToSelectedOrPending({
-                      mode: "explore_count",
-                      exploreCount: Math.max(1, Number(e.target.value) || 1),
-                    })
-                  }
-                  type="number"
-                  value={pendingUnlock.exploreCount ?? 1}
-                />
-              </label>
-            ) : null}
             {pendingUnlock?.mode === "flag" ? (
               <label className="island-hub-unlock-field">
                 Flag id
@@ -2211,9 +3227,6 @@ export function IslandHubMap({
                                   onChange={(e) => {
                                     const mode = e.target.value as HotspotUnlockMode;
                                     const next: HotspotUnlockRule = { mode };
-                                    if (mode === "explore_count") {
-                                      next.exploreCount = unlock.exploreCount ?? 1;
-                                    }
                                     if (mode === "flag") {
                                       next.flag = unlock.flag ?? "";
                                     }
@@ -2222,32 +3235,13 @@ export function IslandHubMap({
                                     }
                                     patchChildOverride(slot.childId, { unlock: next });
                                   }}
-                                  value={unlock.mode}
+                                  value={unlock.mode === "explore_count" ? "always" : unlock.mode}
                                 >
                                   <option value="always">Unlocked by default</option>
-                                  <option value="explore_count">After explore count</option>
                                   <option value="flag">After flag / discovery</option>
                                   <option value="quest">After quest / event</option>
                                 </select>
                               </label>
-                              {unlock.mode === "explore_count" ? (
-                                <label className="island-hub-unlock-field">
-                                  Explore count
-                                  <input
-                                    min={1}
-                                    onChange={(e) =>
-                                      patchChildOverride(slot.childId, {
-                                        unlock: {
-                                          mode: "explore_count",
-                                          exploreCount: Math.max(1, Number(e.target.value) || 1),
-                                        },
-                                      })
-                                    }
-                                    type="number"
-                                    value={unlock.exploreCount ?? 1}
-                                  />
-                                </label>
-                              ) : null}
                               {unlock.mode === "flag" ? (
                                 <label className="island-hub-unlock-field">
                                   Flag id
@@ -2297,6 +3291,12 @@ export function IslandHubMap({
               ? "Edits apply to the selected placement. Save positions to persist scenes, stages, and links."
               : "Click the map to place with these settings (multiple copies allowed)."}
           </p>
+          </>
+          ) : (
+            <p className="island-hub-unlock-hint">
+              Select an icon from the list or map to edit purpose, unlock, scene, stages, and notes.
+            </p>
+          )}
         </div>
       </aside>
     ) : null;
@@ -2331,12 +3331,20 @@ export function IslandHubMap({
       </aside>
     ) : null;
 
+  const playStoryChains = useMemo(
+    () =>
+      mapAssetId
+        ? getMapLayoutStoryChains(island, mapAssetId).map((chain) =>
+            StoryChainService.ensureSeaKingTurnIn(chain),
+          )
+        : [],
+    [island, mapAssetId],
+  );
+
   const storyBadgeByHotspot = useMemo(() => {
     const source = editing
       ? draftStoryChains
-      : mapAssetId
-        ? getMapLayoutStoryChains(island, mapAssetId)
-        : [];
+      : playStoryChains;
     const map = new Map<string, number>();
     for (const chain of source) {
       for (const node of chain.nodes) {
@@ -2346,54 +3354,275 @@ export function IslandHubMap({
       }
     }
     return map;
-  }, [editing, draftStoryChains, island, mapAssetId]);
+  }, [editing, draftStoryChains, playStoryChains]);
 
   const placedNodes = activeChain?.nodes.filter((n) => n.placedHotspotId) ?? [];
+  const listHotspots = (
+    listKindFilter === "all"
+      ? draft
+      : draft.filter((h) => hotspotListKind(h.facilityId) === listKindFilter)
+  ).filter((h) => h.facilityId !== "LOCATION_ANCHOR");
+  const anchorHotspots = draft.filter((h) => h.facilityId === "LOCATION_ANCHOR");
+  const exploreHotspots = draft.filter((h) => supportsRevealAuthoring(h.facilityId));
+  const chainedHotspotIds = new Set<string>();
+  for (const chain of draftStoryChains) {
+    for (const node of chain.nodes) {
+      if (node.placedHotspotId) {
+        chainedHotspotIds.add(node.placedHotspotId);
+      }
+    }
+  }
+  const unboundBeginHotspots = draft.filter(
+    (h) => isThreadBeginMarker(h.facilityId) && !chainedHotspotIds.has(h.hotspotId),
+  );
+  const showThreadDetail = Boolean(authorTab === "thread" && threadDetailOpen && activeChain);
+  const workshopBeats = activeChain
+    ? activeChain.nodes.filter((n) => n.kind !== "start" && n.kind !== "end")
+    : [];
+  const showWorkshop = Boolean(threadComposer === "workshop" && activeChain && workshopBeats.length > 0);
+  const workshopNode =
+    workshopBeats[Math.min(workshopIndex, Math.max(0, workshopBeats.length - 1))] ?? null;
+  const editorBeatPlan = activeChain ? resolvedBeatPlan(activeChain.start) : [];
 
   const storyTray =
-    editing ? (
-      <aside className="island-hub-story-tray" aria-label="Story chain unplaced tray">
-        <p className="island-hub-unlock-children-title">Story chain</p>
-        <div className="island-hub-unlock-row">
-          <select
-            onChange={(e) => setActiveChainId(e.target.value || null)}
-            value={activeChain?.id ?? ""}
-          >
-            <option value="">— none —</option>
-            {draftStoryChains.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <input
-            onChange={(e) => setNewChainName(e.target.value)}
-            placeholder="Chain name"
-            type="text"
-            value={newChainName}
-          />
-          <button className="ghost-btn" onClick={createChain} type="button">
-            + Chain
-          </button>
+    editing && authorTab === "thread" && !threadComposer ? (
+      <aside className="island-hub-unlock-panel" aria-label="Story thread" onClick={(e) => e.stopPropagation()}>
+        <div className="island-hub-unlock-head">
+          <p className="island-hub-unlock-title">Thread</p>
         </div>
-        {activeChain ? (
+        {authorTabs}
+        <div className="island-hub-unlock-scroll">
+        {false && showThreadDetail && activeChain ? (
           <>
-            <div className="island-hub-unlock-row wrap">
-              <button className="ghost-btn" onClick={() => setShowChainDetails((v) => !v)} type="button">
-                {showChainDetails ? "Hide Start/End fields" : "Start/End fields"}
+            <div className="island-hub-story-cta">
+              <button className="run-btn run-btn-accent" onClick={generateActiveChain} type="button">
+                Generate story
               </button>
-              <button className="ghost-btn" onClick={generateActiveChain} type="button">
-                Generate
+              <button className="ghost-btn" onClick={resetGeneratedChain} type="button">
+                Reset
               </button>
               <button className="ghost-btn" onClick={addBeatToActiveChain} type="button">
                 + Beat
               </button>
+              <button className="ghost-btn" onClick={() => setShowChainDetails((v) => !v)} type="button">
+                {showChainDetails ? "Hide fields" : "Edit fields"}
+              </button>
             </div>
+            <p className="island-hub-unlock-hint">
+              Place Start and End, then this panel walks each beat: 3 choices or your own prompt.
+              Market / Training Grounds / other hubs get the beat under that main icon. Pins and
+              named regions are used when no hub fits.
+            </p>
+            {activeChain.nodes.length > 2 || activeChain.generationFingerprint ? (
+              <ol className="island-hub-story-loop">
+                {activeChain.nodes.map((node) => (
+                  <li key={node.id}>
+                    #{node.order} {node.label || node.kind}
+                    {node.placedHotspotId ? " · placed" : " · unplaced"}
+                    {storyChainNodeOriginLabel(node.editState)
+                      ? ` · ${storyChainNodeOriginLabel(node.editState)}`
+                      : ""}
+                    {node.notes ? ` — ${node.notes}` : ""}
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            <label className="island-hub-unlock-field">
+              <ThreadFieldLabel
+                fieldKey="name"
+                onToggle={setThreadHelpKey}
+                openKey={threadHelpKey}
+                text="Name"
+              />
+              <input
+                onChange={(e) => patchActiveChain({ name: e.target.value })}
+                type="text"
+                value={activeChain.name}
+              />
+            </label>
+            {showWorkshop && workshopNode ? (
+              <div className="island-hub-workshop">
+                <p className="island-hub-unlock-children-title">
+                  Beat {Math.min(workshopIndex, workshopBeats.length - 1) + 1} of {workshopBeats.length}
+                </p>
+                <p className="island-hub-workshop-kicker">
+                  {workshopNode.label || workshopNode.kind}
+                  {workshopPlaceName(workshopNode)
+                    ? ` · ${workshopPlaceName(workshopNode)}`
+                    : ""}
+                  {workshopNode.placedHotspotId ? " · on map" : ""}
+                </p>
+                {workshopNode.kind === "battle" || workshopNode.kind === "boss" ? (
+                  <>
+                    <p className="island-hub-unlock-hint">
+                      {workshopNode.questDraft?.battleSuggestion ||
+                        "A fight is suggested here. Tune the pack, then keep or change it."}
+                    </p>
+                    <label className="island-hub-unlock-field">
+                      Enemies
+                      <input
+                        max={8}
+                        min={1}
+                        onChange={(e) =>
+                          replaceActiveChain(
+                            StoryChainService.applyBattleDraft(activeChain, workshopNode.id, {
+                              enemyCount: Number(e.target.value),
+                            }),
+                          )
+                        }
+                        type="number"
+                        value={workshopNode.questDraft?.enemyCount ?? 3}
+                      />
+                    </label>
+                    <label className="island-hub-unlock-field">
+                      Strength
+                      <select
+                        onChange={(e) =>
+                          replaceActiveChain(
+                            StoryChainService.applyBattleDraft(activeChain, workshopNode.id, {
+                              enemyStrength: e.target.value as "weak" | "normal" | "strong",
+                            }),
+                          )
+                        }
+                        value={workshopNode.questDraft?.enemyStrength ?? "normal"}
+                      >
+                        <option value="weak">Weak</option>
+                        <option value="normal">Normal</option>
+                        <option value="strong">Strong</option>
+                      </select>
+                    </label>
+                    <label className="island-hub-unlock-field">
+                      Type
+                      <select
+                        onChange={(e) =>
+                          replaceActiveChain(
+                            StoryChainService.applyBattleDraft(activeChain, workshopNode.id, {
+                              enemyRole: e.target.value as "normal" | "boss",
+                            }),
+                          )
+                        }
+                        value={workshopNode.questDraft?.enemyRole ?? "normal"}
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="boss">Boss</option>
+                      </select>
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <p className="island-hub-unlock-hint">
+                      Pick one of three beats, or write your own prompt — it gets folded into the
+                      premise.
+                    </p>
+                    <div className="island-hub-workshop-options">
+                      {(
+                        workshopNode.questDraft?.options ??
+                        proposeBeatOptions(
+                          workshopNode.kind,
+                          activeChain.start,
+                          workshopPlaceName(workshopNode),
+                        )
+                      ).map((option, index) => (
+                        <button
+                          className={`island-hub-workshop-option${
+                            workshopNode.questDraft?.chosenIndex === index ? " is-picked" : ""
+                          }`}
+                          key={`${workshopNode.id}-${index}`}
+                          onClick={() => {
+                            replaceActiveChain(
+                              StoryChainService.applyBeatChoice(
+                                activeChain,
+                                workshopNode.id,
+                                { index },
+                                workshopPlaceName(workshopNode),
+                              ),
+                            );
+                            if (workshopIndex < workshopBeats.length - 1) {
+                              setWorkshopIndex((i) => i + 1);
+                              setCustomPromptDraft("");
+                            }
+                          }}
+                          type="button"
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="island-hub-unlock-field">
+                      Your prompt
+                      <textarea
+                        onChange={(e) => setCustomPromptDraft(e.target.value)}
+                        placeholder="Write what you want — it will be adapted to this story."
+                        rows={2}
+                        value={customPromptDraft}
+                      />
+                    </label>
+                    <button
+                      className="ghost-btn"
+                      onClick={() => {
+                        if (!customPromptDraft.trim()) {
+                          return;
+                        }
+                        replaceActiveChain(
+                          StoryChainService.applyBeatChoice(
+                            activeChain,
+                            workshopNode.id,
+                            { customPrompt: customPromptDraft },
+                            workshopPlaceName(workshopNode),
+                          ),
+                        );
+                      }}
+                      type="button"
+                    >
+                      Use my prompt
+                    </button>
+                  </>
+                )}
+                <div className="island-hub-workshop-nav">
+                  <button
+                    className="ghost-btn"
+                    disabled={workshopIndex <= 0}
+                    onClick={() => {
+                      setWorkshopIndex((i) => Math.max(0, i - 1));
+                      setCustomPromptDraft("");
+                    }}
+                    type="button"
+                  >
+                    Prev
+                  </button>
+                  <button
+                    className="ghost-btn"
+                    disabled={workshopIndex >= workshopBeats.length - 1}
+                    onClick={() => {
+                      setWorkshopIndex((i) => Math.min(workshopBeats.length - 1, i + 1));
+                      setCustomPromptDraft("");
+                    }}
+                    type="button"
+                  >
+                    Next
+                  </button>
+                  {!workshopNode.placedHotspotId ? (
+                    <button
+                      className="run-btn"
+                      onClick={() => placeWorkshopNode(workshopNode.id)}
+                      type="button"
+                    >
+                      Place on map
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             {showChainDetails ? (
               <div className="island-hub-story-fields">
                 <p className="island-hub-unlock-children-title">Start</p>
                 <label className="island-hub-unlock-field">
-                  Premise
+                  <ThreadFieldLabel
+                    fieldKey="premise"
+                    onToggle={setThreadHelpKey}
+                    openKey={threadHelpKey}
+                    text="Premise"
+                  />
                   <textarea
                     onChange={(e) =>
                       patchActiveChain({ start: { ...activeChain.start, premise: e.target.value } })
@@ -2404,7 +3633,12 @@ export function IslandHubMap({
                   />
                 </label>
                 <label className="island-hub-unlock-field">
-                  Plot twist (optional)
+                  <ThreadFieldLabel
+                    fieldKey="twist"
+                    onToggle={setThreadHelpKey}
+                    openKey={threadHelpKey}
+                    text="Plot twist (optional)"
+                  />
                   <input
                     onChange={(e) =>
                       patchActiveChain({ start: { ...activeChain.start, twist: e.target.value } })
@@ -2415,7 +3649,12 @@ export function IslandHubMap({
                 </label>
                 <div className="island-hub-unlock-row wrap">
                   <label className="island-hub-unlock-field">
-                    Dialogue beats
+                    <ThreadFieldLabel
+                      fieldKey="dialogue"
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text="Dialogue beats"
+                    />
                     <input
                       min={0}
                       max={8}
@@ -2429,7 +3668,12 @@ export function IslandHubMap({
                     />
                   </label>
                   <label className="island-hub-unlock-field">
-                    Battles
+                    <ThreadFieldLabel
+                      fieldKey="battles"
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text="Battles"
+                    />
                     <input
                       min={0}
                       max={8}
@@ -2452,10 +3696,20 @@ export function IslandHubMap({
                       }
                       type="checkbox"
                     />
-                    Boss battle
+                    <ThreadFieldLabel
+                      fieldKey="boss"
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text="Boss battle"
+                    />
                   </label>
                   <label className="island-hub-unlock-field">
-                    Events
+                    <ThreadFieldLabel
+                      fieldKey="events"
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text="Events"
+                    />
                     <input
                       min={0}
                       max={8}
@@ -2469,7 +3723,12 @@ export function IslandHubMap({
                     />
                   </label>
                   <label className="island-hub-unlock-field">
-                    Investigations
+                    <ThreadFieldLabel
+                      fieldKey="investigate"
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text="Investigations"
+                    />
                     <input
                       min={0}
                       max={8}
@@ -2488,7 +3747,12 @@ export function IslandHubMap({
                 </div>
                 <div className="island-hub-unlock-row wrap">
                   <label className="island-hub-unlock-field">
-                    Tone
+                    <ThreadFieldLabel
+                      fieldKey="tone"
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text="Tone"
+                    />
                     <select
                       onChange={(e) =>
                         patchActiveChain({
@@ -2506,7 +3770,12 @@ export function IslandHubMap({
                     </select>
                   </label>
                   <label className="island-hub-unlock-field">
-                    Importance
+                    <ThreadFieldLabel
+                      fieldKey="importance"
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text="Importance"
+                    />
                     <input
                       max={5}
                       min={1}
@@ -2521,7 +3790,12 @@ export function IslandHubMap({
                   </label>
                 </div>
                 <label className="island-hub-unlock-field">
-                  Restrictions
+                  <ThreadFieldLabel
+                    fieldKey="restrictions"
+                    onToggle={setThreadHelpKey}
+                    openKey={threadHelpKey}
+                    text="Restrictions"
+                  />
                   <input
                     onChange={(e) =>
                       patchActiveChain({
@@ -2533,7 +3807,12 @@ export function IslandHubMap({
                   />
                 </label>
                 <label className="island-hub-unlock-field">
-                  Must happen
+                  <ThreadFieldLabel
+                    fieldKey="mustHappen"
+                    onToggle={setThreadHelpKey}
+                    openKey={threadHelpKey}
+                    text="Must happen"
+                  />
                   <input
                     onChange={(e) =>
                       patchActiveChain({
@@ -2545,7 +3824,12 @@ export function IslandHubMap({
                   />
                 </label>
                 <label className="island-hub-unlock-field">
-                  Must not happen
+                  <ThreadFieldLabel
+                    fieldKey="mustNot"
+                    onToggle={setThreadHelpKey}
+                    openKey={threadHelpKey}
+                    text="Must not happen"
+                  />
                   <input
                     onChange={(e) =>
                       patchActiveChain({
@@ -2558,7 +3842,12 @@ export function IslandHubMap({
                 </label>
                 <p className="island-hub-unlock-children-title">End</p>
                 <label className="island-hub-unlock-field">
-                  Resolution
+                  <ThreadFieldLabel
+                    fieldKey="resolution"
+                    onToggle={setThreadHelpKey}
+                    openKey={threadHelpKey}
+                    text="Resolution"
+                  />
                   <textarea
                     onChange={(e) =>
                       patchActiveChain({ end: { ...activeChain.end, resolution: e.target.value } })
@@ -2568,7 +3857,12 @@ export function IslandHubMap({
                   />
                 </label>
                 <label className="island-hub-unlock-field">
-                  End twist
+                  <ThreadFieldLabel
+                    fieldKey="endTwist"
+                    onToggle={setThreadHelpKey}
+                    openKey={threadHelpKey}
+                    text="End twist"
+                  />
                   <input
                     onChange={(e) =>
                       patchActiveChain({ end: { ...activeChain.end, twist: e.target.value } })
@@ -2578,7 +3872,12 @@ export function IslandHubMap({
                   />
                 </label>
                 <label className="island-hub-unlock-field">
-                  Possible conclusions (one per line)
+                  <ThreadFieldLabel
+                    fieldKey="conclusions"
+                    onToggle={setThreadHelpKey}
+                    openKey={threadHelpKey}
+                    text="Possible conclusions (one per line)"
+                  />
                   <textarea
                     onChange={(e) =>
                       patchActiveChain({
@@ -2595,67 +3894,99 @@ export function IslandHubMap({
                     value={(activeChain.end.possibleConclusions ?? []).join("\n")}
                   />
                 </label>
-                <p className="island-hub-unlock-hint">Unlocks</p>
+                <p className="island-hub-unlock-children-title">Unlocks</p>
                 <div className="island-hub-unlock-row wrap">
-                  <input
-                    onChange={(e) =>
-                      patchActiveChain({
-                        end: {
-                          ...activeChain.end,
-                          unlocks: { ...activeChain.end.unlocks, hotspotId: e.target.value || undefined },
-                        },
-                      })
-                    }
-                    placeholder="Icon / hotspot id"
-                    type="text"
-                    value={activeChain.end.unlocks?.hotspotId ?? ""}
-                  />
-                  <input
-                    onChange={(e) =>
-                      patchActiveChain({
-                        end: {
-                          ...activeChain.end,
-                          unlocks: { ...activeChain.end.unlocks, questId: e.target.value || undefined },
-                        },
-                      })
-                    }
-                    placeholder="Quest id"
-                    type="text"
-                    value={activeChain.end.unlocks?.questId ?? ""}
-                  />
-                  <input
-                    onChange={(e) =>
-                      patchActiveChain({
-                        end: {
-                          ...activeChain.end,
-                          unlocks: { ...activeChain.end.unlocks, npcId: e.target.value || undefined },
-                        },
-                      })
-                    }
-                    placeholder="NPC id"
-                    type="text"
-                    value={activeChain.end.unlocks?.npcId ?? ""}
-                  />
-                  <select
-                    onChange={(e) =>
-                      patchActiveChain({
-                        end: {
-                          ...activeChain.end,
-                          unlocks: { ...activeChain.end.unlocks, islandId: e.target.value || undefined },
-                        },
-                      })
-                    }
-                    value={activeChain.end.unlocks?.islandId ?? ""}
-                  >
-                    <option value="">Unlock island —</option>
-                    {(run?.islands ?? []).map((isle) => (
-                      <option key={isle.id} value={isle.id}>
-                        {isle.name}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="island-hub-unlock-field">
+                    <ThreadFieldLabel
+                      fieldKey="unlockHotspot"
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text="Unlock icon"
+                    />
+                    <input
+                      onChange={(e) =>
+                        patchActiveChain({
+                          end: {
+                            ...activeChain.end,
+                            unlocks: { ...activeChain.end.unlocks, hotspotId: e.target.value || undefined },
+                          },
+                        })
+                      }
+                      placeholder="Icon / hotspot id"
+                      type="text"
+                      value={activeChain.end.unlocks?.hotspotId ?? ""}
+                    />
+                  </label>
+                  <label className="island-hub-unlock-field">
+                    <ThreadFieldLabel
+                      fieldKey="unlockQuest"
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text="Quest id"
+                    />
+                    <input
+                      onChange={(e) =>
+                        patchActiveChain({
+                          end: {
+                            ...activeChain.end,
+                            unlocks: { ...activeChain.end.unlocks, questId: e.target.value || undefined },
+                          },
+                        })
+                      }
+                      placeholder="Quest id"
+                      type="text"
+                      value={activeChain.end.unlocks?.questId ?? ""}
+                    />
+                  </label>
+                  <label className="island-hub-unlock-field">
+                    <ThreadFieldLabel
+                      fieldKey="unlockNpc"
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text="NPC"
+                    />
+                    <input
+                      onChange={(e) =>
+                        patchActiveChain({
+                          end: {
+                            ...activeChain.end,
+                            unlocks: { ...activeChain.end.unlocks, npcId: e.target.value || undefined },
+                          },
+                        })
+                      }
+                      placeholder="NPC id"
+                      type="text"
+                      value={activeChain.end.unlocks?.npcId ?? ""}
+                    />
+                  </label>
+                  <label className="island-hub-unlock-field">
+                    <ThreadFieldLabel
+                      fieldKey="unlockIsland"
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text="Unlock island"
+                    />
+                    <select
+                      onChange={(e) =>
+                        patchActiveChain({
+                          end: {
+                            ...activeChain.end,
+                            unlocks: { ...activeChain.end.unlocks, islandId: e.target.value || undefined },
+                          },
+                        })
+                      }
+                      value={activeChain.end.unlocks?.islandId ?? ""}
+                    >
+                      <option value="">This island —</option>
+                      {(run?.islands ?? []).map((isle) => (
+                        <option key={isle.id} value={isle.id}>
+                          {isle.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
-                <p className="island-hub-unlock-hint">End effects (apply when End fires)</p>
+                <p className="island-hub-unlock-children-title">End effects (when End fires)</p>
                 {(
                   [
                     ["world", "World"],
@@ -2667,7 +3998,12 @@ export function IslandHubMap({
                   ] as const
                 ).map(([key, label]) => (
                   <label className="island-hub-unlock-field" key={key}>
-                    {label}
+                    <ThreadFieldLabel
+                      fieldKey={key}
+                      onToggle={setThreadHelpKey}
+                      openKey={threadHelpKey}
+                      text={label}
+                    />
                     <input
                       onChange={(e) =>
                         patchActiveChain({
@@ -2686,12 +4022,13 @@ export function IslandHubMap({
             ) : null}
             {nestPickNodeId ? (
               <p className="island-hub-unlock-hint">
-                Click a map icon to nest this node
+                Click the map to place a new icon, or click an existing icon to nest
                 {nestChildId ? ` (suboption ${nestChildId})` : ""}. Esc cancels.
               </p>
             ) : (
               <p className="island-hub-unlock-hint">
-                Unplaced tray — drag onto a map icon, or Nest then click. Suboption = Harbor→Crew etc.
+                Generated fiches (template, not live AI). Nest a row, then click the map — they stay in
+                this queue until you place them.
               </p>
             )}
             <ul className="island-hub-story-unplaced">
@@ -2706,8 +4043,11 @@ export function IslandHubMap({
                 >
                   <span>
                     #{node.order} {node.label || node.kind}
-                    {node.editState ? ` · ${node.editState}` : ""}
+                    {storyChainNodeOriginLabel(node.editState)
+                      ? ` · ${storyChainNodeOriginLabel(node.editState)}`
+                      : ""}
                     {node.suggestedHotspotId ? " · match" : ""}
+                    {node.notes ? ` — ${node.notes}` : ""}
                   </span>
                   <select
                     onChange={(e) => {
@@ -2778,7 +4118,12 @@ export function IslandHubMap({
             </ul>
             <div className="island-hub-unlock-row">
               <label className="island-hub-unlock-field">
-                Nest as suboption
+                <ThreadFieldLabel
+                  fieldKey="nestChild"
+                  onToggle={setThreadHelpKey}
+                  openKey={threadHelpKey}
+                  text="Nest as suboption"
+                />
                 <select onChange={(e) => setNestChildId(e.target.value)} value={nestChildId}>
                   <option value="">Map icon click</option>
                   {Array.from(
@@ -2838,83 +4183,1111 @@ export function IslandHubMap({
             ) : null}
           </>
         ) : (
-          <p className="island-hub-unlock-hint">Create a chain to author Start / End / beats.</p>
+          <>
+            <button className="run-btn run-btn-accent island-hub-thread-create" onClick={createChain} type="button">
+              + Thread
+            </button>
+            <p className="island-hub-unlock-hint">
+              Open a thread to edit it, or remove one after confirm.
+            </p>
+            {draftStoryChains.length === 0 && unboundBeginHotspots.length === 0 ? (
+              <p className="island-hub-unlock-hint">
+                No threads on this map yet. Use + Thread, or place Quest / Event / Talk.
+              </p>
+            ) : (
+              <ul className="island-hub-icon-list">
+                {draftStoryChains.map((chain) => {
+                  const startFacility = storyChainStartFacility(chain, draft);
+                  const startPlaced = storyChainStartIsPlaced(chain);
+                  const endPlaced = storyChainEndIsPlaced(chain);
+                  const unplaced = unplacedStoryChainQueue(chain).length;
+                  const selected = Boolean(
+                    selectedInstanceId &&
+                      chain.nodes.some((n) => n.placedHotspotId === selectedInstanceId),
+                  );
+                  const confirming = confirmRemoveChainId === chain.id;
+                  return (
+                    <li className="island-hub-thread-list-item" key={chain.id}>
+                      <div className="island-hub-thread-list-main">
+                        <button
+                          className={`island-hub-icon-list-row${selected ? " is-selected" : ""}`}
+                          onClick={() => openThreadDetail(chain.id)}
+                          type="button"
+                        >
+                          <img alt="" draggable={false} src={hotspotIconSrc(startFacility ?? "QUEST")} />
+                          <span>
+                            <strong>{chain.name}</strong>
+                            <span className="island-hub-unlock-preview-meta">
+                              {threadTypeLabel(startFacility)} · start{" "}
+                              {startPlaced ? "placed" : "unplaced"} · end{" "}
+                              {endPlaced ? "placed" : "unplaced"} · {unplaced} unplaced fiche
+                              {unplaced === 1 ? "" : "s"}
+                            </span>
+                          </span>
+                        </button>
+                        {onResetStoryChain ? (
+                          <button
+                            className="ghost-btn"
+                            onClick={() => {
+                              onResetStoryChain(chain.id);
+                              setStatus(`Reset “${chain.name}” — start it again from the quest icon.`);
+                            }}
+                            type="button"
+                          >
+                            Reset
+                          </button>
+                        ) : null}
+                        <button
+                          className="ghost-btn"
+                          onClick={() => setConfirmRemoveChainId(chain.id)}
+                          type="button"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      {confirming ? (
+                        <div className="island-hub-thread-confirm">
+                          <p>Remove “{chain.name}”? This cannot be undone.</p>
+                          <div className="island-hub-unlock-row">
+                            <button className="run-btn" onClick={() => removeChain(chain.id)} type="button">
+                              Yes, remove
+                            </button>
+                            <button
+                              className="ghost-btn"
+                              onClick={() => setConfirmRemoveChainId(null)}
+                              type="button"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+                {unboundBeginHotspots.map((h) => (
+                  <li key={h.hotspotId}>
+                    <button
+                      className={`island-hub-icon-list-row${
+                        selectedInstanceId === h.hotspotId ? " is-selected" : ""
+                      }`}
+                      onClick={() => adoptBeginHotspotAsThread(h)}
+                      type="button"
+                    >
+                      <img alt="" draggable={false} src={hotspotIconSrc(h.facilityId)} />
+                      <span>
+                        <strong>{h.purpose?.trim() || hotspotLabel(h.facilityId)}</strong>
+                        <span className="island-hub-unlock-preview-meta">
+                          {threadTypeLabel(h.facilityId)} · no chain yet
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
-        <p className="island-hub-unlock-children-title">Location anchors</p>
-        <div className="island-hub-unlock-row">
-          <input
-            onChange={(e) => setNewAnchorText(e.target.value)}
-            placeholder="Place description"
-            type="text"
-            value={newAnchorText}
-          />
-          <button className="ghost-btn" onClick={addAnchor} type="button">
-            + Anchor
-          </button>
         </div>
-        {draftAnchors.length === 0 ? (
-          <p className="island-hub-unlock-hint">
-            Anchors describe places for later AI matching (Never / Suggest / Auto-use).
-          </p>
-        ) : (
-          <ul className="island-hub-story-unplaced">
-            {draftAnchors.map((anchor) => (
-              <li key={anchor.id}>
-                <span>{anchor.description || "Untitled"}</span>
+      </aside>
+    ) : null;
+
+  const threadComposerPanel =
+    editing && authorTab === "thread" && threadComposer && activeChain ? (
+      <aside
+        aria-label="Thread composer"
+        className="island-hub-thread-composer"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="island-hub-unlock-head">
+          <p className="island-hub-unlock-title">{activeChain.name || "Thread"}</p>
+          <div className="island-hub-unlock-row">
+            {onResetStoryChain ? (
+              <button
+                className="ghost-btn"
+                onClick={() => {
+                  onResetStoryChain(activeChain.id);
+                  setStatus(`Reset “${activeChain.name}” — start it again from the quest icon.`);
+                }}
+                type="button"
+              >
+                Reset
+              </button>
+            ) : null}
+            <button
+              className="ghost-btn island-hub-unlock-close"
+              onClick={() => {
+                setThreadComposer(null);
+                setConfirmRemoveChainId(null);
+              }}
+              type="button"
+            >
+              Back to threads
+            </button>
+          </div>
+        </div>
+        {authorTabs}
+        <div className="island-hub-unlock-scroll island-hub-thread-composer-body">
+          {threadComposer === "setup" ? (
+            <>
+              <p className="island-hub-unlock-hint">
+                The premise is the opening at the quest icon — often nested under Market. Then set
+                the order of what happens next. Generate walks those beats one by one.
+              </p>
+              <label className="island-hub-unlock-field">
+                Name
                 <input
-                  onChange={(e) =>
-                    patchAnchor(anchor.id, {
-                      tags: e.target.value
-                        .split(",")
-                        .map((t) => t.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                  placeholder="tags"
+                  onChange={(e) => patchActiveChain({ name: e.target.value })}
+                  placeholder="Thread name"
                   type="text"
-                  value={anchor.tags.join(", ")}
+                  value={activeChain.name}
                 />
+              </label>
+              <label className="island-hub-unlock-field">
+                Quest icon lives under
                 <select
                   onChange={(e) =>
-                    patchAnchor(anchor.id, {
-                      aiPermission: e.target.value as LocationAnchorAiPermission,
+                    patchActiveChain({
+                      start: {
+                        ...activeChain.start,
+                        startHub: (e.target.value || undefined) as StoryChainStartHub | undefined,
+                      },
                     })
                   }
-                  value={anchor.aiPermission}
+                  value={activeChain.start.startHub ?? ""}
                 >
-                  <option value="never">Never</option>
-                  <option value="suggest">Suggest</option>
-                  <option value="auto">Auto-use</option>
+                  <option value="">Place later</option>
+                  {STORY_CHAIN_START_HUBS.map((hub) => (
+                    <option key={hub.value} value={hub.value}>
+                      {hub.label}
+                    </option>
+                  ))}
                 </select>
-                <button className="ghost-btn" onClick={() => removeAnchor(anchor.id)} type="button">
-                  ×
+              </label>
+              <label className="island-hub-unlock-field">
+                How it starts
+                <textarea
+                  onChange={(e) =>
+                    patchActiveChain({ start: { ...activeChain.start, premise: e.target.value } })
+                  }
+                  placeholder="The player taps the quest icon. What do they hear first? e.g. the merchant is out of fish."
+                  rows={3}
+                  value={activeChain.start.premise ?? ""}
+                />
+              </label>
+              <label className="island-hub-unlock-field">
+                How it ends
+                <textarea
+                  onChange={(e) =>
+                    patchActiveChain({ end: { ...activeChain.end, resolution: e.target.value } })
+                  }
+                  placeholder="How the quest wraps. e.g. they bring the sea king back to the merchant."
+                  rows={2}
+                  value={activeChain.end.resolution ?? ""}
+                />
+              </label>
+              <p className="island-hub-unlock-children-title">What happens next — in order</p>
+              <p className="island-hub-unlock-hint">
+                Dialogue, event, battle, investigation. Example: Dialogue (not enough fish) → Event
+                (fishing choices) → Battle (sea king).
+              </p>
+              {editorBeatPlan.length === 0 ? (
+                <p className="island-hub-unlock-hint">No beats yet. Add the first one below.</p>
+              ) : (
+                <ol className="island-hub-beat-plan">
+                  {editorBeatPlan.map((item, index) => (
+                    <li className="island-hub-beat-plan-row" key={item.id}>
+                      <span className="island-hub-beat-plan-index">{index + 1}</span>
+                      <strong>
+                        {STORY_BEAT_PLAN_KIND_OPTIONS.find((opt) => opt.value === item.kind)?.label ??
+                          item.kind}
+                      </strong>
+                      <input
+                        onChange={(e) =>
+                          patchBeatPlan(
+                            editorBeatPlan.map((row) =>
+                              row.id === item.id ? { ...row, note: e.target.value } : row,
+                            ),
+                          )
+                        }
+                        placeholder="What this beat is about…"
+                        type="text"
+                        value={item.note ?? ""}
+                      />
+                      <button
+                        className="ghost-btn"
+                        disabled={index === 0}
+                        onClick={() => {
+                          const next = editorBeatPlan.slice();
+                          const swap = next[index - 1];
+                          next[index - 1] = next[index];
+                          next[index] = swap;
+                          patchBeatPlan(next);
+                        }}
+                        type="button"
+                      >
+                        Up
+                      </button>
+                      <button
+                        className="ghost-btn"
+                        disabled={index === editorBeatPlan.length - 1}
+                        onClick={() => {
+                          const next = editorBeatPlan.slice();
+                          const swap = next[index + 1];
+                          next[index + 1] = next[index];
+                          next[index] = swap;
+                          patchBeatPlan(next);
+                        }}
+                        type="button"
+                      >
+                        Down
+                      </button>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => patchBeatPlan(editorBeatPlan.filter((row) => row.id !== item.id))}
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              <div className="island-hub-beat-plan-add">
+                {STORY_BEAT_PLAN_KIND_OPTIONS.map((opt) => (
+                  <button
+                    className="ghost-btn"
+                    disabled={editorBeatPlan.length >= 16}
+                    key={opt.value}
+                    onClick={() =>
+                      patchBeatPlan([...editorBeatPlan, createBeatPlanItem(opt.value as StoryBeatPlanKind)])
+                    }
+                    type="button"
+                  >
+                    + {opt.label}
+                  </button>
+                ))}
+              </div>
+              <label className="island-hub-unlock-field">
+                Tone
+                <select
+                  onChange={(e) =>
+                    patchActiveChain({
+                      start: { ...activeChain.start, tone: e.target.value || undefined },
+                    })
+                  }
+                  value={activeChain.start.tone ?? ""}
+                >
+                  <option value="">Any</option>
+                  {STORY_CHAIN_TONES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="island-hub-unlock-field">
+                Plot twist (optional)
+                <input
+                  onChange={(e) =>
+                    patchActiveChain({ start: { ...activeChain.start, twist: e.target.value } })
+                  }
+                  type="text"
+                  value={activeChain.start.twist ?? ""}
+                />
+              </label>
+              <div className="island-hub-story-cta">
+                <button className="run-btn run-btn-accent island-hub-thread-create" onClick={generateActiveChain} type="button">
+                  Generate story
                 </button>
-              </li>
-            ))}
-          </ul>
-        )}
+                {activeChain.generationFingerprint ? (
+                  <button className="ghost-btn" onClick={() => setThreadComposer("workshop")} type="button">
+                    Continue beats
+                  </button>
+                ) : null}
+              </div>
+            </>
+          ) : showWorkshop && workshopNode ? (
+            <div className="island-hub-workshop">
+              <p className="island-hub-unlock-children-title">
+                Beat {Math.min(workshopIndex, workshopBeats.length - 1) + 1} of {workshopBeats.length}
+              </p>
+              <p className="island-hub-workshop-kicker">
+                {workshopNode.label || workshopNode.kind}
+                {workshopNode.questDraft?.npcName ? ` · ${workshopNode.questDraft.npcName}` : ""}
+                {workshopPlaceName(workshopNode)
+                  ? ` · ${workshopPlaceName(workshopNode)}`
+                  : ""}
+                {workshopNode.placedHotspotId ? " · on map" : ""}
+              </p>
+              {workshopNode.questDraft?.dialogueLines?.length ? (
+                <p className="island-hub-unlock-hint">
+                  {workshopNode.questDraft.dialogueLines.join(" ")}
+                </p>
+              ) : null}
+              {workshopNode.kind === "battle" || workshopNode.kind === "boss" ? (
+                <>
+                  <p className="island-hub-unlock-hint">
+                    {workshopNode.questDraft?.battleSuggestion ||
+                      "A fight is suggested here. Tune the pack, then keep or change it."}
+                  </p>
+                  <label className="island-hub-unlock-field">
+                    Enemies
+                    <input
+                      max={8}
+                      min={1}
+                      onChange={(e) =>
+                        replaceActiveChain(
+                          StoryChainService.applyBattleDraft(activeChain, workshopNode.id, {
+                            enemyCount: Number(e.target.value),
+                          }),
+                        )
+                      }
+                      type="number"
+                      value={workshopNode.questDraft?.enemyCount ?? 3}
+                    />
+                  </label>
+                  <label className="island-hub-unlock-field">
+                    Strength
+                    <select
+                      onChange={(e) =>
+                        replaceActiveChain(
+                          StoryChainService.applyBattleDraft(activeChain, workshopNode.id, {
+                            enemyStrength: e.target.value as "weak" | "normal" | "strong",
+                          }),
+                        )
+                      }
+                      value={workshopNode.questDraft?.enemyStrength ?? "normal"}
+                    >
+                      <option value="weak">Weak</option>
+                      <option value="normal">Normal</option>
+                      <option value="strong">Strong</option>
+                    </select>
+                  </label>
+                  <label className="island-hub-unlock-field">
+                    Type
+                    <select
+                      onChange={(e) =>
+                        replaceActiveChain(
+                          StoryChainService.applyBattleDraft(activeChain, workshopNode.id, {
+                            enemyRole: e.target.value as "normal" | "boss",
+                          }),
+                        )
+                      }
+                      value={workshopNode.questDraft?.enemyRole ?? "normal"}
+                    >
+                      <option value="normal">Normal</option>
+                      <option value="boss">Boss</option>
+                    </select>
+                  </label>
+                </>
+              ) : (
+                <>
+                  <p className="island-hub-unlock-hint">
+                    Pick one of three beats, or write your own prompt — it gets folded into the
+                    premise.
+                  </p>
+                  <div className="island-hub-workshop-options">
+                    {(
+                      workshopNode.questDraft?.options ??
+                      proposeBeatOptions(
+                        workshopNode.kind,
+                        activeChain.start,
+                        workshopPlaceName(workshopNode),
+                      )
+                    ).map((option, index) => (
+                      <button
+                        className={`island-hub-workshop-option${
+                          workshopNode.questDraft?.chosenIndex === index ? " is-picked" : ""
+                        }`}
+                        key={`${workshopNode.id}-${index}`}
+                        onClick={() => {
+                          replaceActiveChain(
+                            StoryChainService.applyBeatChoice(
+                              activeChain,
+                              workshopNode.id,
+                              { index },
+                              workshopPlaceName(workshopNode),
+                            ),
+                          );
+                          if (workshopIndex < workshopBeats.length - 1) {
+                            setWorkshopIndex((i) => i + 1);
+                            setCustomPromptDraft("");
+                          }
+                        }}
+                        type="button"
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="island-hub-unlock-field">
+                    Your prompt
+                    <textarea
+                      onChange={(e) => setCustomPromptDraft(e.target.value)}
+                      placeholder="Write what you want — it will be adapted to this story."
+                      rows={3}
+                      value={customPromptDraft}
+                    />
+                  </label>
+                  <button
+                    className="ghost-btn"
+                    onClick={() => {
+                      if (!customPromptDraft.trim()) {
+                        return;
+                      }
+                      replaceActiveChain(
+                        StoryChainService.applyBeatChoice(
+                          activeChain,
+                          workshopNode.id,
+                          { customPrompt: customPromptDraft },
+                          workshopPlaceName(workshopNode),
+                        ),
+                      );
+                      if (workshopIndex < workshopBeats.length - 1) {
+                        setWorkshopIndex((i) => i + 1);
+                        setCustomPromptDraft("");
+                      }
+                    }}
+                    type="button"
+                  >
+                    Use my prompt
+                  </button>
+                </>
+              )}
+              <div className="island-hub-workshop-nav">
+                <button
+                  className="ghost-btn"
+                  disabled={workshopIndex <= 0}
+                  onClick={() => {
+                    setWorkshopIndex((i) => Math.max(0, i - 1));
+                    setCustomPromptDraft("");
+                  }}
+                  type="button"
+                >
+                  Prev
+                </button>
+                {workshopIndex >= workshopBeats.length - 1 ? (
+                  <button
+                    className="run-btn run-btn-accent"
+                    onClick={() => setThreadComposer(null)}
+                    type="button"
+                  >
+                    Done
+                  </button>
+                ) : (
+                  <button
+                    className="run-btn run-btn-accent"
+                    onClick={() => {
+                      setWorkshopIndex((i) => Math.min(workshopBeats.length - 1, i + 1));
+                      setCustomPromptDraft("");
+                    }}
+                    type="button"
+                  >
+                    Next
+                  </button>
+                )}
+                {!workshopNode.placedHotspotId ? (
+                  <button
+                    className="run-btn"
+                    onClick={() => placeWorkshopNode(workshopNode.id)}
+                    type="button"
+                  >
+                    Place on map
+                  </button>
+                ) : null}
+                <button className="ghost-btn" onClick={() => setThreadComposer("setup")} type="button">
+                  Edit basics
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="island-hub-unlock-hint">
+                No dialogue, event, battle or investigation beats yet. Add counts in the basics and
+                generate again.
+              </p>
+              <button className="run-btn run-btn-accent" onClick={() => setThreadComposer("setup")} type="button">
+                Edit basics
+              </button>
+            </>
+          )}
+        </div>
       </aside>
+    ) : null;
+
+  const listPanel =
+    editing && authorTab === "list" && !showListDetail ? (
+      <aside className="island-hub-unlock-panel" aria-label="Map icon list" onClick={(e) => e.stopPropagation()}>
+        <div className="island-hub-unlock-head">
+          <p className="island-hub-unlock-title">List</p>
+        </div>
+        {authorTabs}
+        <div className="island-hub-unlock-scroll">
+          <div className="island-hub-list-filters">
+            {LIST_KIND_FILTERS.map((entry) => (
+              <button
+                className={`ghost-btn${listKindFilter === entry.id ? " is-active" : ""}`}
+                key={entry.id}
+                onClick={() => setListKindFilter(entry.id)}
+                type="button"
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
+          {listHotspots.length === 0 ? (
+            <p className="island-hub-unlock-hint">No icons on this map match the filter.</p>
+          ) : (
+            <ul className="island-hub-icon-list">
+              {listHotspots.map((h) => (
+                <li key={h.hotspotId}>
+                  <button
+                    className={`island-hub-icon-list-row${
+                      selectedInstanceId === h.hotspotId ? " is-selected" : ""
+                    }`}
+                    onClick={() => {
+                      setSelectedInstanceId(h.hotspotId);
+                      loadAuthoringFromHotspot(h, { keepTab: true });
+                      setListDetailOpen(true);
+                    }}
+                    type="button"
+                  >
+                    <img alt="" draggable={false} src={hotspotIconSrc(h.facilityId)} />
+                    <span>
+                      <strong>{h.purpose?.trim() || hotspotLabel(h.facilityId)}</strong>
+                      <span className="island-hub-unlock-preview-meta">
+                        {hotspotListKind(h.facilityId)} · {h.facilityId} · {h.xPct.toFixed(0)}%,{" "}
+                        {h.yPct.toFixed(0)}%{h.hidden ? " · hidden" : ""}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </aside>
+    ) : null;
+
+  const explorePanel =
+    editing && authorTab === "explore" ? (
+      <aside className="island-hub-unlock-panel" aria-label="Explore icons" onClick={(e) => e.stopPropagation()}>
+        <div className="island-hub-unlock-head">
+          <p className="island-hub-unlock-title">Explore</p>
+        </div>
+        {authorTabs}
+        <div className="island-hub-unlock-scroll">
+          <p className="island-hub-unlock-hint">
+            Explore / Investigate / Search / Scout on this map. Expand a row to assign icons it
+            reveals. Each probe is one-shot in play.
+          </p>
+          {exploreHotspots.length === 0 ? (
+            <p className="island-hub-unlock-hint">
+              No Explore icons on this map. Place Explore from the palette, then return here to set
+              reveals.
+            </p>
+          ) : (
+            <ul className="island-hub-icon-list">
+              {exploreHotspots.map((h) => {
+                const expanded = expandedExploreId === h.hotspotId;
+                const revealIds =
+                  h.hotspotId === selectedInstanceId
+                    ? pendingRevealsHotspotIds
+                    : h.revealsHotspotIds ?? [];
+                const pickingThis = revealPickSourceId === h.hotspotId;
+                return (
+                  <li className="island-hub-explore-item" key={h.hotspotId}>
+                    <button
+                      className={`island-hub-icon-list-row${
+                        selectedInstanceId === h.hotspotId ? " is-selected" : ""
+                      }${expanded ? " is-expanded" : ""}`}
+                      onClick={() => {
+                        if (expanded) {
+                          setExpandedExploreId(null);
+                          setRevealPickSourceId(null);
+                          return;
+                        }
+                        setExpandedExploreId(h.hotspotId);
+                        setSelectedInstanceId(h.hotspotId);
+                        loadAuthoringFromHotspot(h, { keepTab: true });
+                      }}
+                      type="button"
+                    >
+                      <img alt="" draggable={false} src={hotspotIconSrc(h.facilityId)} />
+                      <span>
+                        <strong>{h.purpose?.trim() || hotspotLabel(h.facilityId)}</strong>
+                        <span className="island-hub-unlock-preview-meta">
+                          {h.facilityId} · {revealIds.length} reveal
+                          {revealIds.length === 1 ? "" : "s"} · {h.xPct.toFixed(0)}%,{" "}
+                          {h.yPct.toFixed(0)}%
+                          {sessionConsumedIds.has(h.hotspotId) ||
+                          island.consumedHotspotIds?.includes(h.hotspotId)
+                            ? isBrokenConsumedProbe(h, island, sessionRevealedIds)
+                              ? " · stuck (restore)"
+                              : " · used in play"
+                            : ""}
+                        </span>
+                      </span>
+                    </button>
+                    {expanded ? (
+                      <div className="island-hub-explore-reveals">
+                        <div className="island-hub-unlock-section-head">
+                          <p className="island-hub-unlock-children-title">Reveals after explore</p>
+                          <div className="island-hub-unlock-section-actions">
+                            <button
+                              className={`ghost-btn${pickingThis ? " is-active" : ""}`}
+                              onClick={() => {
+                                if (pickingThis) {
+                                  setRevealPickSourceId(null);
+                                  setStatus(null);
+                                  return;
+                                }
+                                setSelectedInstanceId(h.hotspotId);
+                                loadAuthoringFromHotspot(h, { keepTab: true });
+                                setRevealPickSourceId(h.hotspotId);
+                                setLinkPickMode(false);
+                                setStatus("Picking reveals — click map icons.");
+                              }}
+                              type="button"
+                            >
+                              {pickingThis ? "Picking…" : "Pick on map"}
+                            </button>
+                            {pickingThis ? (
+                              <button
+                                className="ghost-btn"
+                                onClick={() => {
+                                  setRevealPickSourceId(null);
+                                  setStatus(null);
+                                }}
+                                type="button"
+                              >
+                                Done
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                        {pickingThis ? (
+                          <p className="island-hub-unlock-hint">
+                            Picking reveals — click map icons. Esc or Done to finish.
+                          </p>
+                        ) : (
+                          <p className="island-hub-unlock-hint">
+                            Icons that become visible after using this probe once.
+                          </p>
+                        )}
+                        {sessionConsumedIds.has(h.hotspotId) ||
+                        island.consumedHotspotIds?.includes(h.hotspotId) ? (
+                          <div className="island-hub-unlock-row wrap">
+                            <p className="island-hub-unlock-hint">
+                              {isBrokenConsumedProbe(h, island, sessionRevealedIds)
+                                ? "Used in play, but its reveal icons never unlocked. Restore to use it again."
+                                : "Used in play — hidden until restored."}
+                            </p>
+                            <button
+                              className="ghost-btn"
+                              onClick={() => {
+                                const exclusive = revealIds.filter((id) => {
+                                  return !draft.some(
+                                    (other) =>
+                                      other.hotspotId !== h.hotspotId &&
+                                      (sessionConsumedIds.has(other.hotspotId) ||
+                                        island.consumedHotspotIds?.includes(other.hotspotId)) &&
+                                      other.revealsHotspotIds?.includes(id),
+                                  );
+                                });
+                                setSessionConsumedIds((prev) => {
+                                  const next = new Set(prev);
+                                  next.delete(h.hotspotId);
+                                  return next;
+                                });
+                                if (exclusive.length) {
+                                  setSessionRevealedIds((prev) => {
+                                    const next = new Set(prev);
+                                    for (const id of exclusive) {
+                                      next.delete(id);
+                                    }
+                                    return next;
+                                  });
+                                }
+                                onRestoreHotspot?.(h.hotspotId);
+                                setStatus(
+                                  `Restored ${hotspotAuthorName(h)} — usable in play again.`,
+                                );
+                              }}
+                              type="button"
+                            >
+                              Restore
+                            </button>
+                          </div>
+                        ) : null}
+                        {revealIds.length === 0 ? (
+                          <p className="island-hub-unlock-hint">No reveal targets yet.</p>
+                        ) : (
+                          revealIds.map((targetId) => {
+                            const target = draft.find((x) => x.hotspotId === targetId);
+                            return (
+                              <div className="island-hub-unlock-row" key={targetId}>
+                                <span className="island-hub-unlock-preview-meta">
+                                  {target
+                                    ? target.purpose?.trim() || hotspotLabel(target.facilityId)
+                                    : targetId.slice(0, 10)}
+                                  {target ? ` · ${target.facilityId}` : ""}
+                                </span>
+                                <button
+                                  aria-label="Remove"
+                                  className="ghost-btn island-hub-unlock-remove"
+                                  onClick={() =>
+                                    applyRevealsForHotspot(
+                                      h.hotspotId,
+                                      revealIds.filter((id) => id !== targetId),
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            );
+                          })
+                        )}
+                        <label className="island-hub-unlock-field">
+                          Add from placed icons
+                          <select
+                            onChange={(e) => {
+                              const id = e.target.value;
+                              if (!id) {
+                                return;
+                              }
+                              if (!revealIds.includes(id)) {
+                                applyRevealsForHotspot(h.hotspotId, [...revealIds, id]);
+                              }
+                              e.target.value = "";
+                            }}
+                            value=""
+                          >
+                            <option value="">Select hotspot…</option>
+                            {draft
+                              .filter((x) => x.hotspotId !== h.hotspotId)
+                              .map((x) => (
+                                <option key={x.hotspotId} value={x.hotspotId}>
+                                  {x.purpose?.trim() || hotspotLabel(x.facilityId)} (
+                                  {x.xPct.toFixed(0)}%, {x.yPct.toFixed(0)}%)
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </aside>
+    ) : null;
+
+  const anchorsPanel =
+    editing && authorTab === "anchors" ? (
+      <aside className="island-hub-unlock-panel" aria-label="Location anchors" onClick={(e) => e.stopPropagation()}>
+        <div className="island-hub-unlock-head">
+          <p className="island-hub-unlock-title">Anchors</p>
+        </div>
+        {authorTabs}
+        <div className="island-hub-unlock-scroll">
+          <div className="island-hub-unlock-row wrap">
+            <button
+              className={`ghost-btn${hideOtherIcons ? " is-active" : ""}`}
+              onClick={() => setHideOtherIcons((v) => !v)}
+              type="button"
+            >
+              {hideOtherIcons ? "Show map icons" : "Hide map icons"}
+            </button>
+          </div>
+          <p className="island-hub-unlock-hint">
+            Pins and named areas only show on this tab. Hide map icons to see your anchors clearly.
+          </p>
+          <p className="island-hub-unlock-children-title">Location pins</p>
+          <div className="island-hub-unlock-row wrap">
+            <input
+              onChange={(e) => setNewAnchorText(e.target.value)}
+              placeholder="Place description"
+              type="text"
+              value={newAnchorText}
+            />
+            <button className="ghost-btn" onClick={addAnchor} type="button">
+              + Anchor
+            </button>
+          </div>
+          {draftAnchors.length === 0 && anchorHotspots.length === 0 ? (
+            <p className="island-hub-unlock-hint">
+              + Anchor creates a pin. You can edit name, tags, and AI use after placing.
+            </p>
+          ) : (
+            <ul className="island-hub-anchor-list">
+              {draftAnchors.map((anchor) => {
+                const selected = selectedAnchorId === anchor.id;
+                const placeState = anchor.hotspotId
+                  ? "on map"
+                  : pendingAnchorPlaceId === anchor.id
+                    ? "placing"
+                    : "unplaced";
+                return (
+                  <li
+                    className={`island-hub-anchor-card${selected ? " is-selected" : ""}`}
+                    key={anchor.id}
+                  >
+                    <button
+                      className="island-hub-icon-list-row"
+                      onClick={() => focusAnchor(anchor)}
+                      type="button"
+                    >
+                      <span>
+                        <strong>{anchor.description || "Untitled"}</strong>
+                        <span className="island-hub-unlock-preview-meta">
+                          {placeState} · {anchor.aiPermission}
+                          {anchor.tags.length > 0 ? ` · ${anchor.tags.join(", ")}` : ""}
+                        </span>
+                      </span>
+                    </button>
+                    {selected ? (
+                      <div className="island-hub-explore-reveals">
+                        <input
+                          onChange={(e) => patchAnchor(anchor.id, { description: e.target.value })}
+                          placeholder="Name / description"
+                          type="text"
+                          value={anchor.description}
+                        />
+                        <input
+                          onChange={(e) =>
+                            patchAnchor(anchor.id, {
+                              tags: e.target.value
+                                .split(",")
+                                .map((t) => t.trim())
+                                .filter(Boolean),
+                            })
+                          }
+                          placeholder="tags"
+                          type="text"
+                          value={anchor.tags.join(", ")}
+                        />
+                        <div className="island-hub-unlock-row wrap">
+                          <select
+                            onChange={(e) =>
+                              patchAnchor(anchor.id, {
+                                aiPermission: e.target.value as LocationAnchorAiPermission,
+                              })
+                            }
+                            value={anchor.aiPermission}
+                          >
+                            <option value="never">Never</option>
+                            <option value="suggest">Suggest</option>
+                            <option value="auto">Auto-use</option>
+                          </select>
+                          {!anchor.hotspotId ? (
+                            <button
+                              className={`ghost-btn${pendingAnchorPlaceId === anchor.id ? " is-active" : ""}`}
+                              onClick={() => {
+                                setPendingAnchorPlaceId(anchor.id);
+                                setSelectedAnchorId(anchor.id);
+                                setPaletteId("LOCATION_ANCHOR");
+                                setSelectedInstanceId(null);
+                                setPendingUnlock(emptyUnlockDraft("LOCATION_ANCHOR"));
+                                setPendingPurpose(anchor.description);
+                                setRegionDrawMode(false);
+                                setStatus("Click the map to place this location-anchor icon.");
+                              }}
+                              type="button"
+                            >
+                              Place
+                            </button>
+                          ) : null}
+                          <button
+                            className="ghost-btn"
+                            onClick={() => removeAnchor(anchor.id)}
+                            type="button"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <p className="island-hub-unlock-children-title">Named areas</p>
+          <div className="island-hub-unlock-row wrap">
+            <input
+              onChange={(e) => setNewRegionName(e.target.value)}
+              placeholder="Area name"
+              type="text"
+              value={newRegionName}
+            />
+            <button
+              className={`ghost-btn${regionDrawMode ? " is-active" : ""}`}
+              onClick={() => {
+                if (regionDrawMode) {
+                  finishRegionDraw();
+                  return;
+                }
+                setPaletteId(null);
+                setPendingAnchorPlaceId(null);
+                setRegionDrawMode(true);
+                setRegionDraftPoints([]);
+                setSelectedRegionId(null);
+                setStatus("Click the map to outline an area. First and last point stay connected.");
+              }}
+              type="button"
+            >
+              {regionDrawMode ? "Finish" : "Draw area"}
+            </button>
+            {regionDrawMode ? (
+              <button
+                className="ghost-btn"
+                onClick={() => {
+                  setRegionDrawMode(false);
+                  setRegionDraftPoints([]);
+                  setStatus(null);
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+            ) : null}
+          </div>
+          {regionDrawMode ? (
+            <p className="island-hub-unlock-hint">
+              Drawing — {regionDraftPoints.length} point{regionDraftPoints.length === 1 ? "" : "s"}
+              {regionDraftPoints.length < 3 ? " (need 3+)" : ""}. Loop stays closed. Esc cancels.
+            </p>
+          ) : (
+            <p className="island-hub-unlock-hint">
+              Select an area, then drag points, click the map to add a point, right-click a point
+              to remove it. First and last always connect.
+            </p>
+          )}
+          {draftRegions.length === 0 ? (
+            <p className="island-hub-unlock-hint">No named areas yet.</p>
+          ) : (
+            <ul className="island-hub-anchor-list">
+              {draftRegions.map((region) => (
+                <li
+                  className={`island-hub-anchor-card${
+                    selectedRegionId === region.id ? " is-selected" : ""
+                  }`}
+                  key={region.id}
+                >
+                  <button
+                    className="island-hub-icon-list-row"
+                    onClick={() => {
+                      setSelectedRegionId(region.id);
+                      setSelectedAnchorId(null);
+                      setPaletteId(null);
+                      setRegionDrawMode(false);
+                    }}
+                    type="button"
+                  >
+                    <span>
+                      <strong>{region.name}</strong>
+                      <span className="island-hub-unlock-preview-meta">
+                        {region.points.length} pts · {region.aiPermission} · closed loop
+                      </span>
+                    </span>
+                  </button>
+                  {selectedRegionId === region.id ? (
+                    <div className="island-hub-explore-reveals">
+                      <div className="island-hub-unlock-row wrap">
+                        <input
+                          onChange={(e) => patchRegion(region.id, { name: e.target.value })}
+                          placeholder="Area name"
+                          type="text"
+                          value={region.name}
+                        />
+                        <select
+                          onChange={(e) =>
+                            patchRegion(region.id, {
+                              aiPermission: e.target.value as LocationAnchorAiPermission,
+                            })
+                          }
+                          value={region.aiPermission}
+                        >
+                          <option value="never">Never</option>
+                          <option value="suggest">Suggest</option>
+                          <option value="auto">Auto-use</option>
+                        </select>
+                        <button className="ghost-btn" onClick={() => removeRegion(region.id)} type="button">
+                          ×
+                        </button>
+                      </div>
+                      <input
+                        onChange={(e) => patchRegion(region.id, { notes: e.target.value || undefined })}
+                        placeholder="Notes for AI"
+                        type="text"
+                        value={region.notes ?? ""}
+                      />
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </aside>
+    ) : null;
+
+  const storyStrip =
+    editing && unplacedNodes.length > 0 ? (
+      <div className="island-hub-story-strip" aria-label="Unplaced story fiches">
+        {unplacedNodes.map((node) => (
+          <button
+            className={`island-hub-story-fiche${nestPickNodeId === node.id ? " is-active" : ""}`}
+            draggable
+            key={node.id}
+            onClick={() => {
+              setAuthorTab("thread");
+              setThreadDetailOpen(false);
+              setThreadComposer("workshop");
+              setNestPickNodeId((id) => (id === node.id ? null : node.id));
+              setLinkPickMode(false);
+              setRevealPickSourceId(null);
+            }}
+            onDragStart={(event) => {
+              event.dataTransfer.setData("text/story-node", node.id);
+              event.dataTransfer.effectAllowed = "copy";
+            }}
+            title={`${node.label || node.kind} — click then click map to place`}
+            type="button"
+          >
+            #{node.order} {node.label || node.kind}
+          </button>
+        ))}
+      </div>
     ) : null;
 
   const childActions = useMemo(() => {
     if (!childMenu) {
       return [] as MapChildActionDef[];
     }
+    const storyOptions = { storyChains: playStoryChains };
     const parent = displayHotspots.find((h) => h.hotspotId === childMenu.parentHotspotId);
-    if (!parent) {
-      return resolveChildActionsForHotspot(
-        {
-          hotspotId: childMenu.parentHotspotId,
-          facilityId: childMenu.facilityId,
-          xPct: childMenu.xPct,
-          yPct: childMenu.yPct,
-        },
-        island,
-        run,
-      );
-    }
-    return resolveChildActionsForHotspot(parent, island, run);
-  }, [childMenu, displayHotspots, island, run]);
+    const actions = resolveChildActionsForHotspot(
+      parent ?? {
+        hotspotId: childMenu.parentHotspotId,
+        facilityId: childMenu.facilityId,
+        xPct: childMenu.xPct,
+        yPct: childMenu.yPct,
+      },
+      island,
+      run,
+      storyOptions,
+    );
+    return actions.filter((action) =>
+      StoryChainService.isPlayableStoryAction(run, playStoryChains, action.id),
+    );
+  }, [childMenu, displayHotspots, island, playStoryChains, run]);
   const childRadialOffsets = useMemo(() => {
     if (!childMenu) {
       return [] as RadialOffset[];
@@ -2922,14 +5295,76 @@ export function IslandHubMap({
     const rect = mapRef.current?.getBoundingClientRect();
     const width = Math.max(1, rect?.width ?? 800);
     const height = Math.max(1, rect?.height ?? 600);
+    const harborCount = FACILITY_CHILD_ACTIONS.HARBOR?.length ?? 6;
+    const radiusCount =
+      childMenu.facilityId === "MARKET" ? Math.max(childActions.length, harborCount) : childActions.length;
     return computeRadialOffsets(
       childActions.length,
       childMenu.xPct,
       childMenu.yPct,
       width,
       height,
+      iconScale,
+      radiusCount,
     );
-  }, [childMenu, childActions.length]);
+  }, [childMenu, childActions.length, iconScale]);
+  const childOrbitRadius = useMemo(() => {
+    if (!childMenu) {
+      return 0;
+    }
+    const harborCount = FACILITY_CHILD_ACTIONS.HARBOR?.length ?? 6;
+    const radiusCount =
+      childMenu.facilityId === "MARKET" ? Math.max(childActions.length, harborCount) : childActions.length;
+    return radialRadiusForCount(radiusCount, iconScale);
+  }, [childMenu, childActions.length, iconScale]);
+
+  const syncRadialOrbitWave = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!childMenu?.open) {
+        return;
+      }
+      const origin = childMenuRef.current?.getBoundingClientRect();
+      if (!origin) {
+        return;
+      }
+      const px = origin.left;
+      const py = origin.top;
+      const distFromParent = Math.hypot(clientX - px, clientY - py);
+      const measured: { id: string; label: string; dist: number }[] = [];
+      let measuredOrbit = 0;
+      for (const action of childActions) {
+        const node = childOrbitRefs.current[action.id];
+        if (!node) {
+          continue;
+        }
+        const box = node.getBoundingClientRect();
+        const cx = box.left + box.width / 2;
+        const cy = box.top + box.height / 2;
+        const dist = Math.hypot(clientX - cx, clientY - cy);
+        measuredOrbit = Math.max(measuredOrbit, Math.hypot(cx - px, cy - py));
+        measured.push({ id: action.id, label: action.label, dist });
+        node.style.setProperty("--orbit-scale", radialOrbitWaveScale(dist).toFixed(3));
+      }
+      const orbitRadius =
+        measuredOrbit > 0
+          ? measuredOrbit
+          : childOrbitRadius * (resolveIslandHubMapFocus(editing, childMenu) ? ISLAND_HUB_FOCUS_ZOOM : 1);
+      const nearest = nearestRadialChildLabel(
+        distFromParent,
+        radialOrbitAuraRadius(orbitRadius),
+        measured,
+      );
+      for (const action of childActions) {
+        childOrbitRefs.current[action.id]?.classList.toggle("is-nearest", nearest?.id === action.id);
+      }
+      const nextLabel = nearest?.label ?? null;
+      if (radialLabelRef.current !== nextLabel) {
+        radialLabelRef.current = nextLabel;
+        setHoveredChildLabel(nextLabel);
+      }
+    },
+    [childActions, childMenu, childOrbitRadius, editing],
+  );
 
   const mapFocus = resolveIslandHubMapFocus(editing, childMenu);
   /** Fade siblings with zoom: hide while focused/open, reappear as zoom reverses on close. */
@@ -2938,7 +5373,7 @@ export function IslandHubMap({
   const mapZoomStyle: CSSProperties | undefined = mapFocus
     ? {
         transformOrigin: `${mapFocus.xPct}% ${mapFocus.yPct}%`,
-        transform: `scale(${mapFocus.scale})`,
+        transform: `translateZ(0) scale(${mapFocus.scale})`,
       }
     : undefined;
 
@@ -2947,6 +5382,7 @@ export function IslandHubMap({
       <div
         aria-label={`${hotspotLabel(childMenu.facilityId)} actions`}
         className={`island-hub-child-menu${childMenu.open ? " is-open" : ""}`}
+        ref={childMenuRef}
         role="menu"
         style={
           {
@@ -2956,6 +5392,11 @@ export function IslandHubMap({
           } as CSSProperties
         }
       >
+        {centerOverlayLabel ? (
+          <div className="island-hub-child-center-label" aria-live="polite">
+            {centerOverlayLabel}
+          </div>
+        ) : null}
         {childActions.map((action, index) => {
           const offset = childRadialOffsets[index] ?? { x: 0, y: 0 };
           return (
@@ -2963,9 +5404,24 @@ export function IslandHubMap({
               aria-label={action.label}
               className="island-hub-child-orbit"
               key={action.id}
+              onBlur={() => {
+                if (radialLabelRef.current === action.label) {
+                  radialLabelRef.current = null;
+                  setHoveredChildLabel(null);
+                }
+                childOrbitRefs.current[action.id]?.classList.remove("is-nearest");
+              }}
               onClick={() => resolveChildAction(action)}
-              onMouseEnter={() => setHoveredChildLabel(action.label)}
-              onMouseLeave={() => setHoveredChildLabel(null)}
+              onFocus={() => {
+                radialLabelRef.current = action.label;
+                setHoveredChildLabel(action.label);
+                for (const [id, node] of Object.entries(childOrbitRefs.current)) {
+                  node?.classList.toggle("is-nearest", id === action.id);
+                }
+              }}
+              ref={(node) => {
+                childOrbitRefs.current[action.id] = node;
+              }}
               role="menuitem"
               style={
                 {
@@ -2974,10 +5430,13 @@ export function IslandHubMap({
                   "--stagger": `${index * 35}ms`,
                 } as CSSProperties
               }
-              title={action.label}
               type="button"
             >
-              <img alt="" draggable={false} src={childActionIconSrc(action)} />
+              <span className="island-hub-child-orbit-visual">
+                <span aria-hidden className="island-hub-icon-glow" />
+                <HubIconSparkles />
+                <img alt="" draggable={false} src={childActionIconSrc(action)} />
+              </span>
             </button>
           );
         })}
@@ -3022,6 +5481,19 @@ export function IslandHubMap({
                 <option value={5}>5%</option>
               </select>
             </label>
+            <label className="island-hub-snap island-hub-icon-scale">
+              Icons
+              <input
+                aria-label="Map icon size"
+                max={180}
+                min={60}
+                onChange={(e) => setDraftIconScale(clampIconScale(Number(e.target.value) / 100))}
+                step={5}
+                type="range"
+                value={Math.round(draftIconScale * 100)}
+              />
+              <span>{Math.round(draftIconScale * 100)}%</span>
+            </label>
             <button className="run-btn" onClick={resetLayout} type="button">
               Reset layout
             </button>
@@ -3045,7 +5517,10 @@ export function IslandHubMap({
                 </button>
                 <button
                   className="run-btn"
-                  onClick={() => setShowUnlockPanel(true)}
+                  onClick={() => {
+                    setAuthorTab("list");
+                    setListDetailOpen(true);
+                  }}
                   type="button"
                 >
                   Unlock / edit…
@@ -3110,10 +5585,44 @@ export function IslandHubMap({
             {stubNotice}
           </p>
         ) : null}
-        {hoverNameLabel ? (
-          <p className="island-hub-hover-name" aria-live="polite">
-            {hoverNameLabel}
-          </p>
+        {fishingOpen ? (
+          <FishingMinigame
+            seaKingHunt={Boolean(run && StoryChainService.seaKingHookAvailable(run))}
+            onClose={() => setFishingOpen(false)}
+            onFinish={(result) => onFinishFishing?.(result) ?? ""}
+          />
+        ) : null}
+        {marketShopOpen && run ? (
+          <MarketShopOverlay
+            onBuy={(itemId, quantity) => onBuyMarketItem?.(itemId, quantity) ?? ""}
+            onClose={() => setMarketShopOpen(false)}
+            onSell={(itemId, quantity) => onSellMarketItem?.(itemId, quantity) ?? ""}
+            run={run}
+          />
+        ) : null}
+        {clinicShopOpen && run ? (
+          <ClinicShopOverlay
+            onBuy={(itemId, quantity) => onBuyClinicItem?.(itemId, quantity) ?? ""}
+            onClose={() => setClinicShopOpen(false)}
+            onSell={(itemId, quantity) => onSellClinicItem?.(itemId, quantity) ?? ""}
+            run={run}
+          />
+        ) : null}
+        {weaponShopOpen && run ? (
+          <WeaponTradeShopOverlay
+            onBuy={(listingId) => onBuyWeaponShopItem?.(listingId) ?? ""}
+            onClose={() => setWeaponShopOpen(false)}
+            onSell={(instanceId) => onSellWeaponShopItem?.(instanceId) ?? ""}
+            run={run}
+            stock={weaponShopStock}
+          />
+        ) : null}
+        {shipOverlayOpen && run ? (
+          <ShipOverlay
+            initialTab={shipOverlayTab}
+            onClose={() => setShipOverlayOpen(false)}
+            run={run}
+          />
         ) : null}
         {mapFailed ? (
           <div className="island-hub-map-missing">
@@ -3134,9 +5643,20 @@ export function IslandHubMap({
         ) : (
           <div
             className={`island-hub-map-stage${editing ? " is-editing" : ""}${
-              paletteId && editing ? " is-placing" : ""
-            }${mapFocus ? " is-focused" : ""}${hideSiblingHotspots ? " is-radial-open" : ""}`}
+              paletteId && editing && !regionDrawMode ? " is-placing" : ""
+            }${regionDrawMode ? " is-drawing-region" : ""}${mapFocus ? " is-focused" : ""}${hideSiblingHotspots ? " is-radial-open" : ""}`}
+            style={{ "--island-hub-icon-scale": iconScale } as CSSProperties}
             onClick={onMapClick}
+            onMouseLeave={() => {
+              if (childMenu?.open) {
+                resetRadialOrbitWave();
+              }
+            }}
+            onMouseMove={(event) => {
+              if (childMenu?.open) {
+                syncRadialOrbitWave(event.clientX, event.clientY);
+              }
+            }}
             onPointerCancel={endDrag}
             onPointerMove={onMapPointerMove}
             onPointerUp={endDrag}
@@ -3154,6 +5674,108 @@ export function IslandHubMap({
                 onError={() => setMapFailed(true)}
                 src={`${islandMapSrc(mapAssetId)}${imgNonce ? `?r=${imgNonce}` : ""}`}
               />
+              {editing && authorTab === "anchors" ? (
+                <svg
+                  aria-hidden
+                  className={`island-hub-region-layer${
+                    regionDrawMode || paletteId ? " is-drawing" : ""
+                  }`}
+                  preserveAspectRatio="none"
+                  viewBox="0 0 100 100"
+                >
+                  {draftRegions.map((region) => {
+                    const center = regionCentroid(region.points);
+                    const selected = selectedRegionId === region.id;
+                    return (
+                      <g key={region.id}>
+                        <polygon
+                          className={`island-hub-region${selected ? " is-selected" : ""}`}
+                          onClick={(event) => {
+                            if (regionDrawMode || paletteId) {
+                              return;
+                            }
+                            event.stopPropagation();
+                            if (selected) {
+                              const { xPct, yPct } = pointerToPct(event.clientX, event.clientY);
+                              patchRegion(region.id, {
+                                points: insertPointOnClosestEdge(region.points, xPct, yPct),
+                              });
+                              setStatus("Added a point on the nearest edge.");
+                              return;
+                            }
+                            setSelectedRegionId(region.id);
+                            setSelectedAnchorId(null);
+                            setPaletteId(null);
+                          }}
+                          points={region.points.map((p) => `${p.xPct},${p.yPct}`).join(" ")}
+                        />
+                        {center ? (
+                          <text className="island-hub-region-label" x={center.xPct} y={center.yPct}>
+                            {region.name}
+                          </text>
+                        ) : null}
+                        {selected
+                          ? region.points.map((p, index) => (
+                              <circle
+                                className={`island-hub-region-vertex${
+                                  regionPointDrag?.regionId === region.id &&
+                                  regionPointDrag.index === index
+                                    ? " is-dragging"
+                                    : ""
+                                }`}
+                                cx={p.xPct}
+                                cy={p.yPct}
+                                key={`${region.id}-pt-${index}`}
+                                onContextMenu={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  if (region.points.length <= 3) {
+                                    setStatus("A zone needs at least 3 points.");
+                                    return;
+                                  }
+                                  removeRegionPoint(region.id, index);
+                                }}
+                                onPointerCancel={endDrag}
+                                onPointerDown={(event) => {
+                                  event.stopPropagation();
+                                  event.preventDefault();
+                                  skipRegionClickRef.current = true;
+                                  if (event.button === 2) {
+                                    return;
+                                  }
+                                  event.currentTarget.setPointerCapture(event.pointerId);
+                                  setRegionPointDrag({
+                                    regionId: region.id,
+                                    index,
+                                    pointerId: event.pointerId,
+                                  });
+                                }}
+                                onPointerMove={onMapPointerMove}
+                                onPointerUp={endDrag}
+                                r={1.15}
+                              />
+                            ))
+                          : null}
+                      </g>
+                    );
+                  })}
+                  {regionDraftPoints.length > 0 ? (
+                    <polyline
+                      className="island-hub-region-draft"
+                      points={closedPolygonAttr(regionDraftPoints)}
+                    />
+                  ) : null}
+                  {regionDraftPoints.map((p, index) => (
+                    <circle
+                      className="island-hub-region-draft-point"
+                      cx={p.xPct}
+                      cy={p.yPct}
+                      key={`draft-${index}`}
+                      r={0.9}
+                    />
+                  ))}
+                </svg>
+              ) : null}
               {editing && editorLinkEdges.length > 0 ? (
                 <svg
                   aria-hidden
@@ -3225,9 +5847,11 @@ export function IslandHubMap({
                 const facilityOk = !isFacilityHotspotId(id) || unlockedSet.has(id);
                 const hasKids = editing
                   ? hasChildActions(id)
-                  : hasVisibleChildActions(hotspot, island, run);
+                  : hasVisibleChildActions(hotspot, island, run, playStoryChains);
+                const isProbe = supportsRevealAuthoring(id) || Boolean(hotspot.consumeOnUse);
                 const locked =
                   !hasKids &&
+                  !isProbe &&
                   (Boolean(choiceId && lockReasons?.[choiceId]) ||
                     Boolean(choiceId && !choiceById.has(choiceId)) ||
                     (isFacilityHotspotId(id) && !facilityOk));
@@ -3246,7 +5870,7 @@ export function IslandHubMap({
                       hasKids ? isActiveParent && childMenu.open : undefined
                     }
                     aria-haspopup={hasKids ? "menu" : undefined}
-                    aria-label={label}
+                    aria-label={isActiveParent && childMenu.open ? "Return" : label}
                     className={`island-hub-hotspot${locked && !editing ? " is-locked" : ""}${
                       selected ? " is-selected" : ""
                     }${isRevealPickSource ? " is-reveal-pick-source" : ""}${
@@ -3254,8 +5878,14 @@ export function IslandHubMap({
                     }${dimmed ? " is-dimmed" : ""}${
                       id === "EXPLORE" ? " is-explore" : ""
                     }${isActiveParent ? " is-menu-open" : ""}${
-                      isSibling ? " is-sibling" : ""
-                    }${storyBadgeByHotspot.has(hotspot.hotspotId) ? " has-story" : ""}`}
+                      isActiveParent && hoveredChildLabel ? " is-child-hovered" : ""
+                    }${isActiveParent && isReturnHover ? " is-return-hover" : ""}${
+                      hoveredHotspotId === hotspot.hotspotId && !isActiveParent
+                        ? " is-icon-hovered"
+                        : ""
+                    }${isSibling ? " is-sibling" : ""}${
+                      storyBadgeByHotspot.has(hotspot.hotspotId) ? " has-story" : ""
+                    }`}
                     disabled={locked && !editing}
                     key={hotspot.hotspotId}
                     onClick={() => activateHotspot(hotspot)}
@@ -3289,15 +5919,26 @@ export function IslandHubMap({
                     title={
                       editing
                         ? `${label} (${hotspot.xPct.toFixed(1)}%, ${hotspot.yPct.toFixed(1)}%) · ${unlockRuleSummary(hotspot.unlock)}`
-                        : label
+                        : undefined
                     }
                     type="button"
                   >
+                    <span aria-hidden className="island-hub-icon-glow" />
+                    <HubIconSparkles />
                     <img alt="" draggable={false} src={hotspotIconSrc(id)} />
                     {storyBadgeByHotspot.has(hotspot.hotspotId) ? (
                       <span className="island-hub-hotspot-story" title="Story chain nested here">
                         !
                       </span>
+                    ) : null}
+                    {showMainIconTooltip && hoveredHotspot.hotspotId === hotspot.hotspotId ? (
+                      <div
+                        aria-live="polite"
+                        className={`island-hub-icon-tooltip${hotspot.yPct < 16 ? " is-below" : ""}`}
+                        role="tooltip"
+                      >
+                        {hoverNameLabel}
+                      </div>
                     ) : null}
                   </button>
                 );
@@ -3311,7 +5952,7 @@ export function IslandHubMap({
                 >
                   {nestPickNodeId ? (
                     <>
-                      <span>Click a map icon to nest the story node</span>
+                      <span>Click the map or an icon to place this story fiche</span>
                       <button
                         className="ghost-btn"
                         onClick={() => setNestPickNodeId(null)}
@@ -3347,8 +5988,13 @@ export function IslandHubMap({
           </div>
         )}
         {unlockPanel}
-        {palettePanel}
         {storyTray}
+        {threadComposerPanel}
+        {listPanel}
+        {explorePanel}
+        {anchorsPanel}
+        {palettePanel}
+        {storyStrip}
       </div>
     </section>
   );

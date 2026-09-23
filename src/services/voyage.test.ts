@@ -24,6 +24,17 @@ describe("Harbor + Voyage (Phase 2/3)", () => {
     expect(run.ship?.name).toContain("Test Sailor");
     expect(run.ship?.speed).toBeGreaterThan(0);
     expect(run.ship?.condition).toBe(100);
+    expect(run.ship?.cargoCapacity).toBeGreaterThan(0);
+    expect(run.ship?.hullId).toBe("Ship1");
+  });
+
+  it("backfills hold capacity and hull art on older ships", () => {
+    const run = freshRun("legacy-ship");
+    run.ship = { name: "Old Bark", speed: 1, condition: 80 };
+    const ship = VoyageService.ensureShip(run);
+    expect(ship.cargoCapacity).toBeGreaterThan(0);
+    expect(ship.hullId).toBe("Ship1");
+    expect(ship.condition).toBe(80);
   });
 
   it("lists other islands as harbor destinations", () => {
