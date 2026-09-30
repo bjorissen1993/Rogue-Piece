@@ -1,4 +1,4 @@
-import type { CSSProperties, DragEvent } from "react";
+import { useState, type CSSProperties, type DragEvent } from "react";
 import { DEVIL_FRUITS } from "../data/devilFruits";
 import type { WeaponType } from "../models/types";
 import { splitCharacterDisplayName } from "../utils/text";
@@ -400,6 +400,7 @@ type InventoryCardProps = {
   name: string;
   subtitle?: string;
   quantityLabel: string;
+  iconSrc?: string;
   selected?: boolean;
   onClick?: () => void;
 };
@@ -408,15 +409,22 @@ export function InventoryCard({
   name,
   subtitle,
   quantityLabel,
+  iconSrc,
   selected,
   onClick,
 }: InventoryCardProps) {
+  const [hasArt, setHasArt] = useState(Boolean(iconSrc));
   return (
     <button
       className={`inventory-card select-card collection-card ${selected ? "is-selected" : ""}`}
       onClick={onClick}
       type="button"
     >
+      {iconSrc && hasArt ? (
+        <span className="inventory-card-art-wrap" aria-hidden="true">
+          <img alt="" className="inventory-card-art" onError={() => setHasArt(false)} src={iconSrc} />
+        </span>
+      ) : null}
       <p className="collection-card-title font-display inventory-card-name">{name}</p>
       {subtitle ? <p className="collection-card-subtitle inventory-card-sub">{subtitle}</p> : null}
       <span className="inventory-card-qty">{quantityLabel}</span>

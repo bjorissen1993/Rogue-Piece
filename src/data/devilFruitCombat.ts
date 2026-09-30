@@ -1,4 +1,5 @@
 import type { Ability, FruitType, PlayerStats, StatName, WeaponType, ZoanFormId } from "../models/types";
+import { namedCombatStatus } from "./combatStatuses";
 
 export type ZoanFormProfile = {
   id: ZoanFormId;
@@ -26,6 +27,8 @@ export type DevilFruitCombatTechniqueDef = {
   mpCost?: number;
   tags?: Ability["tags"];
   applyEffect?: Ability["applyEffect"];
+  /** Chance to apply applyEffect on a damaging hit (0–1). */
+  statusChance?: number;
   targeting?: Ability["targeting"];
   /** Zoan-only: usable only in these forms (empty = any / human ok). */
   requiredForms?: ZoanFormId[];
@@ -122,6 +125,8 @@ export const DEVIL_FRUIT_COMBAT: DevilFruitCombatDef[] = [
         accuracyMod: -2,
         mpCost: 6,
         tags: ["MELEE", "SINGLE"],
+        statusChance: 0.3,
+        applyEffect: namedCombatStatus("DAZED"),
       },
       {
         id: "df_bomu_nose",
@@ -439,14 +444,7 @@ export const DEVIL_FRUIT_COMBAT: DevilFruitCombatDef[] = [
         accuracyMod: -2,
         mpCost: 8,
         tags: ["RANGED", "SINGLE"],
-        applyEffect: {
-          id: "burned",
-          name: "Burned",
-          kind: "DEBUFF",
-          turns: 2,
-          target: "TARGET",
-          damageTakenMod: 0.1,
-        },
+        applyEffect: namedCombatStatus("BURN"),
       },
       {
         id: "df_mera_firefly",
@@ -460,6 +458,8 @@ export const DEVIL_FRUIT_COMBAT: DevilFruitCombatDef[] = [
         mpCost: 10,
         tags: ["RANGED", "AOE"],
         targeting: { group: "ENEMY", selection: "ALL" },
+        statusChance: 0.45,
+        applyEffect: namedCombatStatus("BURN"),
       },
       {
         id: "df_mera_body",
@@ -563,6 +563,7 @@ export function fruitTechniqueToAbility(def: DevilFruitCombatTechniqueDef): Abil
     tags: def.tags,
     applyEffect: def.applyEffect,
     targeting: def.targeting,
+    statusChance: def.statusChance,
     devilFruitSkill: true,
   });
 }

@@ -503,6 +503,9 @@ export function clampIconScale(value: number | null | undefined): number {
 }
 
 export function defaultUnlockRuleFor(id: IslandMapHotspotId): HotspotUnlockRule {
+  if (id === "GATHER" || id === "FISHING" || id === "HUNTS" || id === "MUSEUM") {
+    return { mode: "always" };
+  }
   if (isSpecialMarkerId(id)) {
     const def = SPECIAL_MARKER_DEFS[id];
     if (def.alwaysVisible) {
@@ -738,10 +741,29 @@ export const EXPLORE_DISCOVERY_MARKER_IDS = new Set<IslandSpecialMarkerId>([
   "GATHER",
   "FISHING",
   "HUNTS",
+  "MUSEUM",
 ]);
 
 export function isExploreDiscoveryMarker(id: IslandMapHotspotId): boolean {
   return EXPLORE_DISCOVERY_MARKER_IDS.has(id as IslandSpecialMarkerId);
+}
+
+/** Pins that stay hidden until a probe reveals them (Gather-like, plus authored Clinic). */
+export function isRevealGatedHotspot(
+  hotspot: IslandFacilityHotspot,
+  hotspots: IslandFacilityHotspot[],
+): boolean {
+  const listed = hotspots.some((h) => h.revealsHotspotIds?.includes(hotspot.hotspotId));
+  if (hotspot.hiddenUntilRevealed === false) {
+    return listed;
+  }
+  if (hotspot.hiddenUntilRevealed || listed) {
+    return true;
+  }
+  if (hotspot.facilityId === "CLINIC" && hotspots.some((h) => supportsRevealAuthoring(h.facilityId))) {
+    return true;
+  }
+  return false;
 }
 
 function hotspotDistanceSq(a: IslandFacilityHotspot, b: IslandFacilityHotspot): number {
@@ -785,7 +807,7 @@ export function probeRevealSourcesForHotspot(
   if (explicit.length > 0) {
     return explicit;
   }
-  if (!isExploreDiscoveryMarker(hotspot.facilityId)) {
+  if (!isExploreDiscoveryMarker(hotspot.facilityId) && !isRevealGatedHotspot(hotspot, hotspots)) {
     return [];
   }
   const nearest = nearestRevealProbe(hotspot, hotspots);
@@ -801,7 +823,10 @@ export function revealIdsForProbe(
     (probe.revealsHotspotIds ?? []).map((id) => String(id).trim()).filter(Boolean),
   );
   for (const hotspot of hotspots) {
-    if (hotspot.hotspotId === probe.hotspotId || !isExploreDiscoveryMarker(hotspot.facilityId)) {
+    if (hotspot.hotspotId === probe.hotspotId) {
+      continue;
+    }
+    if (!isExploreDiscoveryMarker(hotspot.facilityId) && !isRevealGatedHotspot(hotspot, hotspots)) {
       continue;
     }
     const sources = probeRevealSourcesForHotspot(hotspot, hotspots);
@@ -889,7 +914,7 @@ const ANCHOR_PERMISSIONS = new Set<LocationAnchorAiPermission>(["never", "sugges
 export function createLocationAnchor(
   description = "",
   tags: string[] = [],
-  aiPermission: LocationAnchorAiPermission = "suggest",
+  aiPermission: LocationAnchorAiPermission = "auto",
   hotspotId?: string,
 ): LocationAnchor {
   return {
@@ -898,6 +923,7 @@ export function createLocationAnchor(
     tags: tags.map((t) => t.trim()).filter(Boolean),
     aiPermission,
     hotspotId,
+    occupancy: "AVAILABLE",
   };
 }
 
@@ -907,17 +933,23 @@ export function migrateLocationAnchor(
   if (!raw || typeof raw !== "object") {
     return null;
   }
-  const permission = (typeof raw.aiPermission === "string" ? raw.aiPermission : "suggest") as LocationAnchorAiPermission;
+  const permission = (typeof raw.aiPermission === "string" ? raw.aiPermission : "auto") as LocationAnchorAiPermission;
   return {
     id: raw.id && String(raw.id).trim() ? String(raw.id) : createId("anc"),
     description: typeof raw.description === "string" ? raw.description : "",
     tags: Array.isArray(raw.tags)
       ? raw.tags.map((t) => String(t).trim()).filter(Boolean)
       : [],
-    aiPermission: ANCHOR_PERMISSIONS.has(permission) ? permission : "suggest",
+    aiPermission: ANCHOR_PERMISSIONS.has(permission) ? permission : "auto",
     hotspotId:
       typeof raw.hotspotId === "string" && raw.hotspotId.trim() ? raw.hotspotId.trim() : undefined,
     notes: typeof raw.notes === "string" ? raw.notes : undefined,
+    semanticTags: Array.isArray(raw.semanticTags) ? raw.semanticTags.map((tag) => String(tag)) : undefined,
+    semanticSourceName: typeof raw.semanticSourceName === "string" ? raw.semanticSourceName : undefined,
+    occupancy: raw.occupancy === "OCCUPIED_TEMPORARY" || raw.occupancy === "CONVERTED_PERSISTENT"
+      ? raw.occupancy
+      : "AVAILABLE",
+    generatedLocationId: typeof raw.generatedLocationId === "string" ? raw.generatedLocationId : undefined,
   };
 }
 
@@ -1066,7 +1098,10 @@ export function migrateMapAnchorRegion(
     name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : "Unnamed area",
     notes: typeof raw.notes === "string" ? raw.notes : undefined,
     points,
-    aiPermission: ANCHOR_PERMISSIONS.has(permission) ? permission : "suggest",
+    aiPermission: ANCHOR_PERMISSIONS.has(permission) ? permission : "auto",
+    semanticTags: Array.isArray(raw.semanticTags) ? raw.semanticTags.map((tag) => String(tag)) : undefined,
+    semanticSourceName: typeof raw.semanticSourceName === "string" ? raw.semanticSourceName : undefined,
+    generatedPinsAllowed: raw.generatedPinsAllowed !== false,
   };
 }
 
@@ -1851,6 +1886,7 @@ export function migrateHotspot(raw: Partial<IslandFacilityHotspot> & { facilityI
     stages: stages.length > 0 ? stages : undefined,
     revealsHotspotIds,
     consumeOnUse: consumeOnUse === true ? true : undefined,
+    hiddenUntilRevealed: raw.hiddenUntilRevealed,
     notes,
     purpose,
     alwaysVisible: raw.alwaysVisible,
@@ -1906,7 +1942,7 @@ export function migrateHotspotList(
     return [];
   }
   const seen = new Set<string>();
-  return hotspots.map((h) => {
+  const migrated = hotspots.map((h) => {
     let next = migrateHotspot(h);
     if (seen.has(next.hotspotId)) {
       next = { ...next, hotspotId: createId("hs") };
@@ -1914,6 +1950,12 @@ export function migrateHotspotList(
     seen.add(next.hotspotId);
     return next;
   });
+  const listed = new Set(migrated.flatMap((h) => h.revealsHotspotIds ?? []));
+  return migrated.map((h) =>
+    listed.has(h.hotspotId) && h.hiddenUntilRevealed !== false
+      ? { ...h, hiddenUntilRevealed: true }
+      : h,
+  );
 }
 
 /**
@@ -2226,6 +2268,7 @@ export function isHotspotVisibleInPlay(
   island: Island,
   run?: RunState | null,
   unlockedFacilityIds?: ReadonlySet<IslandFacilityId>,
+  layoutOverride?: IslandFacilityHotspot[],
 ): boolean {
   if (hotspot.hidden) {
     return false;
@@ -2239,24 +2282,36 @@ export function isHotspotVisibleInPlay(
     }
   }
   const layoutHotspots =
+    layoutOverride ??
     (island.mapAssetId ? island.mapLayouts?.[island.mapAssetId]?.hotspots : undefined) ??
     island.facilityHotspots ??
     [];
   const revealSources = probeRevealSourcesForHotspot(hotspot, layoutHotspots);
-  if (revealSources.length > 0) {
-    const explicitlyLinked = layoutHotspots.some((h) => h.revealsHotspotIds?.includes(hotspot.hotspotId));
+  const gated = isRevealGatedHotspot(hotspot, layoutHotspots) || revealSources.length > 0;
+  if (gated) {
     const revealed = Boolean(island.revealedHotspotIds?.includes(hotspot.hotspotId));
-    if (explicitlyLinked) {
+    const unusedSource = revealSources.some(
+      (source) => !island.consumedHotspotIds?.includes(source.hotspotId),
+    );
+    const sourceUsed = revealSources.some((source) =>
+      island.consumedHotspotIds?.includes(source.hotspotId),
+    );
+    const explicitlyLinked = layoutHotspots.some((h) =>
+      h.revealsHotspotIds?.includes(hotspot.hotspotId),
+    );
+    if (isFacilityHotspotId(hotspot.facilityId)) {
+      if (unusedSource || !revealed) {
+        return false;
+      }
+    } else if (explicitlyLinked) {
       if (!revealed) {
         return false;
       }
-    } else if (!revealed) {
-      const sourceUsed = revealSources.some((source) =>
-        island.consumedHotspotIds?.includes(source.hotspotId),
-      );
-      if (!sourceUsed) {
-        return false;
-      }
+    } else if (!revealed && !sourceUsed) {
+      return false;
+    }
+    if (!isFacilityHotspotId(hotspot.facilityId)) {
+      return true;
     }
   }
 
@@ -2267,7 +2322,8 @@ export function isHotspotVisibleInPlay(
     const unlocked =
       unlockedFacilityIds ??
       new Set((island.facilities ?? []).filter((f) => f.unlocked).map((f) => f.id));
-    if (!unlocked.has(id)) {
+    const revealed = Boolean(island.revealedHotspotIds?.includes(hotspot.hotspotId));
+    if (!unlocked.has(id) && !revealed) {
       return false;
     }
   }
@@ -2347,17 +2403,20 @@ export function resolveFacilityHotspots(
   const wantedFacilities = new Set(facilityIds);
   const forEditor = Boolean(options?.forEditor);
 
-  const takeSource = (source: IslandFacilityHotspot[]): IslandFacilityHotspot[] => {
+  const takeSource = (
+    source: IslandFacilityHotspot[],
+    keepAuthoredFacilities = false,
+  ): IslandFacilityHotspot[] => {
     return migrateHotspotList(source).filter((h) => {
       if (isFacilityHotspotId(h.facilityId)) {
-        return forEditor || wantedFacilities.has(h.facilityId);
+        return forEditor || keepAuthoredFacilities || wantedFacilities.has(h.facilityId);
       }
       return true;
     });
   };
 
   let resolved: IslandFacilityHotspot[] = [];
-  const fromIsland = takeSource(islandHotspots ?? []);
+  const fromIsland = takeSource(islandHotspots ?? [], true);
   /** Non-empty island layout = user (or prior save) authored placements; respect omissions. */
   const hasAuthoredLayout = fromIsland.length > 0;
   if (hasAuthoredLayout) {
@@ -2469,6 +2528,9 @@ export function exportHotspotsJson(
     if (normalized.revealsHotspotIds?.length) {
       base.revealsHotspotIds = [...normalized.revealsHotspotIds];
     }
+    if (normalized.hiddenUntilRevealed != null) {
+      base.hiddenUntilRevealed = normalized.hiddenUntilRevealed;
+    }
     if (normalized.consumeOnUse) {
       base.consumeOnUse = true;
     }
@@ -2552,6 +2614,7 @@ export function createPalettePlacement(
     purpose?: string;
     revealsHotspotIds?: string[];
     consumeOnUse?: boolean;
+    hiddenUntilRevealed?: boolean;
   },
 ): IslandFacilityHotspot {
   const rule = unlock ?? defaultUnlockRuleFor(id);
@@ -2577,6 +2640,7 @@ export function createPalettePlacement(
     links,
     stages,
     revealsHotspotIds,
+    hiddenUntilRevealed: extras?.hiddenUntilRevealed,
     consumeOnUse:
       supportsRevealAuthoring(id) || extras?.consumeOnUse === true ? true : undefined,
     notes: extras?.notes,
@@ -2605,9 +2669,9 @@ export type MapChildActionResolve =
   | { type: "hub_choice"; choiceId: string }
   | {
       type: "overlay";
-      overlay: "crew" | "inventory" | "harbor" | "market" | "clinic" | "weapon" | "weapon_services" | "ship";
-      /** Ship screen: Cargo hotspot lands on the hold tab. */
-      focus?: "vessel" | "cargo";
+      overlay: "crew" | "inventory" | "harbor" | "market" | "clinic" | "clinic_care" | "weapon" | "weapon_services" | "ship" | "training";
+      /** Ship screen: Cargo hotspot lands on the hold tab. Training: optional category. Clinic care: treat or ward. */
+      focus?: "vessel" | "cargo" | "sparring" | "treat" | "ward";
     }
   | { type: "stub"; message: string }
   | { type: "story" };
@@ -2802,25 +2866,25 @@ export const MAP_CHILD_ACTIONS: Record<CatalogChildActionId, MapChildActionDef> 
     id: "TRAIN_ASSIGN",
     label: "Assign Training",
     icon: "Map_Training.png",
-    resolve: { type: "hub_choice", choiceId: "training" },
+    resolve: { type: "overlay", overlay: "training" },
   },
   TRAIN_VIEW: {
     id: "TRAIN_VIEW",
     label: "View Training",
     icon: "Map_TrainingGrounds.png",
-    resolve: { type: "stub", message: "View Training — coming soon." },
+    resolve: { type: "overlay", overlay: "training" },
   },
   TRAIN_SPAR: {
     id: "TRAIN_SPAR",
     label: "Spar",
     icon: "Map_Spar.png",
-    resolve: { type: "stub", message: "Sparring — coming soon." },
+    resolve: { type: "overlay", overlay: "training", focus: "sparring" },
   },
   TRAIN_SPECIAL: {
     id: "TRAIN_SPECIAL",
     label: "Special Training",
     icon: "Map_SpecialTraining.png",
-    resolve: { type: "stub", message: "Special Training — coming soon." },
+    resolve: { type: "overlay", overlay: "training" },
   },
   TASK_BOUNTIES: {
     id: "TASK_BOUNTIES",
@@ -2880,13 +2944,13 @@ export const MAP_CHILD_ACTIONS: Record<CatalogChildActionId, MapChildActionDef> 
     id: "CLINIC_HEAL",
     label: "Heal / Treat Debuffs",
     icon: "Map_Heal-TreatDebuffs.png",
-    resolve: { type: "hub_choice", choiceId: "clinic" },
+    resolve: { type: "overlay", overlay: "clinic_care", focus: "treat" },
   },
   CLINIC_HOSPITAL: {
     id: "CLINIC_HOSPITAL",
     label: "Hospitalized Crewmates",
     icon: "Map_HospitalizedCrewmates.png",
-    resolve: { type: "stub", message: "Hospitalized Crewmates — coming soon." },
+    resolve: { type: "overlay", overlay: "clinic_care", focus: "ward" },
   },
   SHIP_BUY: {
     id: "SHIP_BUY",

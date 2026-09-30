@@ -1,3 +1,4 @@
+import { ITEM_ART_BY_ID, itemIconSrc } from "./itemArt";
 import { FISH_CATCH_TIERS, isFishCatchItem } from "./fishing";
 import {
   ITEM_SHOP_PRICES,
@@ -23,9 +24,9 @@ export type MarketShopAisle = "food" | "drink" | "medicine";
 export type MarketShopTab = "all" | MarketShopAisle;
 
 export const MARKET_SHOP_CATEGORY_ICONS: Record<MarketShopAisle, string> = {
-  food: "/icons/Items/Category_Food.png",
-  drink: "/icons/Items/Category_Drinks.png",
-  medicine: "/icons/Items/Category_Medicine.png",
+  food: "/icons/Items/Food/RiceMeal.png",
+  drink: "/icons/Items/Drinks/Water.png",
+  medicine: "/icons/Items/Medicine/BasicMedicine.png",
 };
 
 export const MARKET_SHOP_TABS: Array<{ id: MarketShopTab; label: string; iconSrc?: string }> = [
@@ -45,28 +46,23 @@ const MARKET_SHOP_AISLES: Record<MarketShopItemId, MarketShopAisle> = {
   bandage: "medicine",
 };
 
-const ITEM_ICON_SRC: Record<string, string> = {
-  rice_ball: "/icons/Items/Food_Rice.png",
-  dried_meat: "/icons/Items/Food_Meat.png",
-  travel_rations: "/icons/Items/Food_Fruits.png",
-  cooked_fish: "/icons/Items/Food_Fish.png",
-  hearty_meal: "/icons/Items/Category_Food.png",
-  fish: "/icons/Items/Food_Fish.png",
-  fish_fine: "/icons/Items/Food_Fish.png",
-  fish_prime: "/icons/Items/Food_Fish.png",
-  fish_golden: "/icons/Items/Food_Fish.png",
-  sea_king_meat: "/icons/Items/Food_Meat.png",
-  fresh_water: "/icons/Items/Drinks_Water.png",
-  grog: "/icons/Items/Drinks_Beer.png",
-  citrus_juice: "/icons/Items/Drinks_Wine.png",
-  energy_tonic: "/icons/Items/Drinks_Energy.png",
-  strong_brew: "/icons/Items/Drinks_Alcohol.png",
-  bandage: "/icons/Items/Medicine_Bandage.png",
-  medicine: "/icons/Items/Medicine_Potion.png",
-  medical_kit: "/icons/Items/Medicine_MedicalKit.png",
-  strong_medicine: "/icons/Items/Medicine_PhoenixTear.png",
-  antidote: "/icons/Items/Medicine_StatusRemover.png",
-};
+/** Item portraits live under `public/icons/Items/`. */
+
+function aisleFromArtPath(src: string | undefined): MarketShopAisle | null {
+  if (!src) {
+    return null;
+  }
+  if (src.includes("/Items/Food/")) {
+    return "food";
+  }
+  if (src.includes("/Items/Drinks/")) {
+    return "drink";
+  }
+  if (src.includes("/Items/Medicine/")) {
+    return "medicine";
+  }
+  return null;
+}
 
 export function isMarketShopItem(itemId: string): itemId is MarketShopItemId {
   return (MARKET_SHOP_ITEM_IDS as readonly string[]).includes(itemId);
@@ -76,10 +72,14 @@ export function itemShopAisle(itemId: string): MarketShopAisle {
   if (isMarketShopItem(itemId)) {
     return MARKET_SHOP_AISLES[itemId];
   }
-  if (isFishCatchItem(itemId) || /meat|meal|ration|rice|fish/i.test(itemId)) {
+  const fromArt = aisleFromArtPath(ITEM_ART_BY_ID[itemId]);
+  if (fromArt) {
+    return fromArt;
+  }
+  if (isFishCatchItem(itemId) || /meat|meal|ration|rice|fish|biscuit|feast|bread|stew|fruit/i.test(itemId)) {
     return "food";
   }
-  if (/water|grog|juice|tonic|brew/i.test(itemId)) {
+  if (/water|grog|juice|brew|dregs|beer|rum|wine/i.test(itemId) || itemId === "energy_tonic") {
     return "drink";
   }
   return "medicine";
@@ -121,9 +121,7 @@ export function itemRarityGlowClass(itemId: string): string {
   return rarity ? `shop-item-rarity shop-item-rarity--${rarity}` : "";
 }
 
-export function itemIconSrc(itemId: string): string {
-  return ITEM_ICON_SRC[itemId] ?? `/icons/Items/${itemId}.png`;
-}
+export { itemIconSrc };
 
 export function marketShopPrice(itemId: string): number | null {
   if (!isMarketShopItem(itemId)) {

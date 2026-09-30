@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { DEVIL_FRUITS } from "../data/devilFruits";
+import { devilFruitIconSrc, itemIconSrc } from "../data/itemArt";
 import { ITEMS } from "../data/items";
 import { RACES } from "../data/races";
 import { techniquesForFruit } from "../data/collectionLore";
@@ -50,7 +51,7 @@ export function CollectionOverlay({ profile, onClose }: CollectionOverlayProps) 
 
   return (
     <OverlayFrame eyebrow="LEDGER" title="Collection" onClose={onClose}>
-      <div className="mb-4 flex shrink-0 flex-wrap gap-2">
+      <div className="crew-tabs" role="tablist">
         {(
           [
             ["fruits", "Devil Fruits"],
@@ -59,7 +60,7 @@ export function CollectionOverlay({ profile, onClose }: CollectionOverlayProps) 
           ] as const
         ).map(([id, label]) => (
           <button
-            className={`tab-btn ${tab === id ? "is-selected" : ""}`}
+            className={tab === id ? "crew-tab is-active" : "crew-tab"}
             key={id}
             onClick={() => {
               setTab(id);
@@ -87,6 +88,11 @@ export function CollectionOverlay({ profile, onClose }: CollectionOverlayProps) 
                       onClick={(event) => discovered && selectEntry(entry.id, event.currentTarget)}
                       type="button"
                     >
+                      {discovered ? (
+                        <span className="collection-card-art-wrap" aria-hidden="true">
+                          <img alt="" className="collection-card-art" src={devilFruitIconSrc(entry.type)} />
+                        </span>
+                      ) : null}
                       <p className="collection-card-title font-display text-xl">{discovered ? entry.name : "???"}</p>
                       <p className="collection-card-subtitle text-sm text-parchment-dim">{discovered ? fruitTypeLabel(entry.type) : "Undiscovered"}</p>
                     </button>
@@ -105,6 +111,11 @@ export function CollectionOverlay({ profile, onClose }: CollectionOverlayProps) 
                       onClick={(event) => discovered && selectEntry(entry.id, event.currentTarget)}
                       type="button"
                     >
+                      {discovered ? (
+                        <span className="collection-card-art-wrap" aria-hidden="true">
+                          <img alt="" className="collection-card-art" src={itemIconSrc(entry.id)} />
+                        </span>
+                      ) : null}
                       <p className="collection-card-title font-display text-xl">{discovered ? entry.name : "???"}</p>
                       <p className="collection-card-subtitle text-sm text-parchment-dim">{discovered ? "Discovered" : "Undiscovered"}</p>
                     </button>
@@ -140,6 +151,9 @@ export function CollectionOverlay({ profile, onClose }: CollectionOverlayProps) 
           {fruit && fruitKnowledge?.discovered ? (
             <div className="space-y-3">
               <p className="hud-kicker">Devil Fruit</p>
+              <span className="inventory-detail-art-wrap" aria-hidden="true">
+                <img alt="" className="inventory-detail-art" src={devilFruitIconSrc(fruit.type)} />
+              </span>
               <h3 className="font-display text-3xl">{fruit.name}</h3>
               <p className="text-gold">{fruitTypeLabel(fruit.type)}</p>
               {fruitLore.map((entry) => (
@@ -178,6 +192,9 @@ export function CollectionOverlay({ profile, onClose }: CollectionOverlayProps) 
           {item && itemKnowledge?.discovered ? (
             <div className="space-y-3">
               <p className="hud-kicker">Item</p>
+              <span className="inventory-detail-art-wrap" aria-hidden="true">
+                <img alt="" className="inventory-detail-art" src={itemIconSrc(item.id)} />
+              </span>
               <h3 className="font-display text-3xl">{item.name}</h3>
               <p className="text-gold">{item.type}</p>
               <p className="text-parchment-dim">{item.description}</p>

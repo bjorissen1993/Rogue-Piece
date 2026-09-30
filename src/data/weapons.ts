@@ -1,4 +1,5 @@
 import type { Technique, Weapon } from "../models/types";
+import { namedCombatStatus } from "./combatStatuses";
 
 export const WEAPONS: Weapon[] = [
   {
@@ -197,6 +198,8 @@ export const WEAPON_TECHNIQUES: Technique[] = [
     accuracyMod: -4,
     weaponType: "SPEAR",
     tags: ["MELEE", "SINGLE"],
+    statusChance: 0.4,
+    applyEffect: namedCombatStatus("BLEED"),
   },
   {
     id: "club_swing",
@@ -221,15 +224,7 @@ export const WEAPON_TECHNIQUES: Technique[] = [
     accuracyMod: -3,
     weaponType: "CLUB",
     tags: ["MELEE", "SINGLE", "DEBUFF"],
-    applyEffect: {
-      id: "rattled",
-      name: "Rattled",
-      kind: "DEBUFF",
-      turns: 2,
-      target: "TARGET",
-      damageDealtMod: -0.15,
-      accuracyBonus: -5,
-    },
+    applyEffect: namedCombatStatus("DAZED"),
   },
   {
     id: "gun_shot",
@@ -310,6 +305,8 @@ export const WEAPON_TECHNIQUES: Technique[] = [
     mpCost: 9,
     tags: ["MELEE", "MULTI_HIT", "RANDOM"],
     effects: ["bleed chance"],
+    statusChance: 0.18,
+    applyEffect: namedCombatStatus("BLEED"),
     targeting: {
       group: "ENEMY",
       selection: "RANDOM",

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type DragEvent } from "react";
 import type { Ability, RunState, StatName, WeaponType } from "../models/types";
 import { getAbilitiesForCrewmember, getAbilitiesForPlayer } from "../data/abilities";
 import { getDevilFruit } from "../data/devilFruits";
+import { inventoryItemIconSrc } from "../data/itemArt";
 import { getWeapon } from "../data/weapons";
 import { CORE_CREW_CAP, BATTLE_ROW_SLOTS } from "../game/constants";
 import { resolveSkillBadges } from "../game/skillBadges";
@@ -815,6 +816,7 @@ export function CrewOverlay({ run, onClose, onAssignStashWeapon, onAssignStashFr
                           }
                           type="button"
                         >
+                          <img alt="" className="crew-stash-chip-art" src={inventoryItemIconSrc(item)} />
                           <span className="crew-stash-chip-name">{item.name}</span>
                           <span className="crew-stash-chip-kind">Devil Fruit</span>
                         </button>

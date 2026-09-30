@@ -1,4 +1,5 @@
 import type { RunState } from "../models/types";
+import { FacilityActionCard, FacilityMemberCard } from "./FacilityMemberCard";
 import { OverlayFrame } from "./OverlayFrame";
 
 type AssignmentResultOverlayProps = {
@@ -13,24 +14,28 @@ export function AssignmentResultOverlay({ run, onDismiss }: AssignmentResultOver
   }
 
   return (
-    <OverlayFrame eyebrow="Return" onClose={onDismiss} title="Crew Returns">
-      <div className="assignment-result-list">
+    <OverlayFrame elevate eyebrow="Return" onClose={onDismiss} title="Crew Returns">
+      <p className="encounter-choice-lede">They are back from the job. Read the report, then send them on.</p>
+      <ul className="facility-roster-grid assignment-result-grid">
         {reports.map((report) => (
-          <article className="assignment-result-card" key={`${report.characterId}-${report.label}`}>
-            <h3 className="font-display text-xl text-gold">{report.summary}</h3>
-            {report.rewards?.length ? (
-              <ul>
-                {report.rewards.map((reward) => (
-                  <li key={reward}>{reward}</li>
-                ))}
-              </ul>
-            ) : null}
-          </article>
+          <li key={`${report.characterId}-${report.label}`}>
+            <article className="assignment-result-card">
+              <FacilityMemberCard characterId={report.characterId} run={run} />
+              <h3 className="font-display text-xl text-gold">{report.summary}</h3>
+              {report.rewards?.length ? (
+                <ul>
+                  {report.rewards.map((reward) => (
+                    <li key={reward}>{reward}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </article>
+          </li>
         ))}
+      </ul>
+      <div className="facility-action-grid">
+        <FacilityActionCard body="Back to town." kicker="Continue" onClick={onDismiss} title="Hear them out" />
       </div>
-      <button className="gold-btn mt-4" onClick={onDismiss} type="button">
-        Continue
-      </button>
     </OverlayFrame>
   );
 }

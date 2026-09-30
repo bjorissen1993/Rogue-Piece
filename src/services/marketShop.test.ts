@@ -70,11 +70,18 @@ describe("Market shop on the hub map", () => {
   });
 
   it("maps stall portraits and aisle tabs to the new item art", () => {
-    expect(itemIconSrc("rice_ball")).toBe("/icons/Items/Food_Rice.png");
-    expect(itemIconSrc("bandage")).toBe("/icons/Items/Medicine_Bandage.png");
-    expect(itemIconSrc("energy_tonic")).toBe("/icons/Items/Drinks_Energy.png");
+    expect(itemIconSrc("rice_ball")).toBe("/icons/Items/Food/Riceball.png");
+    expect(itemIconSrc("bandage")).toBe("/icons/Items/Medicine/Bandage.png");
+    expect(itemIconSrc("energy_tonic")).toBe("/icons/Items/Drinks/EnergyTonic.png");
+    expect(itemIconSrc("antidote")).toBe("/icons/Items/Medicine/Antidote.png");
+    expect(itemIconSrc("phoenix_tear")).toBe("/icons/Items/Medicine/PhoenixTear.png");
+    expect(itemIconSrc("smoke_bomb")).toBe("/icons/Items/Utility/SmokeBomb.png");
+    expect(itemIconSrc("hardwood")).toBe("/icons/Items/Materials/HardWood.png");
+    expect(itemIconSrc("marine_field_manual")).toBe("/icons/Items/Manuals/MeleeTechnique.png");
+    expect(itemShopAisle("calming_tonic")).toBe("medicine");
+    expect(itemShopAisle("energy_tonic")).toBe("drink");
     expect(MARKET_SHOP_TABS.map((tab) => tab.id)).toEqual(["all", "food", "drink", "medicine"]);
-    expect(MARKET_SHOP_TABS.find((tab) => tab.id === "food")?.iconSrc).toBe("/icons/Items/Category_Food.png");
+    expect(MARKET_SHOP_TABS.find((tab) => tab.id === "food")?.iconSrc).toBe("/icons/Items/Food/RiceMeal.png");
   });
 
   it("buys a good without leaving the map state", () => {

@@ -1,8 +1,15 @@
 import { computeHealAmount, computeMpRestoreAmount, computeReviveHp, getItemDefinition, itemSellPrice } from "../data/items";
-import { isFishCatchItem } from "../data/fishing";
+import {
+  classifyInventoryItem,
+  INVENTORY_CATEGORIES,
+  INVENTORY_CATEGORY_LABELS,
+  INVENTORY_FILTER_CATEGORIES,
+  matchesInventoryFilter,
+} from "../data/inventoryTaxonomy";
 import type {
   InventoryCategory,
   InventoryItem,
+  InventorySubtype,
   ItemUseContext,
   Player,
   ProfileSave,
@@ -13,8 +20,9 @@ import { CollectionService } from "./CollectionService";
 import { CharacterService } from "./CharacterService";
 import { CrewService } from "./CrewService";
 import { AfflictionService } from "./AfflictionService";
+import { CombatStatusService } from "./CombatStatusService";
 import { MpService } from "./MpService";
-import type { AfflictionKind } from "../models/types";
+import type { CombatStatusKind } from "../models/types";
 
 export type ItemUseResult = {
   ok: boolean;
@@ -26,45 +34,10 @@ export type ItemUseResult = {
   guaranteeEscape: boolean;
   revived: boolean;
   itemName: string;
+  clearedCombatStatuses?: CombatStatusKind[];
 };
 
-export const INVENTORY_CATEGORIES: InventoryCategory[] = [
-  "ALL",
-  "WEAPONS",
-  "DEVIL_FRUITS",
-  "CONSUMABLES",
-  "TOOLS",
-  "MATERIALS",
-  "QUEST_ITEMS",
-  "KEY_ITEMS",
-  "COLLECTABLES",
-  "MISCELLANEOUS",
-];
-
-export const INVENTORY_FILTER_CATEGORIES: Exclude<InventoryCategory, "ALL">[] = [
-  "WEAPONS",
-  "DEVIL_FRUITS",
-  "CONSUMABLES",
-  "TOOLS",
-  "MATERIALS",
-  "QUEST_ITEMS",
-  "KEY_ITEMS",
-  "COLLECTABLES",
-  "MISCELLANEOUS",
-];
-
-export const INVENTORY_CATEGORY_LABELS: Record<InventoryCategory, string> = {
-  ALL: "All",
-  WEAPONS: "Weapons",
-  DEVIL_FRUITS: "Devil Fruits",
-  CONSUMABLES: "Consumables",
-  TOOLS: "Tools",
-  MATERIALS: "Materials",
-  QUEST_ITEMS: "Quest",
-  KEY_ITEMS: "Key",
-  COLLECTABLES: "Collectibles",
-  MISCELLANEOUS: "Misc",
-};
+export { INVENTORY_CATEGORIES, INVENTORY_CATEGORY_LABELS, INVENTORY_FILTER_CATEGORIES };
 
 function stackOf(player: Player, itemId: string): InventoryItem | undefined {
   return player.inventory.find((item) => (item.itemId || item.id) === itemId && item.type !== "WEAPON");
@@ -79,17 +52,15 @@ function applyClearAfflictionEffects(
   characterId: string,
   effects: import("../models/types").ItemEffect[],
 ): string | null {
+  const kinds = CombatStatusService.overworldKindsClearedByItemEffects(effects);
+  if (!kinds.length) {
+    return null;
+  }
   let cleared = false;
-  for (const effect of effects) {
-    if (effect.type !== "CLEAR_AFFLICTION") {
-      continue;
-    }
-    const kinds = effect.kinds?.length ? effect.kinds : (["POISON", "SICKNESS"] as AfflictionKind[]);
-    for (const kind of kinds) {
-      if (AfflictionService.list(run, characterId).some((entry) => entry.kind === kind)) {
-        AfflictionService.clear(run, characterId, kind);
-        cleared = true;
-      }
+  for (const kind of kinds) {
+    if (AfflictionService.list(run, characterId).some((entry) => entry.kind === kind)) {
+      AfflictionService.clear(run, characterId, kind);
+      cleared = true;
     }
   }
   return cleared ? "Afflictions clear." : null;
@@ -137,51 +108,20 @@ export function carriedCollectibleStacks(inventory: InventoryItem[]): CarriedCol
   return [...stacks.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function packItems(inventory: InventoryItem[], category: InventoryCategory = "ALL"): InventoryItem[] {
-  const carried = inventory.filter((item) => !isCarriedCollectible(item));
-  return category === "ALL" ? carried : carried.filter((item) => categorizeItem(item) === category);
+export function packItems(
+  inventory: InventoryItem[],
+  category: InventoryCategory = "ALL",
+  subtype?: InventorySubtype | "ALL" | null,
+): InventoryItem[] {
+  return inventory.filter((item) => matchesInventoryFilter(item, category, subtype));
 }
 
-type StoredCategory = Exclude<InventoryCategory, "ALL">;
+export function categorizeItem(item: InventoryItem): Exclude<InventoryCategory, "ALL"> {
+  return classifyInventoryItem(item).category;
+}
 
-export function categorizeItem(item: InventoryItem): StoredCategory {
-  if (isFishCatchItem(definitionIdOf(item))) {
-    return "CONSUMABLES";
-  }
-  if (item.category && item.category !== "ALL") {
-    return item.category;
-  }
-  if (item.type === "WEAPON" || item.weaponDefinitionId) {
-    return "WEAPONS";
-  }
-  if (item.type === "DEVIL_FRUIT" || item.fruitId) {
-    return "DEVIL_FRUITS";
-  }
-  if (item.type === "CONSUMABLE") {
-    return "CONSUMABLES";
-  }
-  if (item.type === "MATERIAL") {
-    return "MATERIALS";
-  }
-  if (item.type === "QUEST") {
-    return "QUEST_ITEMS";
-  }
-  if (item.type === "KEY") {
-    return "KEY_ITEMS";
-  }
-  const def = getItemDefinition(definitionIdOf(item));
-  if (def?.category && def.category !== "ALL") {
-    return def.category;
-  }
-  if (def?.type === "CONSUMABLE") return "CONSUMABLES";
-  if (def?.type === "MATERIAL") return "MATERIALS";
-  if (def?.useContext === "PASSIVE") return "COLLECTABLES";
-  if (def?.useContext === "SPECIAL") return "KEY_ITEMS";
-  const hay = `${item.name} ${item.description}`.toLowerCase();
-  if (/smoke|bomb|tool|flare|spyglass/.test(hay)) return "TOOLS";
-  if (/chart|folio|key|map|contract/.test(hay)) return "KEY_ITEMS";
-  if (/quest|letter|token/.test(hay)) return "QUEST_ITEMS";
-  return "MISCELLANEOUS";
+export function itemInventorySubtype(item: InventoryItem): InventorySubtype | undefined {
+  return classifyInventoryItem(item).subtype;
 }
 
 export const ItemService = {
@@ -190,6 +130,15 @@ export const ItemService = {
     if (!def) {
       return null;
     }
+    const classified = classifyInventoryItem({
+      id: def.id,
+      itemId: def.id,
+      name: def.name,
+      type: def.type,
+      description: def.description,
+      category: def.category,
+      subtype: def.subtype,
+    });
     return {
       id: def.id,
       itemId: def.id,
@@ -201,12 +150,8 @@ export const ItemService = {
         const heal = def.effects.find((effect) => effect.type === "HEAL");
         return heal && heal.type === "HEAL" ? heal.amount : undefined;
       })(),
-      category: def.category ?? categorizeItem({
-        id: def.id,
-        name: def.name,
-        type: def.type,
-        description: def.description,
-      }),
+      category: classified.category,
+      subtype: classified.subtype,
     };
   },
 
@@ -279,7 +224,8 @@ export const ItemService = {
           itemId: item.itemId || item.id,
           quantity: item.quantity ?? 1,
           type: "DEVIL_FRUIT",
-          category: "DEVIL_FRUITS",
+          category: "VALUABLES",
+          subtype: "DEVIL_FRUIT",
         });
         if (item.fruitId && profile) {
           CollectionService.discoverFruit(profile, item.fruitId);
@@ -503,8 +449,18 @@ export const ItemService = {
         effectLines.push("Guarantees escape from this fight.");
       }
       if (effect.type === "CLEAR_AFFLICTION") {
-        const kinds = effect.kinds?.length ? effect.kinds.join("/") : "poison & sickness";
-        effectLines.push(`Clears ${kinds.toLowerCase()}.`);
+        const kinds = CombatStatusService.kindsClearedByItemEffects([effect]);
+        const overworld = CombatStatusService.overworldKindsClearedByItemEffects([effect]);
+        const labels = [
+          ...overworld.map((kind) => kind.toLowerCase()),
+          ...kinds.filter((kind) => kind !== "POISON").map((kind) => kind.toLowerCase()),
+        ];
+        const unique = [...new Set(labels)];
+        effectLines.push(
+          unique.length
+            ? `Clears ${unique.join(" / ")}.`
+            : "Clears negative statuses.",
+        );
       }
     }
     if (effectLines.length) {
@@ -644,6 +600,7 @@ export const ItemService = {
       guaranteeEscape,
       revived,
       itemName: def.name,
+      clearedCombatStatuses: CombatStatusService.kindsClearedByItemEffects(def.effects),
     };
   },
 
@@ -851,6 +808,7 @@ export const ItemService = {
       guaranteeEscape: false,
       revived,
       itemName: def.name,
+      clearedCombatStatuses: CombatStatusService.kindsClearedByItemEffects(def.effects),
     };
   },
 };

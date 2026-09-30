@@ -145,7 +145,39 @@ export const WorldCombatProgressionService = {
     // Attach debug reason on request via return; callers can log.
     (request as CombatRequest & { _compositionReason?: string })._compositionReason = composed.reason;
 
-    return composed.extras;
+    const extras = composed.extras;
+    const tier = this.worldThreatTier(run);
+    if (tier >= 3) {
+      extras.forEach((enemy, index) => {
+        if (index === 0 && tier >= 4) {
+          enemy.name = enemy.name.startsWith("Veteran ") ? enemy.name : `Veteran ${enemy.name}`;
+        }
+        if (tier >= 5 && index === extras.length - 1) {
+          enemy.name = enemy.name.includes("Captain") ? enemy.name : `${enemy.name} Captain`;
+          enemy.strength += 2;
+        }
+      });
+    }
+    return extras;
+  },
+
+  /** Later eras add veterans, named officers, and fruit users — not just HP. */
+  escalationNotes(run: RunState): string[] {
+    const tier = this.worldThreatTier(run);
+    const notes = [this.dayBandLabel(run.day)];
+    if (tier >= 3) {
+      notes.push("Veteran fighters");
+    }
+    if (tier >= 4) {
+      notes.push("Named officers");
+    }
+    if (tier >= 5) {
+      notes.push("Advanced techniques");
+    }
+    if (tier >= 6) {
+      notes.push("Devil Fruit users");
+    }
+    return notes;
   },
 
   resolveBattleFormat(request: CombatRequest) {

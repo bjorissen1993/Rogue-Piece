@@ -1,6 +1,7 @@
 import type {
   AlignmentAxes,
   DialogueContext,
+  DialogueIntent,
   DialogueMemory,
   HumorStyle,
   Island,
@@ -571,6 +572,19 @@ export const DialogueService = {
       return "I heard ";
     }
     return "";
+  },
+
+  /**
+   * Deterministic fallback: exact lines stay locked; intents become playable prose
+   * without inventing world facts. Runtime AI may replace wording later.
+   */
+  renderIntent(intent: DialogueIntent, speakerName = "They"): string {
+    if (intent.exactLine) {
+      return intent.exactLine;
+    }
+    const facts = (intent.requiredFacts ?? []).join(" ");
+    const emotion = intent.emotion ? `${intent.emotion}. ` : "";
+    return `${emotion}${speakerName} ${intent.intent}${facts ? ` ${facts}` : ""}`.replace(/\s+/g, " ").trim();
   },
 };
 

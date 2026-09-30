@@ -39,6 +39,9 @@ import { LegacyService } from "./LegacyService";
 import { ensurePlayerStats } from "../utils/stats";
 import { nowIso } from "../utils/ids";
 import { migrateHotspotList, migrateIslandMapLayouts } from "../data/islandMaps";
+import { classifyInventoryItem } from "../data/inventoryTaxonomy";
+import type { InventoryItem } from "../models/types";
+import { AuthoredMapLayoutService } from "./AuthoredMapLayoutService";
 
 const PROFILE_KEYS: Record<Exclude<ProfileSlot, "dev">, string> = {
   1: "pirateRoguelike_profile_1",
@@ -104,6 +107,20 @@ function isProfileSave(value: unknown): value is ProfileSave {
     "activeRun" in data &&
     Boolean(data.profileType)
   );
+}
+
+function migrateInventoryItem(item: InventoryItem): InventoryItem {
+  const next = {
+    ...item,
+    itemId: item.itemId || item.id,
+    quantity: item.quantity ?? 1,
+  };
+  const classified = classifyInventoryItem(next);
+  return {
+    ...next,
+    category: classified.category,
+    subtype: item.subtype ?? classified.subtype,
+  };
 }
 
 function emptyRaceProgress(): RaceProgress[] {
@@ -201,11 +218,7 @@ function ensureProfileShape(profile: ProfileSave): ProfileSave {
       deathCause: activeRun.deathCause,
       player: {
         ...activeRun.player,
-        inventory: (activeRun.player.inventory ?? []).map((item) => ({
-          ...item,
-          itemId: item.itemId || item.id,
-          quantity: item.quantity ?? 1,
-        })),
+        inventory: (activeRun.player.inventory ?? []).map(migrateInventoryItem),
       },
       timeOfDay: activeRun.timeOfDay ?? "MORNING",
       pendingTimeCost: activeRun.pendingTimeCost ?? 0,
@@ -296,6 +309,11 @@ function migrateRunState(run: RunState): RunState {
         lastVisitedDay: island.lastVisitedDay ?? null,
         fundedProjects: island.fundedProjects ?? [],
         protectionOffered: island.protectionOffered ?? false,
+        occupations: island.occupations ?? [],
+        localFactionPressure: island.localFactionPressure ?? [],
+        harborBlockade: island.harborBlockade ?? null,
+        generatedLocations: island.generatedLocations ?? [],
+        gatherZones: island.gatherZones ?? [],
       };
       migrateIslandMapLayouts(nextIsland);
       return nextIsland;
@@ -313,6 +331,10 @@ function migrateRunState(run: RunState): RunState {
     pendingTechniqueChoice: run.pendingTechniqueChoice ?? null,
     pendingEncounterId: run.pendingEncounterId ?? null,
     pendingSeekRandomEncounter: run.pendingSeekRandomEncounter ?? false,
+    trainingSessions: run.trainingSessions ?? [],
+    pendingIslandEvent: run.pendingIslandEvent ?? null,
+    pendingNavalEscape: run.pendingNavalEscape ?? null,
+    pendingGather: run.pendingGather ?? null,
     characterAssignments: run.characterAssignments ?? [],
     characterTrainingToday: run.characterTrainingToday ?? {},
     pendingAssignmentResults: run.pendingAssignmentResults ?? [],
@@ -344,11 +366,7 @@ function migrateRunState(run: RunState): RunState {
       unlockedMasteryTechniques: run.player.unlockedMasteryTechniques ?? [],
       title: run.player.title ?? "Wanderer",
       identity: run.player.identity,
-      inventory: (run.player.inventory ?? []).map((item) => ({
-        ...item,
-        itemId: item.itemId || item.id,
-        quantity: item.quantity ?? 1,
-      })),
+      inventory: (run.player.inventory ?? []).map(migrateInventoryItem),
     },
     world: {
       ...run.world,
@@ -359,6 +377,7 @@ function migrateRunState(run: RunState): RunState {
           joinInterest: character.joinInterest ?? 0,
         }),
       ),
+      scheduledNews: run.world.scheduledNews ?? [],
     },
   };
   WeaponService.migrateInventoryWeapons(next);
@@ -636,6 +655,9 @@ export const SaveService = {
   },
 
   resetDevelopmentProfile(): ProfileSave {
+    const existing = loadSlot("dev");
+    AuthoredMapLayoutService.harvestFromRun(existing?.activeRun);
+    AuthoredMapLayoutService.harvestFromStoredProfiles();
     localStorage.removeItem(DEV_KEY);
     localStorage.removeItem(LEGACY_DEV_KEY);
     return this.getOrCreateProfile("dev");

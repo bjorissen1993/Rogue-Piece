@@ -237,6 +237,9 @@ function targetingBadgeTips(targeting: TargetingSpec): Partial<Record<SkillBadge
 
 function classifyStatus(spec: AbilityEffectSpec | undefined): SkillBadgeId | null {
   if (!spec) return null;
+  if (spec.statusKind) {
+    return "AFFLICTION";
+  }
   if (spec.kind === "BUFF") {
     if ((spec.dodgeBonus ?? 0) > 0 || (spec.damageTakenMod ?? 0) < 0) {
       return "GUARD";

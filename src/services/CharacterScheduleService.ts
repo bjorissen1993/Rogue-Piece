@@ -262,6 +262,10 @@ export const CharacterScheduleService = {
     const nowSlot = slotIndex(run.timeOfDay);
     const remaining: CharacterAssignment[] = [];
     for (const assignment of run.characterAssignments!) {
+      if (assignment.metadata?.openEnded) {
+        remaining.push(assignment);
+        continue;
+      }
       if (compareSchedule(nowDay, nowSlot, assignment.endDay, assignment.endSlot) >= 0) {
         completed.push(this.completeAssignment(run, assignment));
       } else {

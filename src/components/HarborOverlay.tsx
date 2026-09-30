@@ -4,6 +4,7 @@ import { VoyageService } from "../services/VoyageService";
 import { IslandService } from "../services/IslandService";
 import { IslandPressureService } from "../services/IslandPressureService";
 import { AffiliationService } from "../services/AffiliationService";
+import { FacilityActionCard } from "./FacilityMemberCard";
 
 type HarborOverlayProps = {
   run: RunState;
@@ -11,6 +12,7 @@ type HarborOverlayProps = {
   onOpenInventory: () => void;
   onDepart: (toIslandId: string) => void;
   onLeave: () => void;
+  onOpenMuseum?: () => void;
 };
 
 type Dest = ReturnType<typeof VoyageService.listDestinations>[number];
@@ -37,6 +39,7 @@ export function HarborOverlay({
   onOpenInventory,
   onDepart,
   onLeave,
+  onOpenMuseum,
 }: HarborOverlayProps) {
   const ship = VoyageService.ensureShip(run);
   const island = IslandService.getCurrentIsland(run);
@@ -86,19 +89,29 @@ export function HarborOverlay({
             {island ? (
               <p className="harbor-pressure">{IslandPressureService.summary(island)}</p>
             ) : null}
+            {island?.harborBlockade ? (
+              <p className="harbor-blockade">
+                Blockade: {island.harborBlockade.ships} {island.harborBlockade.factionId.toLowerCase()} ship
+                {island.harborBlockade.ships === 1 ? "" : "s"} hold the channel. Sailing starts a naval escape.
+              </p>
+            ) : null}
           </div>
           <ShipCard ship={ship} />
         </header>
 
-        <div className="harbor-actions">
-          <button className="choice-btn" onClick={onOpenCrew} type="button">
-            {crewLabel}
-            <span className="harbor-action-meta">{availableCrew} ready ashore</span>
-          </button>
-          <button className="choice-btn" onClick={onOpenInventory} type="button">
-            Cargo &amp; Inventory
-            <span className="harbor-action-meta">{run.player.inventory.length} stacks</span>
-          </button>
+        <div className="harbor-actions facility-action-grid is-two">
+          <FacilityActionCard
+            body={`${availableCrew} ready ashore. Formation, fruit, and weapons.`}
+            kicker="Roster"
+            onClick={onOpenCrew}
+            title={crewLabel}
+          />
+          <FacilityActionCard
+            body={`${run.player.inventory.length} stacks in the pack.`}
+            kicker="Hold"
+            onClick={onOpenInventory}
+            title="Cargo & inventory"
+          />
         </div>
 
         <div className="harbor-depart">
@@ -156,34 +169,27 @@ export function HarborOverlay({
                         ? ` · last visit day ${selected.lastVisitedDay}`
                         : " · unvisited"}
                     </p>
-                    <button
-                      className="choice-btn"
+                    <FacilityActionCard
+                      kicker={island?.harborBlockade ? "Break blockade" : "Chart a course"}
                       onClick={() => onDepart(selected.id)}
-                      type="button"
-                    >
-                      Sail to {selected.name}
-                    </button>
+                      title={`${island?.harborBlockade ? "Break blockade toward" : "Sail to"} ${selected.name}`}
+                      body={`Distance ${selected.distance} · ~${selected.etaSlots} watch${selected.etaSlots === 1 ? "" : "es"}`}
+                    />
                   </>
                 ) : (
                   <p className="harbor-empty">Select an island on the map.</p>
                 )}
 
-                <ul className="harbor-dest-list world-map-list">
+                <ul className="harbor-dest-list world-map-list facility-action-grid">
                   {destinations.map((dest) => (
                     <li key={dest.id}>
-                      <button
-                        className={`choice-btn harbor-dest-btn${
-                          dest.id === selectedId ? " is-selected" : ""
-                        }`}
+                      <FacilityActionCard
+                        active={dest.id === selectedId}
+                        body={`Danger ${dest.dangerLevel} · ${dest.archetype.replace(/_/g, " ")}`}
+                        kicker={`~${dest.etaSlots} watch${dest.etaSlots === 1 ? "" : "es"}`}
                         onClick={() => setSelectedId(dest.id)}
-                        type="button"
-                      >
-                        <span className="harbor-dest-title">{dest.name}</span>
-                        <span className="harbor-action-meta">
-                          ~{dest.etaSlots} watch{dest.etaSlots === 1 ? "" : "es"} · danger{" "}
-                          {dest.dangerLevel}
-                        </span>
-                      </button>
+                        title={dest.name}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -193,6 +199,11 @@ export function HarborOverlay({
         </div>
 
         <footer className="harbor-foot">
+          {onOpenMuseum ? (
+            <button className="ghost-btn" onClick={onOpenMuseum} type="button">
+              Museum
+            </button>
+          ) : null}
           <button className="ghost-btn" onClick={onLeave} type="button">
             Return to town
           </button>

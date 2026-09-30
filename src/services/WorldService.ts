@@ -20,6 +20,13 @@ import { FactionService } from "./FactionService";
 import { IslandService } from "./IslandService";
 import { IslandPressureService } from "./IslandPressureService";
 import { DevilFruitService } from "./DevilFruitService";
+import { TrainingGroundsService } from "./TrainingGroundsService";
+import { QuestDirectorService } from "./QuestDirectorService";
+import { FactionDiplomacyService } from "./FactionDiplomacyService";
+import { IslandOccupationService } from "./IslandOccupationService";
+import { WorldNewsService } from "./WorldNewsService";
+import { GeneratedLocationService } from "./GeneratedLocationService";
+import { GatherService } from "./GatherService";
 
 function pushNews(state: RunState, text: string): void {
   const event: WorldHistoryEvent = {
@@ -263,9 +270,22 @@ export const WorldService = {
       }
     }
     state.timeOfDay = TIME_OF_DAY_ORDER[index] ?? "MORNING";
+    TrainingGroundsService.tickAfterTimeAdvance(state, slots);
+    FactionDiplomacyService.ensure(state);
+    QuestDirectorService.maybeGenerate(state);
     const pressureLines = IslandPressureService.tickAshore(state, slots);
-    if (pressureLines.length) {
-      state.lastFeedback = pressureLines[pressureLines.length - 1] ?? state.lastFeedback;
+    const island = IslandService.getCurrentIsland(state);
+    if (island) {
+      GeneratedLocationService.tickRuins(state, island);
+    }
+    const occupationLines = IslandOccupationService.tick(state, slots, rng);
+    const newsLines = WorldNewsService.flushDue(state);
+    const lines = [...pressureLines, ...occupationLines, ...newsLines];
+    if (lines.length) {
+      state.lastFeedback = lines[lines.length - 1] ?? state.lastFeedback;
+      for (const line of occupationLines) {
+        this.addNews(state, line);
+      }
     }
     return completed;
   },
@@ -274,6 +294,8 @@ export const WorldService = {
     state.world.day += 1;
     state.day = state.world.day;
     TrainingService.resetDay(state);
+    QuestDirectorService.tickExpiry(state);
+    GatherService.tickZones(state);
 
     for (const fruit of state.world.devilFruits) {
       if (fruit.status !== "IN_TRANSIT") {
@@ -282,6 +304,13 @@ export const WorldService = {
       fruit.transitRemaining = (fruit.transitRemaining ?? 1) - 1;
       if ((fruit.transitRemaining ?? 0) <= 0) {
         resolveTransit(state, fruit.fruitId, rng);
+      }
+    }
+
+    for (const island of state.islands ?? []) {
+      const growth = GeneratedLocationService.tickGrowth(state, island);
+      if (growth.length) {
+        state.lastFeedback = growth[growth.length - 1] ?? state.lastFeedback;
       }
     }
 

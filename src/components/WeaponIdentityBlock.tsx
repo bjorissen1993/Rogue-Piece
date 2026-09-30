@@ -6,6 +6,7 @@ import { DevilFruitService } from "../services/DevilFruitService";
 import { WeaponProgressionService } from "../services/WeaponProgressionService";
 import { WeaponService } from "../services/WeaponService";
 import { weaponRarityClass } from "../utils/weaponRarity";
+import { NamingStageBadge } from "./NamingStageBadge";
 
 type WeaponIdentityBlockProps = {
   run: RunState;
@@ -49,7 +50,9 @@ export function WeaponIdentityBlock({ run, item, wielderId, className = "" }: We
         </div>
         <div className="weapon-identity-cell is-naming">
           <dt>Naming stage</dt>
-          <dd>{identity.namingStage}</dd>
+          <dd>
+            <NamingStageBadge item={item} />
+          </dd>
         </div>
         <div className="weapon-identity-cell is-name">
           <dt>Current name</dt>

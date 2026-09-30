@@ -39,8 +39,8 @@ function innHotspot(): IslandFacilityHotspot {
 }
 
 describe("Story chain Phase 2", () => {
-  it("uses SAVE_VERSION 36", () => {
-    expect(SAVE_VERSION).toBe(37);
+  it("uses SAVE_VERSION 41", () => {
+    expect(SAVE_VERSION).toBe(41);
   });
 
   function generateAfterEndPlaced(

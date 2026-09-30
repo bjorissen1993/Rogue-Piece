@@ -59,7 +59,7 @@ export function emptyLegacyState(): WorldLegacyState {
     mentorships: [],
     styleLineages: [],
     items: [],
-    betweenRunDaysDefault: 90,
+    betweenRunDaysDefault: 13,
   };
 }
 
@@ -128,6 +128,9 @@ export const LegacyService = {
   ensure(profile: ProfileSave): WorldLegacyState {
     if (!profile.legacy) {
       profile.legacy = emptyLegacyState();
+    }
+    if ((profile.legacy.betweenRunDaysDefault ?? 90) > 28) {
+      profile.legacy.betweenRunDaysDefault = 13;
     }
     this.migrateFromPersistent(profile);
     return profile.legacy;
@@ -360,12 +363,41 @@ export const LegacyService = {
       }
     }
 
+    const captain = this.promote(
+      profile,
+      {
+        id: `pc_${run.id}`,
+        name: run.player.name,
+        faction: "PIRATE",
+        raceId: run.player.raceId,
+        strength: run.player.stats.strength,
+        bounty: run.player.bounty,
+        devilFruitId: run.currentBoundFruitId,
+        alive: !run.deathCause,
+        relationshipWithPlayer: 100,
+        tags: ["former_captain", "player_character"],
+      },
+      {
+        tier: "LEGACY",
+        locationId: run.currentLocationId,
+        importanceBonus: 45,
+        birthYear: legacy.timeline.year - 20,
+      },
+    );
+    captain.postRunFate = run.deathCause ? "DEAD" : "ESCAPED";
+    if (run.deathCause) {
+      captain.status = "DEAD";
+      captain.historical = true;
+      captain.deathYear = legacy.timeline.year;
+      captain.careerNotes = [...(captain.careerNotes ?? []), run.deathCause];
+    }
+
     this.recordEvent(profile, {
       eventType: "RUN_END",
       summary: run.deathCause
         ? `Voyage of ${run.player.name} ended: ${run.deathCause}`
         : `Voyage of ${run.player.name} ended.`,
-      characterIds: run.crew.map((m) => m.characterId),
+      characterIds: [captain.characterId, ...run.crew.map((m) => m.characterId)],
       locationId: run.currentLocationId,
       runId: run.id,
       importance: 5,

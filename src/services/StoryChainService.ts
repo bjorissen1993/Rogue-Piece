@@ -51,6 +51,7 @@ import { ItemService } from "./ItemService";
 import { isFishCatchItem, FISH_CATCH_ITEM_IDS } from "../data/fishing";
 import { SEA_KING_MEAT_ITEM_ID } from "../data/items";
 import { LegacyService } from "./LegacyService";
+import { QuestOutcomeService } from "./QuestOutcomeService";
 
 export const STORY_ENCOUNTER_PREFIX = "story:";
 const MERCHANT_NAMES = ["Hama", "Old Riku", "Nori", "Katsu", "Mira", "Den", "Sora", "Piko", "Ume", "Taro"];
@@ -1867,6 +1868,7 @@ export const StoryChainService = {
       list.push({ chainId: chain.id, firedNodeIds: [], completedNodeIds: [], effectsApplied: true });
     }
     run.storyChainProgress = list;
+    extras.push(...QuestOutcomeService.onChainCompleted(run, chain));
     return extras;
   },
 

@@ -1,4 +1,5 @@
 import type { Ability, Player, RunState } from "../models/types";
+import { namedCombatStatus } from "./combatStatuses";
 import { DevilFruitCombatService } from "../services/DevilFruitCombatService";
 import { WeaponMasteryService } from "../services/WeaponMasteryService";
 import { WeaponService } from "../services/WeaponService";
@@ -35,15 +36,7 @@ export const ABILITIES: Ability[] = [
     scalingStat: "speed",
     accuracyMod: 2,
     tags: ["MELEE", "SINGLE", "DEBUFF"],
-    applyEffect: {
-      id: "shocked",
-      name: "Shocked",
-      kind: "DEBUFF",
-      turns: 2,
-      target: "TARGET",
-      accuracyBonus: -8,
-      dodgeBonus: -4,
-    },
+    applyEffect: namedCombatStatus("DAZED"),
   },
   {
     id: "fruit_burst",

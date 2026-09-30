@@ -15,11 +15,16 @@ import {
   radialOrbitAuraRadius,
   radialOrbitWaveScale,
 } from "./islandHubRadialWave";
+import { ClinicCareOverlay } from "./ClinicCareOverlay";
 import { ClinicShopOverlay } from "./ClinicShopOverlay";
 import { MarketShopOverlay } from "./MarketShopOverlay";
 import { ShipOverlay } from "./ShipOverlay";
 import { WeaponTradeShopOverlay } from "./WeaponTradeShopOverlay";
 import { WeaponServicesOverlay } from "./WeaponServicesOverlay";
+import { TrainingGroundsOverlay } from "./TrainingGroundsOverlay";
+import { OccupationOverlay } from "./OccupationOverlay";
+import { GatherOverlay } from "./GatherOverlay";
+import { IslandOccupationService } from "../services/IslandOccupationService";
 import type {
   EncounterChoice,
   HotspotChildOverride,
@@ -164,6 +169,9 @@ type IslandHubMapProps = {
   onSellMarketItem?: (itemId: string, quantity?: number) => string;
   onBuyClinicItem?: (itemId: string, quantity?: number) => string;
   onSellClinicItem?: (itemId: string, quantity?: number) => string;
+  onClinicTreat?: (characterId: string) => string;
+  onClinicHospitalize?: (characterId: string) => string;
+  onClinicFundWing?: () => string;
   onEnsureWeaponShop?: () => void;
   onBuyWeaponShopItem?: (listingId: string) => string;
   onSellWeaponShopItem?: (instanceId: string) => string;
@@ -182,6 +190,15 @@ type IslandHubMapProps = {
   onRequestListFallback?: () => void;
   onOpenCrew?: () => void;
   onOpenInventory?: () => void;
+  onOccupationAct?: (
+    hotspotId: string,
+    action: "fight" | "scout" | "sneak" | "negotiate" | "leave",
+  ) => { message: string; startFight?: boolean; liberated?: boolean; infiltrate?: boolean };
+  onStartSpar?: () => void;
+  onBeginGather?: (hotspotId: string) => void;
+  onPickGather?: (slotId: string) => string;
+  onFinishGather?: () => string;
+  onPromoteGeneratedQuest?: (threadId: string) => void;
 };
 
 type DragState = {
@@ -504,6 +521,9 @@ export function IslandHubMap({
   onSellMarketItem,
   onBuyClinicItem,
   onSellClinicItem,
+  onClinicTreat,
+  onClinicHospitalize,
+  onClinicFundWing,
   onEnsureWeaponShop,
   onBuyWeaponShopItem,
   onSellWeaponShopItem,
@@ -517,6 +537,12 @@ export function IslandHubMap({
   onRequestListFallback,
   onOpenCrew,
   onOpenInventory,
+  onOccupationAct,
+  onStartSpar,
+  onBeginGather,
+  onPickGather,
+  onFinishGather,
+  onPromoteGeneratedQuest,
 }: IslandHubMapProps) {
   const mapAssetId = island.mapAssetId;
   const mapRef = useRef<HTMLDivElement>(null);
@@ -585,10 +611,17 @@ export function IslandHubMap({
   const [fishingOpen, setFishingOpen] = useState(false);
   const [marketShopOpen, setMarketShopOpen] = useState(false);
   const [clinicShopOpen, setClinicShopOpen] = useState(false);
+  const [clinicCareOpen, setClinicCareOpen] = useState(false);
+  const [clinicCareFocus, setClinicCareFocus] = useState<"treat" | "ward">("treat");
   const [weaponShopOpen, setWeaponShopOpen] = useState(false);
   const [weaponServicesOpen, setWeaponServicesOpen] = useState(false);
   const [shipOverlayOpen, setShipOverlayOpen] = useState(false);
   const [shipOverlayTab, setShipOverlayTab] = useState<"vessel" | "cargo">("vessel");
+  const [trainingOverlayOpen, setTrainingOverlayOpen] = useState(false);
+  const [trainingOverlayCategory, setTrainingOverlayCategory] = useState<"sparring" | undefined>(undefined);
+  const [gatherOpen, setGatherOpen] = useState(false);
+  const [occupiedHotspot, setOccupiedHotspot] = useState<IslandFacilityHotspot | null>(null);
+  const [occupationBypassIds, setOccupationBypassIds] = useState<Set<string>>(() => new Set());
   const [hoveredHotspotId, setHoveredHotspotId] = useState<string | null>(null);
   const [hoveredChildLabel, setHoveredChildLabel] = useState<string | null>(null);
   const [sessionConsumedIds, setSessionConsumedIds] = useState<Set<string>>(() => new Set());
@@ -1358,24 +1391,56 @@ export function IslandHubMap({
     const quest =
       pendingQuestConfig ??
       (supportsQuestConfig(paletteId) ? defaultQuestConfigFor(paletteId) : undefined);
+    const attachProbeId =
+      revealPickSourceId && !supportsRevealAuthoring(paletteId) ? revealPickSourceId : null;
+    const placeUnlock = attachProbeId ? emptyUnlockDraft(paletteId) : unlock;
+    const placeQuest = attachProbeId
+      ? supportsQuestConfig(paletteId)
+        ? defaultQuestConfigFor(paletteId)
+        : undefined
+      : quest;
     const placed = createPalettePlacement(
       paletteId,
       xPct,
       yPct,
-      unlock,
-      pendingChildOverrides.length > 0 ? pendingChildOverrides : undefined,
-      quest,
-      {
-        sceneId: pendingSceneId ?? undefined,
-        links: pendingLinks.length > 0 ? pendingLinks : undefined,
-        stages: pendingStages.length > 0 ? pendingStages : undefined,
-        notes: pendingNotes || undefined,
-        purpose: pendingPurpose || undefined,
-        revealsHotspotIds:
-          pendingRevealsHotspotIds.length > 0 ? pendingRevealsHotspotIds : undefined,
-        consumeOnUse: supportsConsumeOnUse(paletteId) || pendingConsumeOnUse || undefined,
-      },
+      placeUnlock,
+      attachProbeId ? undefined : pendingChildOverrides.length > 0 ? pendingChildOverrides : undefined,
+      placeQuest,
+      attachProbeId
+        ? { hiddenUntilRevealed: true }
+        : {
+            sceneId: pendingSceneId ?? undefined,
+            links: pendingLinks.length > 0 ? pendingLinks : undefined,
+            stages: pendingStages.length > 0 ? pendingStages : undefined,
+            notes: pendingNotes || undefined,
+            purpose: pendingPurpose || undefined,
+            revealsHotspotIds:
+              pendingRevealsHotspotIds.length > 0 ? pendingRevealsHotspotIds : undefined,
+            consumeOnUse: supportsConsumeOnUse(paletteId) || pendingConsumeOnUse || undefined,
+          },
     );
+    if (attachProbeId) {
+      const currentReveals =
+        attachProbeId === selectedInstanceId
+          ? pendingRevealsHotspotIds
+          : draft.find((h) => h.hotspotId === attachProbeId)?.revealsHotspotIds ?? [];
+      const nextReveals = [...new Set([...currentReveals, placed.hotspotId])];
+      setDraft((prev) =>
+        [...prev, placed].map((h) =>
+          h.hotspotId === attachProbeId ? { ...h, revealsHotspotIds: nextReveals } : h,
+        ),
+      );
+      setPendingRevealsHotspotIds(nextReveals);
+      setSelectedInstanceId(attachProbeId);
+      setAuthorTab("explore");
+      const probe = draft.find((h) => h.hotspotId === attachProbeId);
+      setStatus(
+        `Placed ${hotspotLabel(paletteId)} — hidden until ${
+          probe ? hotspotAuthorName(probe) : "Explore"
+        } is used. Save positions.`,
+      );
+      return;
+    }
     setDraft((prev) => [...prev, placed]);
     setSelectedInstanceId(placed.hotspotId);
     setPendingChildOverrides(placed.childOverrides ? [...placed.childOverrides] : []);
@@ -1607,6 +1672,53 @@ export function IslandHubMap({
     if (selectedInstanceId) {
       applyRevealsForHotspot(selectedInstanceId, unique);
     }
+  };
+
+  const assignRevealSource = (targetId: string, probeId: string | null) => {
+    setDraft((prev) =>
+      prev.map((h) => {
+        if (h.hotspotId === targetId) {
+          return { ...h, hiddenUntilRevealed: probeId ? true : false };
+        }
+        if (!supportsRevealAuthoring(h.facilityId)) {
+          return h;
+        }
+        const ids = new Set(h.revealsHotspotIds ?? []);
+        if (probeId && h.hotspotId === probeId) {
+          ids.add(targetId);
+        } else {
+          ids.delete(targetId);
+        }
+        const list = [...ids];
+        return { ...h, revealsHotspotIds: list.length > 0 ? list : undefined };
+      }),
+    );
+    const selected = draft.find((h) => h.hotspotId === selectedInstanceId);
+    if (selected && supportsRevealAuthoring(selected.facilityId)) {
+      if (selectedInstanceId === probeId && probeId) {
+        setPendingRevealsHotspotIds((prev) =>
+          prev.includes(targetId) ? prev : [...prev, targetId],
+        );
+      } else {
+        setPendingRevealsHotspotIds((prev) => prev.filter((id) => id !== targetId));
+      }
+    }
+  };
+
+  const beginPlaceAsReveal = (probeId: string, id: IslandMapHotspotId) => {
+    const probe = draft.find((h) => h.hotspotId === probeId);
+    if (!probe || !supportsRevealAuthoring(probe.facilityId) || supportsRevealAuthoring(id)) {
+      selectPaletteEntry(id);
+      return;
+    }
+    setPaletteId(id);
+    setSelectedInstanceId(probeId);
+    setRevealPickSourceId(probeId);
+    setLinkPickMode(false);
+    setAuthorTab("explore");
+    setStatus(
+      `Click the map to place ${hotspotLabel(id)} — hidden until ${hotspotAuthorName(probe)} is used.`,
+    );
   };
 
   const applySceneIdToSelectedOrPending = (next: string | null) => {
@@ -2095,6 +2207,16 @@ export function IslandHubMap({
   };
 
   const selectPaletteEntry = (id: IslandMapHotspotId) => {
+    const selectedProbe =
+      selectedInstanceId
+        ? draft.find(
+            (h) => h.hotspotId === selectedInstanceId && supportsRevealAuthoring(h.facilityId),
+          )
+        : undefined;
+    if (selectedProbe && authorTab === "explore" && !supportsRevealAuthoring(id)) {
+      beginPlaceAsReveal(selectedProbe.hotspotId, id);
+      return;
+    }
     setPaletteId(id);
     setSelectedInstanceId(null);
     if (id !== "LOCATION_ANCHOR") {
@@ -2236,7 +2358,7 @@ export function IslandHubMap({
         return;
       }
       if (resolve.overlay === "ship") {
-        setShipOverlayTab(shipOverlayOpensHold(resolve.focus));
+        setShipOverlayTab(shipOverlayOpensHold(resolve.focus === "vessel" || resolve.focus === "cargo" ? resolve.focus : undefined));
         setShipOverlayOpen(true);
         return;
       }
@@ -2248,6 +2370,11 @@ export function IslandHubMap({
         setClinicShopOpen(true);
         return;
       }
+      if (resolve.overlay === "clinic_care") {
+        setClinicCareFocus(resolve.focus === "ward" ? "ward" : "treat");
+        setClinicCareOpen(true);
+        return;
+      }
       if (resolve.overlay === "weapon") {
         onEnsureWeaponShop?.();
         setWeaponShopOpen(true);
@@ -2255,6 +2382,11 @@ export function IslandHubMap({
       }
       if (resolve.overlay === "weapon_services") {
         setWeaponServicesOpen(true);
+        return;
+      }
+      if (resolve.overlay === "training") {
+        setTrainingOverlayCategory(resolve.focus === "sparring" ? "sparring" : undefined);
+        setTrainingOverlayOpen(true);
         return;
       }
     }
@@ -2307,8 +2439,21 @@ export function IslandHubMap({
       return;
     }
 
+    if (run && !occupationBypassIds.has(hotspot.hotspotId)) {
+      const occupation = IslandOccupationService.occupationForHotspot(run, hotspot);
+      if (occupation && occupation.state !== "AVAILABLE" && occupation.state !== "REBUILDING") {
+        setOccupiedHotspot(hotspot);
+        return;
+      }
+    }
+
     if (hotspot.facilityId === "FISHING") {
       setFishingOpen(true);
+      return;
+    }
+    if (hotspot.facilityId === "GATHER") {
+      onBeginGather?.(hotspot.hotspotId);
+      setGatherOpen(true);
       return;
     }
 
@@ -2636,8 +2781,9 @@ export function IslandHubMap({
                 </p>
               ) : (
                 <p className="island-hub-unlock-hint">
-                  Icons that become visible after using this Explore / Investigate / Search /
-                  Scout.
+                  Icons that become visible after using this Explore. Gather, fishing and hunts
+                  hide on their own. Town icons like Clinic stay visible unless you add them
+                  here — pick a placed pin, or choose Clinic on the right and click the map.
                 </p>
               )}
               {pendingRevealsHotspotIds.length === 0 ? (
@@ -2692,6 +2838,31 @@ export function IslandHubMap({
                   ))}
                 </select>
               </label>
+              {selectedInstanceId ? (
+                <label className="island-hub-unlock-field">
+                  Place new icon to reveal
+                  <select
+                    onChange={(e) => {
+                      const id = e.target.value as IslandMapHotspotId;
+                      if (!id) {
+                        return;
+                      }
+                      beginPlaceAsReveal(selectedInstanceId, id);
+                      e.target.value = "";
+                    }}
+                    value=""
+                  >
+                    <option value="">Select type…</option>
+                    {PLACEABLE_PALETTE.filter((entry) => !supportsRevealAuthoring(entry.id)).map(
+                      (entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.label}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+              ) : null}
             </div>
           ) : null}
 
@@ -2711,6 +2882,35 @@ export function IslandHubMap({
                   );
                 })()
               : null}
+            {selectedInstanceId &&
+            activeMarkerId &&
+            !supportsRevealAuthoring(activeMarkerId) ? (
+              <label className="island-hub-unlock-field">
+                Show after explore
+                <select
+                  onChange={(e) =>
+                    assignRevealSource(selectedInstanceId, e.target.value || null)
+                  }
+                  value={
+                    revealSourcesForHotspot(selectedInstanceId, draft)[0]?.hotspotId ?? ""
+                  }
+                >
+                  <option value="">Visible from the start</option>
+                  {draft
+                    .filter((h) => supportsRevealAuthoring(h.facilityId))
+                    .map((h) => (
+                      <option key={h.hotspotId} value={h.hotspotId}>
+                        {hotspotAuthorName(h)}
+                      </option>
+                    ))}
+                </select>
+                <span className="island-hub-unlock-hint">
+                  {draft.some((h) => supportsRevealAuthoring(h.facilityId))
+                    ? "Clinic, shops and other town icons stay visible unless you pick an Explore here."
+                    : "Place an Explore icon first, then pick it here."}
+                </span>
+              </label>
+            ) : null}
             <label className="island-hub-unlock-field">
               Mode
               <select
@@ -3330,7 +3530,8 @@ export function IslandHubMap({
         <div className="island-hub-palette-grid">
           {PLACEABLE_PALETTE.map((entry) => {
             const count = placedCounts.get(entry.id) ?? 0;
-            const selected = paletteId === entry.id && !selectedInstanceId;
+            const selected =
+              paletteId === entry.id && (!selectedInstanceId || Boolean(revealPickSourceId));
             return (
               <button
                 className={`island-hub-palette-item${count > 0 ? " is-placed" : ""}${
@@ -4247,6 +4448,24 @@ export function IslandHubMap({
                             </span>
                           </span>
                         </button>
+                        {(() => {
+                          const generated = run?.storyThreads?.find(
+                            (thread) =>
+                              thread.metadata?.source === "GENERATED" && thread.metadata?.chainId === chain.id,
+                          );
+                          return generated && onPromoteGeneratedQuest ? (
+                            <button
+                              className="ghost-btn"
+                              onClick={() => {
+                                onPromoteGeneratedQuest(generated.id);
+                                setStatus(`Promoted “${chain.name}” to a lasting thread.`);
+                              }}
+                              type="button"
+                            >
+                              Promote to Thread
+                            </button>
+                          ) : null;
+                        })()}
                         {onResetStoryChain ? (
                           <button
                             className="ghost-btn"
@@ -4895,7 +5114,9 @@ export function IslandHubMap({
                           </p>
                         ) : (
                           <p className="island-hub-unlock-hint">
-                            Icons that become visible after using this probe once.
+                            Icons that become visible after using this probe once. Town icons
+                            like Clinic must be added here or placed from the right rail while
+                            this Explore is selected.
                           </p>
                         )}
                         {sessionConsumedIds.has(h.hotspotId) ||
@@ -4997,6 +5218,29 @@ export function IslandHubMap({
                                   {x.xPct.toFixed(0)}%, {x.yPct.toFixed(0)}%)
                                 </option>
                               ))}
+                          </select>
+                        </label>
+                        <label className="island-hub-unlock-field">
+                          Place new icon to reveal
+                          <select
+                            onChange={(e) => {
+                              const id = e.target.value as IslandMapHotspotId;
+                              if (!id) {
+                                return;
+                              }
+                              beginPlaceAsReveal(h.hotspotId, id);
+                              e.target.value = "";
+                            }}
+                            value=""
+                          >
+                            <option value="">Select type…</option>
+                            {PLACEABLE_PALETTE.filter(
+                              (entry) => !supportsRevealAuthoring(entry.id),
+                            ).map((entry) => (
+                              <option key={entry.id} value={entry.id}>
+                                {entry.label}
+                              </option>
+                            ))}
                           </select>
                         </label>
                       </div>
@@ -5614,6 +5858,17 @@ export function IslandHubMap({
             onFinish={(result) => onFinishFishing?.(result) ?? ""}
           />
         ) : null}
+        {gatherOpen && run?.pendingGather ? (
+          <GatherOverlay
+            onFinish={() => {
+              onFinishGather?.();
+              setGatherOpen(false);
+            }}
+            onPick={(slotId) => onPickGather?.(slotId) ?? ""}
+            roster={run.pendingGather}
+            run={run}
+          />
+        ) : null}
         {marketShopOpen && run ? (
           <MarketShopOverlay
             onBuy={(itemId, quantity) => onBuyMarketItem?.(itemId, quantity) ?? ""}
@@ -5627,6 +5882,16 @@ export function IslandHubMap({
             onBuy={(itemId, quantity) => onBuyClinicItem?.(itemId, quantity) ?? ""}
             onClose={() => setClinicShopOpen(false)}
             onSell={(itemId, quantity) => onSellClinicItem?.(itemId, quantity) ?? ""}
+            run={run}
+          />
+        ) : null}
+        {clinicCareOpen && run ? (
+          <ClinicCareOverlay
+            focus={clinicCareFocus}
+            onClose={() => setClinicCareOpen(false)}
+            onFundWing={() => onClinicFundWing?.() ?? ""}
+            onHospitalize={(characterId) => onClinicHospitalize?.(characterId) ?? ""}
+            onTreat={(characterId) => onClinicTreat?.(characterId) ?? ""}
             run={run}
           />
         ) : null}
@@ -5658,6 +5923,44 @@ export function IslandHubMap({
             initialTab={shipOverlayTab}
             onClose={() => setShipOverlayOpen(false)}
             run={run}
+          />
+        ) : null}
+        {trainingOverlayOpen && run ? (
+          <TrainingGroundsOverlay
+            initialCategory={trainingOverlayCategory}
+            onClose={() => setTrainingOverlayOpen(false)}
+            onSpar={
+              onStartSpar
+                ? () => {
+                    setTrainingOverlayOpen(false);
+                    onStartSpar();
+                  }
+                : undefined
+            }
+            run={run}
+          />
+        ) : null}
+        {occupiedHotspot && run ? (
+          <OccupationOverlay
+            label={occupiedHotspot.purpose?.trim() || hotspotLabel(occupiedHotspot.facilityId)}
+            occupation={
+              IslandOccupationService.occupationForHotspot(run, occupiedHotspot) ?? {
+                hotspotId: occupiedHotspot.facilityId,
+                state: "OCCUPIED",
+              }
+            }
+            onAct={(action) => {
+              const key =
+                IslandOccupationService.occupationForHotspot(run, occupiedHotspot)?.hotspotId ??
+                occupiedHotspot.facilityId;
+              const result = onOccupationAct?.(key, action) ?? { message: "" };
+              if (result.infiltrate) {
+                setOccupationBypassIds((prev) => new Set(prev).add(occupiedHotspot.hotspotId));
+              }
+              if (action === "leave" || result.startFight || result.liberated || result.infiltrate) {
+                setOccupiedHotspot(null);
+              }
+            }}
           />
         ) : null}
         {mapFailed ? (
@@ -5897,7 +6200,13 @@ export function IslandHubMap({
                 const dimmed =
                   editing &&
                   (hotspot.hidden ||
-                    !isHotspotVisibleInPlay(hotspot, island, run, unlockedSet));
+                    !isHotspotVisibleInPlay(
+                      hotspot,
+                      island,
+                      run,
+                      unlockedSet,
+                      editing ? draft : undefined,
+                    ));
                 const isActiveParent = childMenu?.parentHotspotId === hotspot.hotspotId;
                 const isSibling = Boolean(hideSiblingHotspots && !isActiveParent);
                 return (
@@ -5921,6 +6230,15 @@ export function IslandHubMap({
                         : ""
                     }${isSibling ? " is-sibling" : ""}${
                       storyBadgeByHotspot.has(hotspot.hotspotId) ? " has-story" : ""
+                    }${
+                      run &&
+                      !editing &&
+                      (() => {
+                        const occ = IslandOccupationService.occupationForHotspot(run, hotspot);
+                        return occ && occ.state !== "AVAILABLE" && occ.state !== "REBUILDING";
+                      })()
+                        ? " is-occupied"
+                        : ""
                     }`}
                     disabled={locked && !editing}
                     key={hotspot.hotspotId}
@@ -5999,7 +6317,12 @@ export function IslandHubMap({
                     </>
                   ) : revealPickMode ? (
                     <>
-                      <span>Picking reveals — click map icons</span>
+                      <span>
+                        Picking reveals — click a placed icon
+                        {paletteId && !supportsRevealAuthoring(paletteId)
+                          ? `, or the map to place ${hotspotLabel(paletteId)}`
+                          : ""}
+                      </span>
                       <button
                         className="ghost-btn"
                         onClick={() => {

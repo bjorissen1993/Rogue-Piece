@@ -20,6 +20,7 @@ import type {
 } from "../models/types";
 import { clamp } from "../utils/stats";
 import { createId, nowIso } from "../utils/ids";
+import { FactionDiplomacyService } from "./FactionDiplomacyService";
 
 const REVEAL_WG = 68;
 const REVEAL_OPPRESSION = 55;
@@ -925,6 +926,7 @@ export const FactionService = {
   },
 
   ensureFactionWorld(run: RunState): void {
+    FactionDiplomacyService.ensure(run);
     const list = ensureFactionWorldArray(run);
     if (list.length >= FACTIONS.length) {
       for (const rel of run.world.factions) {

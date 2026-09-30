@@ -9,6 +9,8 @@ import {
   matchesClinicTab,
 } from "../data/clinicShop";
 import { ItemService } from "./ItemService";
+import { AfflictionService } from "./AfflictionService";
+import { ClinicCareService } from "./ClinicCareService";
 import { ClinicShopService } from "./ClinicShopService";
 import type { RunState } from "../models/types";
 
@@ -38,6 +40,13 @@ describe("Clinic shop on the hub map", () => {
       "medical_kit",
       "strong_medicine",
       "antidote",
+      "burn_salve",
+      "stitch_kit",
+      "eye_wash",
+      "smelling_salts",
+      "calming_tonic",
+      "anti_nausea",
+      "status_remover_kit",
     ]);
   });
 
@@ -54,7 +63,7 @@ describe("Clinic shop on the hub map", () => {
     expect(matchesClinicTab("antidote", "medicine")).toBe(true);
     expect(CLINIC_SHOP_TABS.map((tab) => tab.id)).toEqual(["all", "medicine"]);
     expect(CLINIC_SHOP_TABS.find((tab) => tab.id === "medicine")?.iconSrc).toBe(
-      "/icons/Items/Category_Medicine.png",
+      "/icons/Items/Medicine/BasicMedicine.png",
     );
   });
 
@@ -102,5 +111,30 @@ describe("Clinic shop on the hub map", () => {
     expect(result.ok).toBe(false);
     expect(ItemService.countOwned(run, "bandage")).toBe(0);
     expect(run.player.berries).toBe(100);
+  });
+});
+
+describe("Clinic care overlay", () => {
+  it("treats wounds and clears toxins without leaving the hub", () => {
+    const run = freshRun("clinic-care-treat");
+    run.player.hp = 10;
+    AfflictionService.apply(run, "player", "POISON");
+    const result = ClinicCareService.treat(run, "player");
+    expect(result.ok).toBe(true);
+    expect(run.player.hp).toBeGreaterThan(10);
+    expect(run.player.berries).toBe(320);
+    expect(AfflictionService.isAfflicted(run, "player")).toBe(false);
+  });
+
+  it("books a recovery bed and funds the clinic wing", () => {
+    const run = freshRun("clinic-care-ward");
+    run.player.berries = 400;
+    const bed = ClinicCareService.hospitalize(run, "player");
+    expect(bed.ok).toBe(true);
+    expect(ClinicCareService.isHospitalized(run, "player")).toBe(true);
+    expect(run.player.berries).toBe(250);
+    const wing = ClinicCareService.fundWing(run);
+    expect(wing.ok).toBe(true);
+    expect(wing.message).toMatch(/clinic wing/i);
   });
 });

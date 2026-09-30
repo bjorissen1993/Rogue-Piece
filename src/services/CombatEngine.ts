@@ -37,6 +37,7 @@ import type { RandomService } from "./RandomService";
 import { escapeChances, isUnescapableRequest, threatLevelFor } from "./ThreatService";
 import type { ItemUseResult } from "./ItemService";
 import type { AbilityEffectSpec } from "../models/types";
+import { CombatStatusService } from "./CombatStatusService";
 
 function cloneStats(stats: CombatantState["stats"]): CombatantState["stats"] {
   return { ...stats };
@@ -216,6 +217,20 @@ function resolveAttack(
   return result;
 }
 
+function techniqueIsOffensive(ability: Ability | undefined): boolean {
+  if (!ability) {
+    return true;
+  }
+  const tags = ability.tags ?? [];
+  if (tags.includes("HEAL") || tags.includes("DEFENSIVE")) {
+    return false;
+  }
+  if (ability.applyEffect?.target === "SELF" && !tags.includes("MELEE") && !tags.includes("RANGED")) {
+    return false;
+  }
+  return true;
+}
+
 function applyStatusSpec(
   state: CombatState,
   _actor: CombatantState,
@@ -224,23 +239,8 @@ function applyStatusSpec(
   abilityName: string,
   label: string,
 ): void {
-  const effect = {
-    id: spec.id,
-    name: spec.name,
-    remainingTurns: spec.turns,
-    kind: spec.kind,
-    accuracyBonus: spec.accuracyBonus,
-    dodgeBonus: spec.dodgeBonus,
-    damageDealtMod: spec.damageDealtMod,
-    damageTakenMod: spec.damageTakenMod,
-  };
   for (const recipient of recipients) {
-    recipient.statusEffects = recipient.statusEffects.filter((entry) => entry.id !== effect.id);
-    recipient.statusEffects.push({ ...effect });
-    log(
-      state,
-      `${label}'s ${abilityName} applies ${effect.name} to ${recipient.name} (${effect.remainingTurns} turns).`,
-    );
+    CombatStatusService.apply(state, recipient, spec, `${label}'s ${abilityName}`);
   }
 }
 
@@ -492,6 +492,7 @@ export const CombatEngine = {
       if (activeNames.length) {
         log(state, `Active party: ${activeNames.join(", ")}.`);
       }
+      CombatStatusService.seedFromAfflictions(run, state);
       PartyCombatService.initTurnOrder(state, run, rng);
     } else {
       PartyCombatService.initTurnOrder(state, null, rng);
@@ -532,7 +533,21 @@ export const CombatEngine = {
     if (!actor || actor.hp <= 0) {
       return state;
     }
-    const enemy = resolveActionTarget(next, action);
+    let resolvedAction = action;
+    const confuseOffensive =
+      action.type === "ATTACK" ||
+      (action.type === "TECHNIQUE" &&
+        techniqueIsOffensive(
+          actor.abilities.find((item) => item.id === action.abilityId) ?? actor.abilities[0],
+        ));
+    if (confuseOffensive && CombatStatusService.randomizesTarget(actor)) {
+      const pick = CombatStatusService.pickConfusedTarget(next, actor, rng);
+      if (pick) {
+        resolvedAction = { ...action, targetId: pick.id, targetIds: [pick.id] };
+        log(next, `${actorLabel(actor, captainId)} is confused — ${pick.name} is in the way!`);
+      }
+    }
+    const enemy = resolveActionTarget(next, resolvedAction);
     if (!enemy && action.type !== "DEFEND" && action.type !== "ESCAPE" && action.type !== "SURRENDER" && action.type !== "ITEM") {
       next.finished = true;
       next.result = "WIN";
@@ -542,7 +557,7 @@ export const CombatEngine = {
     actor.defending = false;
     const label = actorLabel(actor, captainId);
 
-    switch (action.type) {
+    switch (resolvedAction.type) {
       case "ATTACK":
         if (enemy) {
           resolveAttack(next, actor, enemy, rng, {
@@ -553,7 +568,7 @@ export const CombatEngine = {
         break;
       case "TECHNIQUE": {
         const ability =
-          actor.abilities.find((item) => item.id === action.abilityId) ?? actor.abilities[0];
+          actor.abilities.find((item) => item.id === resolvedAction.abilityId) ?? actor.abilities[0];
         if (!ability) {
           log(next, `${label} has no technique ready — a plain strike instead.`);
           if (enemy) {
@@ -588,10 +603,10 @@ export const CombatEngine = {
         const power = resolveAbilityPower(ability);
         const scale = actor.stats[ability.scalingStat] ?? 0;
         const selectedIds =
-          action.targetIds?.length
-            ? action.targetIds
-            : action.targetId
-              ? [action.targetId]
+          resolvedAction.targetIds?.length
+            ? resolvedAction.targetIds
+            : resolvedAction.targetId
+              ? [resolvedAction.targetId]
               : [];
         const hitTargets: CombatantState[] = [];
         let anyResolved = false;
@@ -657,6 +672,13 @@ export const CombatEngine = {
                   kind: "HEAL",
                 });
                 log(next, `${target.name} recovers ${healed} HP.`);
+              }
+              const effectText = (ability.effects ?? []).join(" ").toLowerCase();
+              if (/cleanse|bleeding/.test(effectText)) {
+                const cleared = CombatStatusService.clearKinds(target, ["BLEED"]);
+                if (cleared.length) {
+                  log(next, `${ability.name} staunches the bleeding on ${target.name}.`);
+                }
               }
               hitTargets.push(target);
             }
@@ -807,6 +829,12 @@ export const CombatEngine = {
       const maxMp = target.maxMp ?? 0;
       target.mp = clamp((target.mp ?? 0) + result.mpRestored, 0, maxMp);
     }
+    if (result.clearedCombatStatuses?.length) {
+      const cleared = CombatStatusService.clearKinds(target, result.clearedCombatStatuses);
+      if (cleared.length) {
+        log(next, `${cleared.join(", ")} fade${cleared.length === 1 ? "s" : ""} from ${target.name}.`);
+      }
+    }
     log(next, result.message);
     if (result.guaranteeEscape) {
       next.guaranteedEscape = true;
@@ -838,6 +866,7 @@ export const CombatEngine = {
         guaranteeEscape: false,
         revived: false,
         itemName,
+        clearedCombatStatuses: [],
       },
       rng,
       run,

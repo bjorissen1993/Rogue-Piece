@@ -273,12 +273,12 @@ export const DEVIL_FRUIT_ICON_FALLBACK = "/icons/Events/Devil_Fruit.png";
 export type WeaponIconKind = "Unarmed" | "Sword" | "Spear" | "Staff" | "Rifle" | "Shield";
 
 export const WEAPON_ICON_ART: Record<WeaponIconKind, string> = {
-  Unarmed: "/icons/Weapons/Weapon_Unarmed.png",
-  Sword: "/icons/Weapons/Weapon_Sword.png",
-  Spear: "/icons/Weapons/Weapon_Spear.png",
-  Staff: "/icons/Weapons/Weapon_Staff_2H.png",
-  Rifle: "/icons/Weapons/Weapon_Pistol_2H.png",
-  Shield: "/icons/Weapons/Weapon_Shield.png",
+  Unarmed: "/icons/Items/Weapons/Blunt/BrassKnuckles.png",
+  Sword: "/icons/Items/Weapons/Sword/Cutlass1.png",
+  Spear: "/icons/Items/Weapons/Polearm/Spear1_2H.png",
+  Staff: "/icons/Items/Weapons/Polearm/BoStaff_2H.png",
+  Rifle: "/icons/Items/Weapons/Ranged/Rifle_2H.png",
+  Shield: "/icons/Items/Weapons/Shield/Shield.png",
 };
 
 /**

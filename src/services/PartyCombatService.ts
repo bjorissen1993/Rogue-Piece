@@ -1,6 +1,7 @@
 import type { CombatState, CombatantState, RunState } from "../models/types";
 import { clamp } from "../utils/stats";
 import { CrewCombatService } from "./CrewCombatService";
+import { CombatStatusService } from "./CombatStatusService";
 import type { RandomService } from "./RandomService";
 import {
   formatCombatDetail,
@@ -70,7 +71,10 @@ function hintFor(intent: CombatantState["intendedAction"]): string {
   return "They will press a straightforward attack.";
 }
 
-function pickEnemyTarget(state: CombatState, rng: RandomService): CombatantState | undefined {
+function pickEnemyTarget(state: CombatState, rng: RandomService, enemy: CombatantState): CombatantState | undefined {
+  if (CombatStatusService.randomizesTarget(enemy)) {
+    return CombatStatusService.pickConfusedTarget(state, enemy, rng);
+  }
   const allies = PartyCombatService.livingAllies(state);
   if (!allies.length) {
     return undefined;
@@ -118,7 +122,7 @@ function executeEnemyAction(
     return;
   }
 
-  const target = pickEnemyTarget(state, rng);
+  const target = pickEnemyTarget(state, rng, enemy);
   if (!target) {
     return;
   }
@@ -157,6 +161,7 @@ function executeEnemyAction(
       text: `${enemy.name} ${intent === "HEAVY" ? "slams" : "strikes"} ${target.name} for ${damage} damage.${crit}`,
       detail: formatCombatDetail(calc),
     });
+    CombatStatusService.tryInflictOnHit(state, enemy, target, intent === "HEAVY", rng);
     if (target.id === state.playerCombatant.id && target.hp <= 0) {
       state.log.push({
         id: `clog-${state.log.length}`,
@@ -302,7 +307,26 @@ export const PartyCombatService = {
         continue;
       }
 
+      const skipped = CombatStatusService.beginTurn(state, combatant, rng);
       tickStatusEffects(combatant);
+
+      if (combatant.hp <= 0) {
+        if (!this.anyAllyAlive(state)) {
+          state.finished = true;
+          state.result = "LOSE";
+          return;
+        }
+        if (livingEnemies(state).length === 0) {
+          state.finished = true;
+          state.result = "WIN";
+          return;
+        }
+        continue;
+      }
+
+      if (skipped) {
+        continue;
+      }
 
       if (combatant.side === "ENEMY") {
         state.activeCombatantId = combatant.id;

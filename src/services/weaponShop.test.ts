@@ -139,19 +139,27 @@ describe("Weapon shop overlay catalog", () => {
       "RANGED",
       "UNUSUAL",
     ]);
-    expect(WEAPON_SHOP_TABS.find((tab) => tab.id === "BLADE")?.iconSrc).toBe("/icons/Weapons/Weapon_Sword.png");
+    expect(WEAPON_SHOP_TABS.find((tab) => tab.id === "BLADE")?.iconSrc).toBe(
+      "/icons/Items/Weapons/Sword/Cutlass1.png",
+    );
     expect(weaponCategoryTitle("POLEARM")).toBe("Polearm");
     expect(matchesWeaponTab("BLADE", "all")).toBe(true);
     expect(matchesWeaponTab("BLADE", "BLUNT")).toBe(false);
   });
 
   it("maps archetypes to weapon art and rarity glow", () => {
-    expect(weaponIconSrc({ archetypeId: "cutlass", category: "BLADE" })).toBe("/icons/Weapons/Weapon_Sword.png");
-    expect(weaponIconSrc({ archetypeId: "greatsword", category: "BLADE" })).toBe(
-      "/icons/Weapons/Weapon_Sword_2Handed.png",
+    expect(weaponIconSrc({ archetypeId: "cutlass", category: "BLADE" })).toBe(
+      "/icons/Items/Weapons/Sword/Cutlass1.png",
     );
-    expect(weaponIconSrc({ archetypeId: "axe", category: "UNUSUAL" })).toBe("/icons/Weapons/Weapon_Axe.png");
-    expect(weaponIconSrc({ archetypeId: "pistol", category: "RANGED" })).toBe("/icons/Weapons/Weapon_Pistol.png");
+    expect(weaponIconSrc({ archetypeId: "greatsword", category: "BLADE" })).toBe(
+      "/icons/Items/Weapons/Sword/LongSword1_2H.png",
+    );
+    expect(weaponIconSrc({ archetypeId: "axe", category: "UNUSUAL" })).toBe(
+      "/icons/Items/Weapons/Axe/HandAxe.png",
+    );
+    expect(weaponIconSrc({ archetypeId: "pistol", category: "RANGED" })).toBe(
+      "/icons/Items/Weapons/Ranged/Flintlock.png",
+    );
     expect(weaponShopRarityGlow("LEGENDARY")).toContain("shop-item-rarity--legendary");
     expect(weaponShopRarityGlow("RARE", "SEA_STONE_ALLOY")).toContain("shop-item-rarity--sea-king");
   });

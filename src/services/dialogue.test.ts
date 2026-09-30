@@ -46,8 +46,8 @@ function sampleNpc(overrides: Partial<WorldCharacter> = {}): WorldCharacter {
 }
 
 describe("NPC personality & dialogue (Phase 1)", () => {
-  it("bumps SAVE_VERSION for personality / story-chain schema", () => {
-    expect(SAVE_VERSION).toBe(37);
+  it("bumps SAVE_VERSION for location growth", () => {
+    expect(SAVE_VERSION).toBe(41);
   });
 
   it("reuses SpeechProfile on PersonalityProfile instead of duplicating axes", () => {

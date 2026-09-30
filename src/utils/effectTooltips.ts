@@ -258,6 +258,11 @@ export function itemGrantTip(itemId: string, player?: Player | null): string {
           bits.length ? `Restores ${bits.join(" ")} when used.` : "Restores MP when used.",
         );
       }
+    } else if (effect.type === "CLEAR_AFFLICTION") {
+      const kinds = effect.kinds?.length
+        ? effect.kinds.map((kind) => String(kind).toLowerCase())
+        : ["poison", "sickness", "and other negative statuses"];
+      effectParts.push(`Clears ${kinds.join(" / ")}.`);
     } else if (effect.type === "GUARANTEE_ESCAPE") {
       effectParts.push("Guarantees escape from combat when used.");
     } else if (effect.type === "REVIVE") {

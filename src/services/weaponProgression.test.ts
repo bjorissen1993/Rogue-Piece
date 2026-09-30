@@ -43,8 +43,8 @@ function grantCutlass(run: RunState): InventoryItem {
 }
 
 describe("Weapon progression + services + fruits", () => {
-  it("uses SAVE_VERSION 37", () => {
-    expect(SAVE_VERSION).toBe(37);
+  it("uses SAVE_VERSION 41", () => {
+    expect(SAVE_VERSION).toBe(41);
   });
 
   it("replaces naming adjectives instead of stacking them", () => {

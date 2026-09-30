@@ -518,17 +518,59 @@ export type ChoiceVariant = "fight" | "parley" | "escape" | "steal" | "help" | "
 export type TimeOfDay = "DAWN" | "MORNING" | "AFTERNOON" | "EVENING" | "NIGHT";
 export type TimeCostId = "BRIEF" | "SLOT" | "LONG" | "DAY";
 
+/** Broad inventory groups shown in the pack UI. */
 export type InventoryCategory =
   | "ALL"
-  | "WEAPONS"
-  | "DEVIL_FRUITS"
   | "CONSUMABLES"
-  | "TOOLS"
-  | "MATERIALS"
-  | "QUEST_ITEMS"
+  | "EQUIPMENT"
+  | "KNOWLEDGE"
   | "KEY_ITEMS"
-  | "COLLECTABLES"
-  | "MISCELLANEOUS";
+  | "VALUABLES"
+  | "RESOURCES"
+  | "WEAPONS";
+
+/** Fine tags inside a main inventory group. Item types (`CONSUMABLE`, `QUEST`, …) stay separate. */
+export type InventorySubtype =
+  | "FOOD"
+  | "DRINK"
+  | "HEALING_MEDICINE"
+  | "STATUS_MEDICINE"
+  | "UTILITY"
+  | "EXPLORATION"
+  | "TOOLS"
+  | "TRAINING"
+  | "BOOK"
+  | "MANUAL"
+  | "DOCUMENT"
+  | "INTEL"
+  | "IDENTITY"
+  | "QUEST"
+  | "TREASURE_MAP"
+  | "STORY"
+  | "TREASURE"
+  | "COLLECTABLE"
+  | "TRADE_GOODS"
+  | "CONTRABAND"
+  | "DEVIL_FRUIT"
+  | "MATERIAL"
+  | "SHIP_SUPPLY"
+  | "SHIP_COMPONENT"
+  | "SWORD"
+  | "BLUNT"
+  | "AXE"
+  | "POLEARM"
+  | "FIREARM"
+  | "HEAVY_RANGED"
+  | "THROWING"
+  | "FLEXIBLE"
+  | "DEFENSIVE"
+  | "SPECIAL"
+  | "IMPROVISED"
+  | "MUSICAL"
+  | "TECH"
+  | "MEDICAL"
+  | "GIANT"
+  | "TONTATTA";
 
 export type InventoryTab = InventoryCategory;
 
@@ -639,6 +681,291 @@ export interface AssignmentCompletionReport {
   type: AssignmentType;
   summary: string;
   rewards?: string[];
+}
+
+/** Per-stat / per-track training XP — no universal training pool. */
+export type TrainingExpType =
+  | "strength"
+  | "defense"
+  | "speed"
+  | "willpower"
+  | "charisma"
+  | "intelligence"
+  | "weapon_mastery"
+  | "technique_mastery"
+  | "sparring";
+
+export interface TrainingEquipmentAssignment {
+  itemId: string;
+  instanceId?: string;
+  characterId: string;
+}
+
+export interface TrainingSession {
+  characterId: string;
+  category: TrainingExpType;
+  techniqueId?: string;
+  weaponType?: WeaponType;
+  startedDay: number;
+  startedSlot: number;
+  elapsedSlots: number;
+  pendingExp: Partial<Record<TrainingExpType, number>>;
+  equipmentItemIds: string[];
+  continuityMultiplier: number;
+}
+
+export type RoleProficiencyTier = "NONE" | "NOVICE" | "COMPETENT" | "SKILLED" | "EXPERT" | "MASTER";
+
+export interface RoleProficiency {
+  role: CrewRole;
+  xp: number;
+  tier: RoleProficiencyTier;
+}
+
+export type LocationOccupationState =
+  | "AVAILABLE"
+  | "OCCUPIED"
+  | "CONTESTED"
+  | "CLOSED"
+  | "DESTROYED"
+  | "REBUILDING"
+  | "FACTION_CONTROLLED";
+
+export interface LocationOccupation {
+  hotspotId: string;
+  state: LocationOccupationState;
+  factionId?: RelationFactionId;
+  sinceDay?: number;
+}
+
+export interface LocalFactionPressure {
+  factionId: RelationFactionId;
+  value: number;
+}
+
+export type LocalPressureBand = "LOW" | "MEDIUM" | "HIGH" | "SEVERE" | "CRITICAL";
+
+export interface FactionPairRelation {
+  a: RelationFactionId;
+  b: RelationFactionId;
+  value: number;
+}
+
+export type PostRunFate =
+  | "CAPTURED"
+  | "ESCAPED"
+  | "SCATTERED"
+  | "MISSING"
+  | "STRANDED"
+  | "RETREATED"
+  | "IMPRISONED"
+  | "DEAD"
+  | "ALIVE";
+
+export type DialogueLayer = "LOCKED" | "DIRECTED" | "REACTIVE";
+
+export interface DialogueIntent {
+  speakerId?: string;
+  listenerId?: string;
+  intent: string;
+  requiredFacts?: string[];
+  forbiddenFacts?: string[];
+  emotion?: string;
+  situation?: string;
+  exactLine?: string;
+}
+
+export type QuestSource = "GENERATED" | "THREAD";
+
+export type GeneratedQuestResult = "success" | "fail" | "expire";
+
+export interface GeneratedQuestOutcome {
+  berries?: number;
+  itemId?: string;
+  itemQty?: number;
+  trust?: number;
+  pressure?: number;
+  factionId?: RelationFactionId;
+  factionDelta?: number;
+  news?: string;
+  relationship?: number;
+  settleNpc?: boolean;
+  followUp?: QuestArchetypeId;
+}
+
+export type QuestArchetypeId =
+  | "missing_person"
+  | "stolen_item"
+  | "escort"
+  | "investigation"
+  | "bounty_hunt"
+  | "rescue"
+  | "faction_conflict"
+  | "sabotage"
+  | "smuggling"
+  | "treasure_hunt"
+  | "lost_heirloom"
+  | "protect_location"
+  | "recover_cargo"
+  | "recruitment_test"
+  | "companion_request"
+  | "rival_challenge"
+  | "moral_conflict"
+  | "legacy_discovery"
+  | "historical_investigation"
+  | "prisoner_rescue"
+  | "infiltration"
+  | "supply_shortage"
+  | "local_dispute"
+  | "monster_hunt"
+  | "debt_favor"
+  | "family_matter"
+  | "shipwreck_investigation";
+
+export interface QuestArchetype {
+  id: QuestArchetypeId;
+  label: string;
+  tags: string[];
+  size: "small" | "standard" | "chain";
+}
+
+export interface QuestRefreshState {
+  capacity: number;
+  activeGeneratedQuestIds: string[];
+  lastGenerationDay: number;
+  recentArchetypes: QuestArchetypeId[];
+}
+
+export interface ZoneTags {
+  zoneId: string;
+  tags: string[];
+}
+
+export type LocationAnchorUsage = "never" | "suggest" | "auto";
+
+export type AnchorOccupancyState = "AVAILABLE" | "OCCUPIED_TEMPORARY" | "CONVERTED_PERSISTENT";
+
+export type GeneratedLocationPersistence = "TEMPORARY" | "PERSISTENT";
+
+export type LocationMaturity = "NEW" | "DEVELOPING" | "ESTABLISHED";
+
+export type GeneratedLocationKind =
+  | "camp"
+  | "fishing_camp"
+  | "outpost"
+  | "trading"
+  | "clinic"
+  | "workshop"
+  | "settlement"
+  | "village";
+
+export type NpcResidencyStatus = "VISITOR" | "RESIDENT" | "DISPLACED" | "LEFT_ISLAND";
+
+export interface ZoneSemanticMetadata {
+  name: string;
+  tags: string[];
+}
+
+export interface AnchorSemanticMetadata {
+  name: string;
+  tags: string[];
+}
+
+export interface LocationWorldValue {
+  developmentValue: number;
+  strategicValue: number;
+  economicValue: number;
+  civilianValue: number;
+  factionValue: number;
+  vulnerability: number;
+}
+
+export interface GeneratedLocation {
+  id: string;
+  islandId: string;
+  hotspotId: string;
+  name: string;
+  persistence: GeneratedLocationPersistence;
+  maturity: LocationMaturity;
+  value: LocationWorldValue;
+  kind?: GeneratedLocationKind;
+  foundedDay?: number;
+  lastGrowthDay?: number;
+  anchorId?: string;
+  zoneId?: string;
+  questId?: string;
+  chainId?: string;
+  destroyed?: boolean;
+  ruinedUntilDay?: number | null;
+}
+
+export interface NpcLocationHistoryEntry {
+  locationId: string;
+  day: number;
+  note?: string;
+}
+
+export type GatherDetectionCategory =
+  | "herbs"
+  | "fungi"
+  | "plants"
+  | "ore"
+  | "stone"
+  | "minerals"
+  | "berries"
+  | "fiber"
+  | "resin"
+  | "scrap"
+  | "documents"
+  | "containers";
+
+export type GatherSlotCategory = "RESOURCE" | "FOOD" | "ITEM" | "INFORMATION" | "EQUIPMENT" | "SPECIAL";
+
+export type GatherRichness = "RICH" | "NORMAL" | "SPARSE" | "DEPLETED";
+
+export interface GatherZoneState {
+  zoneKey: string;
+  richness: GatherRichness;
+  gatherCount: number;
+  lastGatherDay: number;
+}
+
+export interface GatherSlot {
+  id: string;
+  itemId: string;
+  quantity: number;
+  category: GatherSlotCategory;
+  rarity: ItemRarity;
+  hidden: boolean;
+  revealedByEquipment: boolean;
+  taken?: boolean;
+  sourceContext?: string;
+  container?: boolean;
+  contents?: Array<{ itemId: string; quantity: number }>;
+  trace?: QuestArchetypeId;
+  extractionBonus?: number;
+}
+
+export interface GatherRoster {
+  id: string;
+  zoneName: string;
+  zoneKey?: string;
+  hotspotId?: string;
+  richness?: GatherRichness;
+  attempts: number;
+  remaining: number;
+  slots: GatherSlot[];
+  collected: Array<{ itemId: string; quantity: number }>;
+  lastMessage?: string;
+}
+
+export interface GatherCategoryWeights {
+  resource: number;
+  food: number;
+  item: number;
+  information: number;
+  equipment: number;
+  special: number;
 }
 
 export type EncounterCategory =
@@ -936,6 +1263,11 @@ export interface LocationAnchor {
   aiPermission: LocationAnchorAiPermission;
   hotspotId?: string;
   notes?: string;
+  /** Cached tags inferred from the name. Refreshed when the name changes. */
+  semanticTags?: string[];
+  semanticSourceName?: string;
+  occupancy?: AnchorOccupancyState;
+  generatedLocationId?: string;
 }
 
 /**
@@ -949,6 +1281,10 @@ export interface MapAnchorRegion {
   /** Closed polygon in percent of map width/height (0–100). */
   points: Array<{ xPct: number; yPct: number }>;
   aiPermission: LocationAnchorAiPermission;
+  semanticTags?: string[];
+  semanticSourceName?: string;
+  /** Special handcrafted areas can disable generated pins. Default allowed. */
+  generatedPinsAllowed?: boolean;
 }
 
 export type StoryChainNodeEditState = "generated" | "edited" | "locked";
@@ -1178,6 +1514,10 @@ export interface DialogueBeat {
   /** If set, only show when this crew member is present/available. */
   requireCrewId?: string;
   memoryGate?: CharacterMemoryType;
+  /** Directed / generated speech — exactLine on the intent stays locked. */
+  intent?: DialogueIntent;
+  allowedOutcomes?: string[];
+  possibleResponses?: string[];
 }
 
 export type CrewRole =
@@ -1188,7 +1528,10 @@ export type CrewRole =
   | "NAVIGATOR"
   | "COOK"
   | "DOCTOR"
-  | "SHIPWRIGHT";
+  | "SHIPWRIGHT"
+  | "HELMSMAN"
+  | "LOOKOUT"
+  | "GUNNER";
 
 export type ParticipantRequirement =
   | { type: "MIN_CREW"; count: number }
@@ -1623,6 +1966,12 @@ export interface IslandFacilityHotspot {
    */
   revealsHotspotIds?: string[];
   /**
+   * Hide this pin in play until an Explore (or other probe) reveals it.
+   * Set when the editor picks "Show after explore". `false` opts a Clinic out
+   * of the default Clinic-after-Explore gate.
+   */
+  hiddenUntilRevealed?: boolean;
+  /**
    * One-shot probe: hide this icon after the player uses it once.
    * Added in SAVE_VERSION 30. (`disappearAfterUse` is accepted on load as an alias.)
    * Explore / Investigate / Search / Scout always consume (SAVE_VERSION 34).
@@ -1723,6 +2072,8 @@ export interface InventoryItem {
   /** Hand slot when equipped on a crewmate (player uses Equipment instead). */
   equipSlot?: "primary" | "secondary";
   category?: InventoryCategory;
+  /** Fine inventory tag (food, intel, contraband, …). */
+  subtype?: InventorySubtype;
   /** Naming / soul / seastone / instance mastery for this weapon copy. */
   weaponProgress?: WeaponProgression;
   /** Created when a Devil Fruit host weapon is permanently destroyed. */
@@ -1887,6 +2238,11 @@ export interface WorldCharacter {
   weaponIds?: string[];
   firstMetDay?: number;
   firstMetIslandId?: string;
+  currentLocationId?: string;
+  homeLocationId?: string;
+  currentZoneId?: string;
+  residencyStatus?: NpcResidencyStatus;
+  locationHistory?: NpcLocationHistoryEntry[];
   memories?: CharacterMemory[];
   joinInterest?: number;
   crewRole?: CrewRole;
@@ -2034,13 +2390,31 @@ export interface WorldState {
   factionWorld: FactionWorldState[];
   worldPower: WorldPowerState;
   lastDevilFruitDiscoveryDay: number | null;
+  /** Dynamic faction-vs-faction diplomacy. SAVE_VERSION 38. */
+  factionMatrix?: FactionPairRelation[];
+  generatedQuestState?: QuestRefreshState;
+  scheduledNews?: Array<{ day: number; text: string; importance?: number }>;
 }
+
+/** Named battle statuses that medicine can clear. Distinct from overworld day-long afflictions. */
+export type CombatStatusKind =
+  | "BURN"
+  | "BLEED"
+  | "POISON"
+  | "BLIND"
+  | "STUN"
+  | "DAZED"
+  | "FEAR"
+  | "PANIC"
+  | "CONFUSION";
 
 export interface StatusEffect {
   id: string;
   name: string;
   remainingTurns: number;
   kind?: "BUFF" | "DEBUFF";
+  /** Named battle status (Burn, Bleed, Blind, …). */
+  statusKind?: CombatStatusKind;
   /** Flat hit-chance bonus in percentage points. */
   accuracyBonus?: number;
   /** Flat dodge bonus in percentage points. */
@@ -2049,6 +2423,14 @@ export interface StatusEffect {
   damageDealtMod?: number;
   /** Additive damage taken modifier (0.2 = +20% taken). */
   damageTakenMod?: number;
+  /** HP lost at the start of this combatant's turn. */
+  damagePerTurn?: number;
+  /** Always lose this turn (Stun). */
+  skipTurn?: boolean;
+  /** Chance 0–1 to lose this turn (Dazed / Panic). */
+  skipChance?: number;
+  /** Attacks may strike a random living combatant (Confusion). */
+  randomizeTarget?: boolean;
 }
 
 export type AbilityTag =
@@ -2199,10 +2581,16 @@ export interface AbilityEffectSpec {
   kind: "BUFF" | "DEBUFF";
   turns: number;
   target: "SELF" | "TARGET" | "ALL_ENEMIES" | "ALL_ALLIES";
+  /** When set, combat uses the canonical named-status catalog. */
+  statusKind?: CombatStatusKind;
   accuracyBonus?: number;
   dodgeBonus?: number;
   damageDealtMod?: number;
   damageTakenMod?: number;
+  damagePerTurn?: number;
+  skipTurn?: boolean;
+  skipChance?: number;
+  randomizeTarget?: boolean;
 }
 
 export interface Ability {
@@ -2222,6 +2610,8 @@ export interface Ability {
   cooldown?: number;
   effects?: string[];
   applyEffect?: AbilityEffectSpec;
+  /** Chance to apply applyEffect on a damaging hit (0–1). Default 1 when applyEffect is set. */
+  statusChance?: number;
   /** Primary targeting (legacy single-effect techniques). */
   targeting?: TargetingSpec;
   /** Multi-effect techniques; if empty, derived from targeting/tags/applyEffect. */
@@ -2418,6 +2808,8 @@ export interface CrewMember {
   inSupportSlot?: boolean;
   /** Blocking activity — source of truth for availability. */
   currentAssignment?: CharacterAssignment | null;
+  /** Passive ship-role proficiency — not Training Grounds. */
+  roleProficiency?: RoleProficiency[];
   /** Persistent fight vitals between battles (defaults to full when unset). */
   hp?: number;
   mp?: number;
@@ -2499,6 +2891,8 @@ export interface Technique {
   styleId?: string;
   tags?: AbilityTag[];
   applyEffect?: AbilityEffectSpec;
+  /** Chance to apply applyEffect on a damaging hit (0–1). */
+  statusChance?: number;
   targeting?: TargetingSpec;
   techniqueEffects?: TechniqueEffect[];
   mpCost?: number;
@@ -2589,6 +2983,18 @@ export interface Island {
   fundedProjects?: string[];
   /** Pirate/local protection arrangement accepted. */
   protectionOffered?: boolean;
+  /** Per-faction attention on this island — separate from global standing. */
+  localFactionPressure?: LocalFactionPressure[];
+  /** Persistent facility / hotspot occupation. */
+  occupations?: LocationOccupation[];
+  harborBlockade?: {
+    factionId: RelationFactionId;
+    ships: number;
+    sinceDay: number;
+  } | null;
+  generatedLocations?: GeneratedLocation[];
+  /** Per-zone gather richness. SAVE_VERSION 41. */
+  gatherZones?: GatherZoneState[];
 }
 
 export interface BackgroundContext {
@@ -3085,6 +3491,8 @@ export interface LegacyCharacterRecord {
   lastSimulatedTotalDays: number;
   lastRunEndId?: string;
   updatedAt: string;
+  postRunFate?: PostRunFate;
+  historical?: boolean;
 }
 
 export interface LegacyEvent {
@@ -3242,7 +3650,7 @@ export type ItemEffect =
   | { type: "GUARANTEE_ESCAPE" }
   /** Bring a knocked-out ally (or 0 HP captain) back into the fight. */
   | { type: "REVIVE"; hpAmount?: number; percentMaxHp?: number }
-  | { type: "CLEAR_AFFLICTION"; kinds?: AfflictionKind[] }
+  | { type: "CLEAR_AFFLICTION"; kinds?: Array<AfflictionKind | CombatStatusKind> }
   | { type: "NONE" };
 
 export interface ItemDefinition {
@@ -3256,6 +3664,7 @@ export interface ItemDefinition {
   effects: ItemEffect[];
   lore?: LoreEntryDefinition[];
   category?: InventoryCategory;
+  subtype?: InventorySubtype;
   /** Optional rarity for consumables / loot (weapons use WeaponRarity). */
   rarity?: ItemRarity;
   /** Weapon types this item can be equipped as (crew assignment checks). */
@@ -3285,6 +3694,22 @@ export interface RunState {
   pendingAssignmentResults?: AssignmentCompletionReport[];
   /** Active character schedules (source of truth for availability). */
   characterAssignments?: CharacterAssignment[];
+  /** Open-ended Training Grounds sessions (no required end time). SAVE_VERSION 38. */
+  trainingSessions?: TrainingSession[];
+  pendingIslandEvent?: {
+    kind: "PATROL" | "BLOCKADE_WARNING" | "OCCUPATION";
+    factionId: RelationFactionId;
+    hotspotId?: string;
+    label: string;
+    day: number;
+  } | null;
+  pendingGather?: GatherRoster | null;
+  pendingNavalEscape?: {
+    toIslandId: string;
+    factionId: RelationFactionId;
+    ships: number;
+    distance: number;
+  } | null;
   currentLocationId: string;
   currentEncounterId: string | null;
   encounterCount: number;

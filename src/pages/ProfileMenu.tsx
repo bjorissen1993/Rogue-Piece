@@ -55,6 +55,9 @@ export function ProfileMenu() {
             Play
           </button>
           <div className="menu-gap" />
+          <button className="choice-btn" onClick={() => openOverlay("museum")} type="button">
+            Museum
+          </button>
           <button className="choice-btn" onClick={() => openOverlay("collection")} type="button">
             Collection
           </button>

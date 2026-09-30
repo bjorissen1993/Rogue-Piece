@@ -13,6 +13,8 @@ import type { RandomService } from "./RandomService";
 import { createRng } from "./RandomService";
 import { WorldService } from "./WorldService";
 import { StoryChainService } from "./StoryChainService";
+import { IslandOccupationService } from "./IslandOccupationService";
+import { NavalEscapeService } from "./NavalEscapeService";
 
 function cloneProfile(profile: ProfileSave): ProfileSave {
   return structuredClone(profile);
@@ -110,19 +112,17 @@ export const VoyageService = {
     return (run.activityMode ?? "ISLAND") === "SAILING" && Boolean(run.activeVoyage);
   },
 
-  /** Begin a voyage from the current island to another known island. */
-  beginVoyage(profile: ProfileSave, toIslandId: string, rng = createRng(requireRun(profile).seed)): ProfileSave {
-    const next = cloneProfile(profile);
-    const run = requireRun(next);
+  /** Mutate the current run onto a voyage. Returns false if the destination is invalid. */
+  startOnRun(run: RunState, toIslandId: string, rng: RandomService): boolean {
     const ship = this.ensureShip(run);
     const from = IslandService.getCurrentIsland(run);
     const to = run.islands.find((island) => island.id === toIslandId);
     if (!from || !to || from.id === to.id) {
       run.lastFeedback = "No valid destination on the charts.";
-      return next;
+      return false;
     }
     if (run.combat && !run.combat.finished) {
-      return next;
+      return false;
     }
 
     const distance = estimateDistance(from.dangerLevel, to.dangerLevel, rng);
@@ -146,6 +146,18 @@ export const VoyageService = {
     run.dynamicEncounter = null;
     WorldService.addNews(run, `${run.player.name} sets sail from ${from.name} toward ${to.name}.`);
     run.lastFeedback = `${ship.name} casts off for ${to.name}.`;
+    return true;
+  },
+
+  /** Begin a voyage from the current island to another known island. */
+  beginVoyage(profile: ProfileSave, toIslandId: string, rng = createRng(requireRun(profile).seed)): ProfileSave {
+    const next = cloneProfile(profile);
+    const run = requireRun(next);
+    if (IslandOccupationService.hasBlockade(run)) {
+      run.lastFeedback = NavalEscapeService.begin(run, toIslandId);
+      return next;
+    }
+    this.startOnRun(run, toIslandId, rng);
     return next;
   },
 

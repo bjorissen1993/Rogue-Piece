@@ -15,6 +15,8 @@ import { BattleSetupOverlay } from "../components/BattleSetupOverlay";
 import { WeaponShopOverlay } from "../components/WeaponShopOverlay";
 import { HarborOverlay, VoyageProgressBar } from "../components/HarborOverlay";
 import { IslandHubMap } from "../components/IslandHubMap";
+import { PatrolInterruptOverlay } from "../components/PatrolInterruptOverlay";
+import { NavalEscapeOverlay } from "../components/NavalEscapeOverlay";
 import { TaskBoardOverlay } from "../components/TaskBoardOverlay";
 import { ItemMarketOverlay } from "../components/ItemMarketOverlay";
 import { WeaponShopService } from "../services/WeaponShopService";
@@ -56,6 +58,9 @@ export function GamePage() {
     sellMarketItem,
     buyClinicItem,
     sellClinicItem,
+    clinicTreat,
+    clinicHospitalize,
+    clinicFundWing,
     saveIslandFacilityHotspots,
     consumeIslandHotspot,
     restoreIslandProbe,
@@ -63,6 +68,14 @@ export function GamePage() {
     ensureIslandHubMaps,
     continueResult,
     beginVoyage,
+    actOnOccupation,
+    actOnPatrol,
+    actNavalEscape,
+    startSparring,
+    beginGather,
+    pickGatherSlot,
+    finishGather,
+    promoteGeneratedQuest,
     tickVoyage,
     dismissAssignmentResults,
     dismissBattleResult,
@@ -491,6 +504,9 @@ export function GamePage() {
               onSellMarketItem={sellMarketItem}
               onBuyClinicItem={buyClinicItem}
               onSellClinicItem={sellClinicItem}
+              onClinicTreat={clinicTreat}
+              onClinicHospitalize={clinicHospitalize}
+              onClinicFundWing={clinicFundWing}
               onEnsureWeaponShop={ensureWeaponShop}
               onBuyWeaponShopItem={buyWeaponShopListing}
               onSellWeaponShopItem={sellWeaponShopOwned}
@@ -500,6 +516,12 @@ export function GamePage() {
               onRenameWeapon={renameOwnedWeapon}
               onApplyWeaponNaming={applyOwnedWeaponNaming}
               onDestroyWeaponHost={destroyOwnedWeaponHost}
+              onOccupationAct={actOnOccupation}
+              onStartSpar={startSparring}
+              onBeginGather={beginGather}
+              onPickGather={pickGatherSlot}
+              onFinishGather={finishGather}
+              onPromoteGeneratedQuest={promoteGeneratedQuest}
               run={run}
               toolsHost={showHubMapTools ? hubToolsHost : null}
             />
@@ -750,11 +772,12 @@ export function GamePage() {
         )
       ) : null}
 
-      {encounter?.id === "island_harbor" && !resultText ? (
+      {encounter?.id === "island_harbor" && !resultText && !run.pendingNavalEscape ? (
         <HarborOverlay
           onDepart={beginVoyage}
           onLeave={() => choose("leave")}
           onOpenCrew={() => openOverlay("crew")}
+          onOpenMuseum={() => openOverlay("museum")}
           onOpenInventory={() => {
             setInventoryFocusId(null);
             openOverlay("inventory");
@@ -853,6 +876,9 @@ export function GamePage() {
               <button className="choice-btn" onClick={() => openOverlay("crew")} type="button">
                 {crewLabel}
               </button>
+              <button className="choice-btn" onClick={() => openOverlay("museum")} type="button">
+                Museum
+              </button>
               <button className="choice-btn" onClick={() => openOverlay("collection")} type="button">
                 Collection
               </button>
@@ -916,6 +942,17 @@ export function GamePage() {
           onClose={closeOverlay}
           run={run}
         />
+      ) : null}
+      {run.pendingIslandEvent?.kind === "PATROL" && !run.combat ? (
+        <PatrolInterruptOverlay
+          highPressure={(island?.pressureLevel ?? 0) >= 75}
+          label={run.pendingIslandEvent.label}
+          onAct={actOnPatrol}
+        />
+      ) : null}
+
+      {run.pendingNavalEscape && !run.combat ? (
+        <NavalEscapeOverlay onAct={actNavalEscape} run={run} />
       ) : null}
 
       {peekLootDisposition(run) && !run.combat ? (

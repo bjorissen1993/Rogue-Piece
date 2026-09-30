@@ -8,6 +8,13 @@ export const CLINIC_SHOP_ITEM_IDS = [
   "medical_kit",
   "strong_medicine",
   "antidote",
+  "burn_salve",
+  "stitch_kit",
+  "eye_wash",
+  "smelling_salts",
+  "calming_tonic",
+  "anti_nausea",
+  "status_remover_kit",
 ] as const;
 
 export type ClinicShopItemId = (typeof CLINIC_SHOP_ITEM_IDS)[number];
@@ -16,7 +23,7 @@ export type ClinicShopTab = "all" | ClinicShopAisle;
 
 export const CLINIC_SHOP_TABS: Array<{ id: ClinicShopTab; label: string; iconSrc?: string }> = [
   { id: "all", label: "All" },
-  { id: "medicine", label: "Medicine", iconSrc: "/icons/Items/Category_Medicine.png" },
+  { id: "medicine", label: "Medicine", iconSrc: "/icons/Items/Medicine/BasicMedicine.png" },
 ];
 
 export function isClinicShopItem(itemId: string): itemId is ClinicShopItemId {

@@ -83,6 +83,13 @@ export const CharacterService = {
       memories: partial.memories ?? [],
       crewStats: partial.crewStats,
       unlockedTechniques: partial.unlockedTechniques ?? [],
+      currentLocationId: partial.currentLocationId,
+      homeLocationId: partial.homeLocationId,
+      residencyStatus: partial.residencyStatus,
+      locationHistory: partial.locationHistory ?? [],
+      firstMetIslandId: partial.firstMetIslandId,
+      firstMetDay: partial.firstMetDay,
+      relationFactionId: partial.relationFactionId,
     };
     run.world.characters.push(npc);
     return npc;

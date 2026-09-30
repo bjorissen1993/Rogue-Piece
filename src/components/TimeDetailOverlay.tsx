@@ -2,6 +2,7 @@ import { TIME_OF_DAY_ORDER } from "../game/constants";
 import type { RunState, TimeOfDay } from "../models/types";
 import { CharacterScheduleService } from "../services/CharacterScheduleService";
 import { remainingSlotsToday } from "../utils/presentation";
+import { FacilityMemberCard } from "./FacilityMemberCard";
 import { OverlayFrame } from "./OverlayFrame";
 
 type TimeDetailOverlayProps = {
@@ -56,11 +57,11 @@ export function TimeDetailOverlay({ run, onClose }: TimeDetailOverlayProps) {
 
         <section>
           <h3 className="font-display text-xl text-gold">Crew Schedule</h3>
-          <ul className="crew-schedule-list">
+          <ul className="facility-roster-grid">
             {schedule.map((entry) => (
               <li key={entry.characterId}>
-                <strong>{entry.name}</strong>
-                <span>{entry.detail}</span>
+                <FacilityMemberCard characterId={entry.characterId} run={run} />
+                <p className="facility-detail-copy">{entry.detail}</p>
               </li>
             ))}
           </ul>

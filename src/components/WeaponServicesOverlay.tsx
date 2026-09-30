@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { getDevilFruit } from "../data/devilFruits";
+import { devilFruitIconSrc } from "../data/itemArt";
 import { SEASTONE_OPTIONS } from "../data/weaponServices";
 import { WEAPON_SERVICE_GATES, namingPoolCategoryFor } from "../data/weaponProgression";
 import type { RunState, SeastoneMod, WeaponNamingPath } from "../models/types";
@@ -7,6 +9,7 @@ import { WeaponProgressionService } from "../services/WeaponProgressionService";
 import { WeaponService } from "../services/WeaponService";
 import { WeaponServicesService } from "../services/WeaponServicesService";
 import { weaponRarityClass } from "../utils/weaponRarity";
+import { FacilityActionCard } from "./FacilityMemberCard";
 import { WeaponIdentityBlock } from "./WeaponIdentityBlock";
 import { WeaponStatsBlock } from "./WeaponStatsBlock";
 
@@ -125,21 +128,19 @@ export function WeaponServicesOverlay({
                     <p className="weapon-shop-hint">
                       Gated by mastery with this weapon ({inspect.identity.wielderMastery}).
                     </p>
-                    <div className="weapon-service-actions">
-                      <button
-                        className="gold-btn"
+                    <div className="weapon-service-actions facility-action-grid is-two">
+                      <FacilityActionCard
+                        body="A cleaner edge, a tighter wrap."
+                        kicker={WEAPON_SERVICE_GATES.UPGRADE.toLowerCase()}
                         onClick={() => report(onUpgrade(selected.id, false))}
-                        type="button"
-                      >
-                        Upgrade ({WEAPON_SERVICE_GATES.UPGRADE.toLowerCase()})
-                      </button>
-                      <button
-                        className="choice-btn"
+                        title="Upgrade"
+                      />
+                      <FacilityActionCard
+                        body="The bench will push it past what most smiths dare."
+                        kicker={WEAPON_SERVICE_GATES.ADVANCED_UPGRADE.toLowerCase()}
                         onClick={() => report(onUpgrade(selected.id, true))}
-                        type="button"
-                      >
-                        Advanced ({WEAPON_SERVICE_GATES.ADVANCED_UPGRADE.toLowerCase()})
-                      </button>
+                        title="Advanced upgrade"
+                      />
                     </div>
                   </section>
 
@@ -148,17 +149,15 @@ export function WeaponServicesOverlay({
                     {compat?.seastoneLocked ? (
                       <p className="weapon-service-locked">LOCKED: {compat.seastoneReason}</p>
                     ) : (
-                      <ul className="weapon-service-options">
+                      <ul className="weapon-service-options facility-action-grid">
                         {SEASTONE_OPTIONS.map((option) => (
                           <li key={option.id}>
-                            <button
-                              className="choice-btn"
+                            <FacilityActionCard
+                              body={option.description}
+                              kicker="Seastone"
                               onClick={() => report(onSeastone(selected.id, option.id))}
-                              type="button"
-                            >
-                              {option.label}
-                            </button>
-                            <span>{option.description}</span>
+                              title={option.label}
+                            />
                           </li>
                         ))}
                       </ul>
@@ -172,16 +171,18 @@ export function WeaponServicesOverlay({
                     ) : fruits.length === 0 ? (
                       <p className="weapon-shop-hint">No unbound fruit in your pack.</p>
                     ) : (
-                      fruits.map((fruit) => (
-                        <button
-                          className="gold-btn"
-                          key={fruit.fruitId}
-                          onClick={() => report(onBindFruit(selected.id, fruit.fruitId))}
-                          type="button"
-                        >
-                          Bind {fruit.name}
-                        </button>
-                      ))
+                      <div className="facility-action-grid">
+                        {fruits.map((fruit) => (
+                          <FacilityActionCard
+                            body="The fruit stays bound until the host is unmade."
+                            iconSrc={devilFruitIconSrc(getDevilFruit(fruit.fruitId)?.type)}
+                            kicker="Fruit"
+                            key={fruit.fruitId}
+                            onClick={() => report(onBindFruit(selected.id, fruit.fruitId))}
+                            title={`Bind ${fruit.name}`}
+                          />
+                        ))}
+                      </div>
                     )}
                     <p className="weapon-shop-hint">Requires {WEAPON_SERVICE_GATES.DEVIL_FRUIT_BIND.toLowerCase()} mastery with this weapon.</p>
                   </section>
@@ -205,24 +206,26 @@ export function WeaponServicesOverlay({
                           placeholder="Custom base name"
                           value={renameValue}
                         />
-                        <button className="choice-btn" onClick={() => report(onRename(selected.id, renameValue))} type="button">
-                          Seal name
-                        </button>
+                        <FacilityActionCard
+                          body="Stamps the name you typed onto this weapon."
+                          kicker="Name"
+                          onClick={() => report(onRename(selected.id, renameValue))}
+                          title="Seal name"
+                        />
                       </div>
                     ) : (
                       <p className="weapon-shop-hint">{WeaponProgressionService.canSetBaseName(selected).reason}</p>
                     )}
                     {choices.length === 3 ? (
-                      <div className="weapon-service-actions">
+                      <div className="weapon-service-actions facility-action-grid">
                         {choices.map((choice) => (
-                          <button
-                            className="choice-btn"
+                          <FacilityActionCard
+                            body={choice.adjective}
+                            kicker={choice.label}
                             key={choice.path}
                             onClick={() => report(onNameStage(selected.id, choice.path, choice.adjective))}
-                            type="button"
-                          >
-                            {choice.label}: {choice.adjective}
-                          </button>
+                            title={choice.adjective}
+                          />
                         ))}
                       </div>
                     ) : (
@@ -263,9 +266,7 @@ export function WeaponServicesOverlay({
           </div>
         </div>
         <div className="weapon-shop-actions weapon-shop-actions-sticky">
-          <button className="choice-btn" onClick={onClose} type="button">
-            Leave bench
-          </button>
+          <FacilityActionCard body="Step away from the grindstone." kicker="Leave" onClick={onClose} title="Leave bench" />
         </div>
       </section>
     </div>

@@ -1,5 +1,7 @@
 import { CrewService } from "../services/CrewService";
 import type { RunState } from "../models/types";
+import { FacilityActionCard, FacilityMemberCard } from "./FacilityMemberCard";
+import { OverlayFrame } from "./OverlayFrame";
 
 export type ItemTargetOption = {
   id: string;
@@ -44,38 +46,29 @@ export function ItemTargetPicker({
   const roster = options ?? (run ? buildCrewTargetOptions(run) : []);
 
   return (
-    <div className="overlay-scrim item-target-scrim" onClick={onCancel} role="presentation">
-      <section
-        aria-label="Choose target"
-        className="overlay-panel overlay-panel-narrow item-target-modal"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-      >
-        <header className="overlay-head">
-          <div>
-            <p className="overlay-eyebrow">USE ITEM</p>
-            <h2 className="font-display text-3xl text-gold">{itemLabel}</h2>
-          </div>
-          <button className="ghost-btn py-2" onClick={onCancel} type="button">
-            Cancel
-          </button>
-        </header>
-        <div className="overlay-body">
-          <p className="text-parchment-dim">
-            {prompt ?? "Who should receive this?"}
-          </p>
-          <ul className="item-target-roster">
-            {roster.map((member) => (
-              <li key={member.id}>
-                <button className="choice-btn w-full" onClick={() => onPick(member.id)} type="button">
-                  <span>{member.name}</span>
-                  {member.detail ? <span className="item-target-detail">{member.detail}</span> : null}
-                </button>
-              </li>
-            ))}
-          </ul>
+    <OverlayFrame elevate eyebrow="Use item" onClose={onCancel} title={itemLabel}>
+      <p className="encounter-choice-lede">{prompt ?? "Who should receive this?"}</p>
+      {run ? (
+        <ul className="facility-roster-grid">
+          {roster.map((member) => (
+            <li key={member.id}>
+              <FacilityMemberCard characterId={member.id} onClick={() => onPick(member.id)} run={run} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="facility-action-grid">
+          {roster.map((member) => (
+            <FacilityActionCard
+              body={member.detail}
+              kicker="Target"
+              key={member.id}
+              onClick={() => onPick(member.id)}
+              title={member.name}
+            />
+          ))}
         </div>
-      </section>
-    </div>
+      )}
+    </OverlayFrame>
   );
 }

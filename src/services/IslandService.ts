@@ -17,6 +17,9 @@ import {
   findHotspotOnIsland,
   revealIdsForProbe,
   getMapLayoutHotspots,
+  isFacilityHotspotId,
+  isSpecialMarkerId,
+  SPECIAL_MARKER_DEFS,
   isHotspotVisibleInPlay,
   isKnownIslandMapAssetId,
   migrateConsumedHotspotIds,
@@ -27,6 +30,7 @@ import {
   setMapLayoutHotspots,
 } from "../data/islandMaps";
 import type { RandomService } from "./RandomService";
+import { AuthoredMapLayoutService } from "./AuthoredMapLayoutService";
 
 /** Always present on settled / town islands. */
 export const BASIC_FACILITY_IDS: readonly IslandFacilityId[] = [
@@ -416,6 +420,7 @@ export const IslandService = {
     if (island.mapAssetId && isKnownIslandMapAssetId(island.mapAssetId)) {
       migrateIslandMapLayouts(island);
       island.discoveryFlags = island.discoveryFlags ?? [];
+      AuthoredMapLayoutService.applyToIsland(island);
       return island.mapAssetId;
     }
     island.mapAssetId = pickIslandMapAssetId(
@@ -425,12 +430,14 @@ export const IslandService = {
     );
     migrateIslandMapLayouts(island);
     island.discoveryFlags = island.discoveryFlags ?? [];
+    AuthoredMapLayoutService.applyToIsland(island);
     return island.mapAssetId;
   },
 
   /** Resolved hotspot list for play (visibility filtered) or editor. */
   resolveHotspots(island: Island, run?: RunState | null, forEditor = false): IslandFacilityHotspot[] {
     migrateIslandMapLayouts(island);
+    AuthoredMapLayoutService.applyToIsland(island);
     const ids = this.listUnlockedFacilities(island).map((f) => f.id);
     const layoutHotspots = getMapLayoutHotspots(island, island.mapAssetId);
     return resolveFacilityHotspots(island.mapAssetId, ids, layoutHotspots, {
@@ -438,6 +445,19 @@ export const IslandService = {
       island,
       run,
     });
+  },
+
+  /** Placing a facility pin on the map means this island has that facility. */
+  ensureFacilityUnlocked(island: Island, facilityId: IslandFacilityId): IslandFacility {
+    island.facilities = island.facilities ?? [];
+    const existing = island.facilities.find((facility) => facility.id === facilityId);
+    if (existing) {
+      existing.unlocked = true;
+      return existing;
+    }
+    const created = makeFacility(facilityId, true);
+    island.facilities.push(created);
+    return created;
   },
 
   /** Persist hotspots for the island's current map asset only. */
@@ -468,6 +488,22 @@ export const IslandService = {
     }
     const next = migrateConsumedHotspotIds([...(island.revealedHotspotIds ?? []), ...hotspotIds]);
     island.revealedHotspotIds = next.length > 0 ? next : undefined;
+    const layout = allHotspotsOnIsland(island);
+    for (const hotspotId of next) {
+      const hotspot = layout.find((h) => h.hotspotId === hotspotId);
+      if (hotspot && isFacilityHotspotId(hotspot.facilityId)) {
+        this.ensureFacilityUnlocked(island, hotspot.facilityId);
+      }
+      if (hotspot && isSpecialMarkerId(hotspot.facilityId)) {
+        const flag =
+          (hotspot.unlock?.mode === "flag" ? hotspot.unlock.flag : undefined) ??
+          hotspot.unlockFlag ??
+          SPECIAL_MARKER_DEFS[hotspot.facilityId].defaultUnlockFlag;
+        if (flag) {
+          this.addDiscoveryFlags(island, [flag]);
+        }
+      }
+    }
   },
 
   /** Put a one-shot probe back in play and hide icons that only it had revealed. */
@@ -668,6 +704,7 @@ export const IslandService = {
       trustLevel: 0,
     };
     syncKnownShops(island);
+    AuthoredMapLayoutService.applyToIsland(island);
     run.islands.push(island);
     return island;
   },

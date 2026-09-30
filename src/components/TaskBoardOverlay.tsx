@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { FactionMission, FactionOrder, RunState } from "../models/types";
 import { FactionMissionService } from "../services/FactionMissionService";
+import { FacilityActionCard } from "./FacilityMemberCard";
 
 type TaskBoardOverlayProps = {
   run: RunState;
@@ -57,11 +58,13 @@ export function TaskBoardOverlay({
           </button>
         </header>
 
-        <div className="task-board-actions">
-          <button className="choice-btn" onClick={onPostWork} type="button">
-            Scan for new work
-            <span className="harbor-action-meta">Posts a fresh available mission</span>
-          </button>
+        <div className="task-board-actions facility-action-grid">
+          <FacilityActionCard
+            body="Posts a fresh available mission on this island."
+            kicker="Notices"
+            onClick={onPostWork}
+            title="Scan for new work"
+          />
         </div>
 
         <div className="task-board-columns">
@@ -91,6 +94,7 @@ export function TaskBoardOverlay({
               <ul className="task-board-list">
                 {activeOrders.map((order) => (
                   <li className={`task-board-card ${statusTone(order.status)}`} key={order.id}>
+                    <span className="task-board-seal" aria-hidden="true" />
                     <strong>{order.title}</strong>
                     <p>{order.description}</p>
                     <span className="task-board-meta">
@@ -143,6 +147,7 @@ function MissionCard({
 
   return (
     <li className={`task-board-card ${statusTone(mission.status)}`}>
+      <span className="task-board-seal" aria-hidden="true" />
       <strong>{mission.title}</strong>
       <p>{mission.description}</p>
       <span className="task-board-meta">
@@ -150,20 +155,29 @@ function MissionCard({
         {mission.moralConflict ? " · moral conflict" : ""}
         {rewardBits.length ? ` · ${rewardBits.join(" · ")}` : ""}
       </span>
-      <div className="task-board-card-actions">
+      <div className="task-board-card-actions facility-action-grid is-two">
         {mission.status === "AVAILABLE" ? (
-          <button className="choice-btn" onClick={() => onAccept(mission.id)} type="button">
-            Accept
-          </button>
+          <FacilityActionCard
+            body="Pin it to the crew. The island will remember you took it."
+            kicker="Take the job"
+            onClick={() => onAccept(mission.id)}
+            title="Accept"
+          />
         ) : null}
         {mission.status === "ACTIVE" ? (
           <>
-            <button className="choice-btn" onClick={() => onResolve(mission.id, true)} type="button">
-              Turn in success
-            </button>
-            <button className="ghost-btn" onClick={() => onResolve(mission.id, false)} type="button">
-              Report failure
-            </button>
+            <FacilityActionCard
+              body="Walk up and cash it in."
+              kicker="Done"
+              onClick={() => onResolve(mission.id, true)}
+              title="Turn in success"
+            />
+            <FacilityActionCard
+              body="They failed, or the job went sideways."
+              kicker="Report"
+              onClick={() => onResolve(mission.id, false)}
+              title="Report failure"
+            />
           </>
         ) : null}
       </div>

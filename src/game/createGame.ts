@@ -27,6 +27,7 @@ import { CrewService } from "../services/CrewService";
 import { MedicalRecoveryService } from "../services/MedicalRecoveryService";
 import { RunEndResolutionService } from "../services/RunEndResolutionService";
 import { LegacyService } from "../services/LegacyService";
+import { WorldNewsService } from "../services/WorldNewsService";
 import { DEFAULT_SHIP_CARGO_CAPACITY, DEFAULT_SHIP_HULL_ID } from "./constants";
 
 export { createEmptyProfile, emptyStatistics } from "./profileFactory";
@@ -104,6 +105,7 @@ export function createWorld(): WorldState {
       revolutionaryActivity: 6,
     },
     lastDevilFruitDiscoveryDay: null,
+    scheduledNews: [],
   };
 }
 
@@ -169,6 +171,10 @@ export function createRunState(
     pendingTechniqueChoice: null,
     pendingEncounterId: null,
     pendingSeekRandomEncounter: false,
+    trainingSessions: [],
+    pendingIslandEvent: null,
+    pendingNavalEscape: null,
+    pendingGather: null,
     factionMissions: [],
     factionOrders: [],
     activeParty: CrewService.defaultActiveParty(),
@@ -221,6 +227,7 @@ export function startRun(
     LegacyService.onNewRun(next);
   }
   next.activeRun = createRunState(next, options);
+  WorldNewsService.scheduleRunAftermath(next.activeRun, next);
   next.statistics.runsStarted += 1;
   if (options.raceId !== "HUMAN") {
     const flag = `race_${options.raceId}`;

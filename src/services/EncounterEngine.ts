@@ -39,6 +39,8 @@ import { DialogueService } from "./DialogueService";
 import { StoryChainService } from "./StoryChainService";
 import { VoyageService } from "./VoyageService";
 import { IslandPressureService } from "./IslandPressureService";
+import { IslandOccupationService } from "./IslandOccupationService";
+import { NavalEscapeService } from "./NavalEscapeService";
 import { AfflictionService } from "./AfflictionService";
 import { ProgressionService } from "./ProgressionService";
 import { AffiliationService } from "./AffiliationService";
@@ -1203,6 +1205,18 @@ function concludeCombat(profile: ProfileSave, rng: RandomService): ResolveResult
     }
     if (pending?.win) {
       applyOutcome(profile, pending.win, rng, narrativeLines);
+    }
+    const liberated = IslandOccupationService.afterOccupationVictory(run);
+    if (liberated) {
+      lines.push(liberated);
+    }
+    if (run.pendingNavalEscape) {
+      const dest = NavalEscapeService.destination(run);
+      NavalEscapeService.finishEscape(run, "");
+      if (dest) {
+        VoyageService.startOnRun(run, dest, rng);
+        lines.push(run.lastFeedback ?? "You break the blockade and put to sea.");
+      }
     }
     if (run.pendingBattleResult) {
       // Keep finished combat mounted under the victory overlay until dismiss.

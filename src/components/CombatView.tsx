@@ -5,9 +5,11 @@ import {
   presentationDurationMs,
   type CombatPresentationBeat,
 } from "../game/combatPresentation";
+import { inventoryItemIconSrc } from "../data/itemArt";
 import { getItemDefinition } from "../data/items";
 import type { Ability, CombatHit, CombatState, CombatantState, InventoryItem } from "../models/types";
 import { CombatPreviewService } from "../services/CombatPreviewService";
+import { CombatStatusService } from "../services/CombatStatusService";
 import { ItemService } from "../services/ItemService";
 import { MpService } from "../services/MpService";
 import { PartyCombatService } from "../services/PartyCombatService";
@@ -148,9 +150,12 @@ function CombatantCard({
     }
     for (const effect of combatant.statusEffects) {
       chips.push({
-        id: effect.id,
+        id: effect.statusKind ?? effect.id,
         label: effect.name,
         tip: CombatPreviewService.statusTip(effect),
+        tone:
+          CombatStatusService.chipTone(effect.statusKind) ??
+          (effect.kind === "DEBUFF" ? "is-danger" : undefined),
       });
     }
     return chips;
@@ -755,7 +760,13 @@ export function CombatView({
         },
         item.description,
       ),
-      icon: <ActionIcon name="item" size={WHEEL_ICON_SIZE} />,
+      icon: (
+        <img
+          alt=""
+          className="combat-item-wheel-art"
+          src={inventoryItemIconSrc(item)}
+        />
+      ),
       onConfirm: () => {
         closeMenu();
         const def = getItemDefinition(defId);

@@ -245,7 +245,7 @@ export function abilityTechniqueEffects(ability: Ability): TechniqueEffect[] {
         : offenseTargeting,
       damageMult: 1,
       applyEffect: onTarget,
-      statusChance: onTarget ? 1 : undefined,
+      statusChance: onTarget ? (ability.statusChance ?? 1) : undefined,
     });
   }
 

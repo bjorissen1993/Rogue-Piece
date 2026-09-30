@@ -63,7 +63,7 @@ describe("Medicine clears afflictions", () => {
     expect(AfflictionService.isAfflicted(run, "player")).toBe(false);
   });
 
-  it("categorizes smoke bombs as TOOLS", () => {
+  it("categorizes smoke bombs as equipment", () => {
     expect(
       categorizeItem({
         id: "x",
@@ -71,8 +71,7 @@ describe("Medicine clears afflictions", () => {
         name: "Smoke Bomb",
         type: "CONSUMABLE",
         description: "escape",
-        category: "TOOLS",
       }),
-    ).toBe("TOOLS");
+    ).toBe("EQUIPMENT");
   });
 });

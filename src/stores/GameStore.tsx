@@ -41,9 +41,11 @@ import { FactionService } from "../services/FactionService";
 import { DialogueService } from "../services/DialogueService";
 import { StoryChainService, STORY_ENCOUNTER_PREFIX } from "../services/StoryChainService";
 import { FishingService } from "../services/FishingService";
+import { ClinicCareService } from "../services/ClinicCareService";
 import { ClinicShopService } from "../services/ClinicShopService";
 import { MarketShopService } from "../services/MarketShopService";
 import { IslandService } from "../services/IslandService";
+import { AuthoredMapLayoutService } from "../services/AuthoredMapLayoutService";
 import { ItemService } from "../services/ItemService";
 import { RaceService } from "../services/RaceService";
 import { createRng } from "../services/RandomService";
@@ -64,6 +66,10 @@ import { CharacterScheduleService } from "../services/CharacterScheduleService";
 import { TrainingService } from "../services/TrainingService";
 import { VoyageService } from "../services/VoyageService";
 import { WorldService } from "../services/WorldService";
+import { IslandOccupationService } from "../services/IslandOccupationService";
+import { NavalEscapeService } from "../services/NavalEscapeService";
+import { GatherService } from "../services/GatherService";
+import { QuestDirectorService } from "../services/QuestDirectorService";
 import { KnowledgeService } from "../services/KnowledgeService";
 import { LootDispositionService } from "../services/LootDispositionService";
 import { PartyCombatService } from "../services/PartyCombatService";
@@ -83,6 +89,7 @@ export type Overlay =
   | "gameMenu"
   | "settings"
   | "time"
+  | "museum"
   | null;
 export type NewRunStep = "race" | "origin" | "location" | "name";
 
@@ -136,11 +143,25 @@ type GameStoreValue = {
   sellMarketItem: (itemId: string, quantity?: number) => string;
   buyClinicItem: (itemId: string, quantity?: number) => string;
   sellClinicItem: (itemId: string, quantity?: number) => string;
+  clinicTreat: (characterId: string) => string;
+  clinicHospitalize: (characterId: string) => string;
+  clinicFundWing: () => string;
   setIslandMapAsset: (mapAssetId: string) => void;
   /** Assign map art / facilities for older saves when entering the island hub. */
   ensureIslandHubMaps: () => void;
   continueResult: () => void;
   beginVoyage: (toIslandId: string) => void;
+  actOnOccupation: (
+    hotspotId: string,
+    action: "fight" | "scout" | "sneak" | "negotiate" | "leave",
+  ) => { message: string; startFight?: boolean; liberated?: boolean; infiltrate?: boolean };
+  actOnPatrol: (action: "fight" | "escape" | "hide" | "talk") => string;
+  actNavalEscape: (action: "sail" | "evade" | "cannon" | "bribe" | "sneak") => string;
+  startSparring: () => void;
+  beginGather: (hotspotId?: string) => void;
+  pickGatherSlot: (slotId: string) => string;
+  finishGather: () => string;
+  promoteGeneratedQuest: (threadId: string) => void;
   tickVoyage: () => void;
   dismissAssignmentResults: () => void;
   dismissBattleResult: () => void;
@@ -501,6 +522,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
         return;
       }
       IslandService.setFacilityHotspots(island, hotspots, scenes, extras);
+      AuthoredMapLayoutService.harvestFromIsland(island);
       persist(next);
     },
     [profile, persist],
@@ -671,6 +693,42 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     [profile, persist],
   );
 
+  const clinicTreat = useCallback(
+    (characterId: string) => {
+      if (!profile?.activeRun) {
+        return "";
+      }
+      const next = structuredClone(profile);
+      const result = ClinicCareService.treat(next.activeRun!, characterId);
+      persist(next);
+      return result.message;
+    },
+    [profile, persist],
+  );
+
+  const clinicHospitalize = useCallback(
+    (characterId: string) => {
+      if (!profile?.activeRun) {
+        return "";
+      }
+      const next = structuredClone(profile);
+      const result = ClinicCareService.hospitalize(next.activeRun!, characterId);
+      persist(next);
+      return result.message;
+    },
+    [profile, persist],
+  );
+
+  const clinicFundWing = useCallback(() => {
+    if (!profile?.activeRun) {
+      return "";
+    }
+    const next = structuredClone(profile);
+    const result = ClinicCareService.fundWing(next.activeRun!);
+    persist(next);
+    return result.message;
+  }, [profile, persist]);
+
   const setIslandMapAsset = useCallback(
     (mapAssetId: string) => {
       if (!profile?.activeRun) {
@@ -726,6 +784,154 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     },
     [profile, persist],
   );
+
+  const startOccupationFight = (run: RunState, factionId: import("../models/types").RelationFactionId) => {
+    const rng = createRng(`${run.seed}:occ-fight:${run.day}:${run.timeOfDay}`);
+    run.pendingBattleSetup = null;
+    run.combat = CombatEngine.createFromRequest(
+      run.player,
+      IslandOccupationService.combatRequest(factionId, 7 + Math.floor((run.player.stats.strength ?? 4) / 2)),
+      rng,
+      run,
+    );
+  };
+
+  const actOnOccupation = useCallback(
+    (hotspotId: string, action: "fight" | "scout" | "sneak" | "negotiate" | "leave") => {
+      if (!profile?.activeRun) {
+        return { message: "" };
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const rng = createRng(`${run.seed}:occ:${hotspotId}:${run.day}:${action}`);
+      const result = IslandOccupationService.act(run, hotspotId, action, rng);
+      if (result.startFight) {
+        startOccupationFight(run, run.pendingIslandEvent?.factionId ?? "MARINES");
+      }
+      run.lastFeedback = result.message;
+      persist(next);
+      return result;
+    },
+    [profile, persist],
+  );
+
+  const actOnPatrol = useCallback(
+    (action: "fight" | "escape" | "hide" | "talk") => {
+      if (!profile?.activeRun) {
+        return "";
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const rng = createRng(`${run.seed}:patrol:${run.day}:${action}`);
+      const result = IslandOccupationService.actPatrol(run, action, rng);
+      if (result.startFight) {
+        startOccupationFight(run, run.pendingIslandEvent?.factionId ?? "MARINES");
+      }
+      run.lastFeedback = result.message;
+      persist(next);
+      return result.message;
+    },
+    [profile, persist],
+  );
+
+  const actNavalEscape = useCallback(
+    (action: "sail" | "evade" | "cannon" | "bribe" | "sneak") => {
+      if (!profile?.activeRun) {
+        return "";
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const rng = createRng(`${run.seed}:naval:${run.day}:${action}:${run.pendingNavalEscape?.distance ?? 0}`);
+      const result = NavalEscapeService.act(run, action, rng);
+      if (result.fight) {
+        run.pendingBattleSetup = null;
+        run.combat = CombatEngine.createFromRequest(run.player, result.fight, rng, run);
+      } else if (result.escaped && result.toIslandId) {
+        VoyageService.startOnRun(run, result.toIslandId, rng);
+      }
+      run.lastFeedback = result.message;
+      persist(next);
+      return result.message;
+    },
+    [profile, persist],
+  );
+
+  const beginGather = useCallback(
+    (hotspotId?: string) => {
+      if (!profile?.activeRun) {
+        return;
+      }
+      const next = structuredClone(profile);
+      const run = next.activeRun!;
+      const island = IslandService.getCurrentIsland(run);
+      const hotspot = hotspotId && island
+        ? IslandService.resolveHotspots(island, run).find((row) => row.hotspotId === hotspotId)
+        : undefined;
+      GatherService.begin(run, hotspot);
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const pickGatherSlot = useCallback(
+    (slotId: string) => {
+      if (!profile?.activeRun) {
+        return "";
+      }
+      const next = structuredClone(profile);
+      const message = GatherService.pick(next.activeRun!, slotId);
+      persist(next);
+      return message;
+    },
+    [profile, persist],
+  );
+
+  const finishGather = useCallback(() => {
+    if (!profile?.activeRun) {
+      return "";
+    }
+    const next = structuredClone(profile);
+    const message = GatherService.finish(next.activeRun!, next);
+    persist(next);
+    return message;
+  }, [profile, persist]);
+
+  const promoteGeneratedQuest = useCallback(
+    (threadId: string) => {
+      if (!profile?.activeRun) {
+        return;
+      }
+      const next = structuredClone(profile);
+      QuestDirectorService.promoteToThread(next.activeRun!, threadId);
+      persist(next);
+    },
+    [profile, persist],
+  );
+
+  const startSparring = useCallback(() => {
+    if (!profile?.activeRun) {
+      return;
+    }
+    const next = structuredClone(profile);
+    const run = next.activeRun!;
+    const request = SparringService.buildFriendlyRequest({
+      enemyName: "Training Partner",
+      enemyStrength: Math.max(5, Math.round((run.player.stats.strength ?? 6) * 0.9)),
+      format: {
+        ...BATTLE_FORMATS.DUEL_1V1,
+        isFriendly: true,
+        stakesAllowed: false,
+        label: "Training Spar",
+        playerChoosesParticipants: true,
+      },
+      requireSetup: true,
+    });
+    run.pendingBattleSetup = SparringService.createSetup(run, request);
+    run.combat = null;
+    run.lastFeedback = "A training spar — no hospital, no lasting wounds.";
+    persist(next);
+    setOverlay(null);
+  }, [profile, persist]);
 
   const tickVoyage = useCallback(() => {
     if (!profile?.activeRun) {
@@ -2085,7 +2291,8 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       type: "QUEST",
       description: "Proof of a settled rivalry. Cannot be used — only shown.",
       quantity: 1,
-      category: "QUEST_ITEMS",
+      category: "KEY_ITEMS",
+      subtype: "QUEST",
     });
     setDebugFeedback("Added quest item: Red Fang Token.");
     persist(next);
@@ -2510,10 +2717,21 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
     sellMarketItem,
     buyClinicItem,
     sellClinicItem,
+    clinicTreat,
+    clinicHospitalize,
+    clinicFundWing,
     setIslandMapAsset,
     ensureIslandHubMaps,
     continueResult,
     beginVoyage,
+    actOnOccupation,
+    actOnPatrol,
+    actNavalEscape,
+    startSparring,
+    beginGather,
+    pickGatherSlot,
+    finishGather,
+    promoteGeneratedQuest,
     tickVoyage,
     dismissAssignmentResults,
     dismissBattleResult,

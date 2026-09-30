@@ -144,6 +144,17 @@ export const CombatPreviewService = {
     if (effect.damageTakenMod) {
       bits.push(`Damage taken ${effect.damageTakenMod > 0 ? "+" : ""}${Math.round(effect.damageTakenMod * 100)}%`);
     }
+    if (effect.damagePerTurn) {
+      bits.push(`${effect.damagePerTurn} HP / turn`);
+    }
+    if (effect.skipTurn) {
+      bits.push("Loses next turn");
+    } else if (effect.skipChance) {
+      bits.push(`${Math.round(effect.skipChance * 100)}% chance to skip turn`);
+    }
+    if (effect.randomizeTarget) {
+      bits.push("May strike anyone");
+    }
     return bits.join(" · ");
   },
 };

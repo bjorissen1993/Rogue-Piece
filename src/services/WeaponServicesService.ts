@@ -238,7 +238,8 @@ export const WeaponServicesService = {
         ? `What remains of ${display}. Not a Devil Fruit.`
         : `Ash and story from ${display}.`,
       quantity: 1,
-      category: "COLLECTABLES",
+      category: "VALUABLES",
+      subtype: "COLLECTABLE",
       remnant: {
         formerWeaponName: display,
         formerOwners: [...progress.legacy.formerOwners],

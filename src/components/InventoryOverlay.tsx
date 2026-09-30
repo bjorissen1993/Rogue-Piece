@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getDevilFruit } from "../data/devilFruits";
+import { inventoryItemIconSrc } from "../data/itemArt";
 import { getItemDefinition, itemSellPrice } from "../data/items";
 import { useIsMobile } from "../hooks/useMediaQuery";
-import type { InventoryCategory, InventoryItem, RunState } from "../models/types";
+import type { InventoryCategory, InventoryItem, InventorySubtype, RunState } from "../models/types";
 import {
-  carriedCollectibleStacks,
-  categorizeItem,
   INVENTORY_CATEGORIES,
   INVENTORY_CATEGORY_LABELS,
-  isCarriedCollectible,
-  ItemService,
-  packItems,
-} from "../services/ItemService";
+  INVENTORY_CATEGORY_TITLES,
+  INVENTORY_SUBTYPE_LABELS,
+  inventoryClassLabel,
+  inventorySubfiltersFor,
+} from "../data/inventoryTaxonomy";
+import { ItemService, packItems } from "../services/ItemService";
 import { AffiliationService } from "../services/AffiliationService";
 import { CrewService } from "../services/CrewService";
 import { DevilFruitService } from "../services/DevilFruitService";
@@ -40,11 +41,15 @@ function itemKey(item: InventoryItem): string {
   return item.id;
 }
 
-function tabBadgeCount(inventory: InventoryItem[], category: InventoryCategory): number {
-  if (category === "ALL") {
+function tabBadgeCount(
+  inventory: InventoryItem[],
+  category: InventoryCategory,
+  subtype?: InventorySubtype | "ALL" | null,
+): number {
+  if (category === "ALL" && (!subtype || subtype === "ALL")) {
     return ItemService.totalQuantity(packItems(inventory));
   }
-  return packItems(inventory, category).length;
+  return packItems(inventory, category, subtype).length;
 }
 
 export function InventoryOverlay({
@@ -61,6 +66,7 @@ export function InventoryOverlay({
 }: InventoryOverlayProps) {
   const isMobile = useIsMobile();
   const [category, setCategory] = useState<InventoryCategory>("ALL");
+  const [subtype, setSubtype] = useState<InventorySubtype | "ALL">("ALL");
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
   const inventoryListRef = useRef<HTMLUListElement | null>(null);
@@ -72,12 +78,14 @@ export function InventoryOverlay({
   }>(null);
 
   const fruit = run.player.devilFruitId ? getDevilFruit(run.player.devilFruitId) : undefined;
-  const collectibles = useMemo(
-    () => carriedCollectibleStacks(run.player.inventory),
-    [run.player.inventory],
+  const subfilters = useMemo(
+    () => inventorySubfiltersFor(category, run.player.inventory),
+    [category, run.player.inventory],
   );
-
-  const list = useMemo(() => packItems(run.player.inventory, category), [category, run.player.inventory]);
+  const list = useMemo(
+    () => packItems(run.player.inventory, category, subtype),
+    [category, subtype, run.player.inventory],
+  );
 
   const selected =
     run.player.inventory.find((item) => item.id === selectedId) ??
@@ -93,18 +101,23 @@ export function InventoryOverlay({
     selected && selected.type !== "WEAPON" && !isFruit
       ? itemSellPrice(selected.itemId || selected.id)
       : null;
-  const collectibleTotal = collectibles.reduce((sum, entry) => sum + entry.quantity, 0);
-
-  const selectCollectible = (inventoryId: string) => {
-    setSelectedId(inventoryId);
+  const selectCategory = (cat: InventoryCategory) => {
+    setCategory(cat);
+    setSubtype("ALL");
+    selectFirstInView(cat, "ALL");
   };
 
-  const selectFirstInView = (cat: InventoryCategory) => {
+  const selectSubtype = (next: InventorySubtype | "ALL") => {
+    setSubtype(next);
+    selectFirstInView(category, next);
+  };
+
+  const selectFirstInView = (cat: InventoryCategory, nextSubtype: InventorySubtype | "ALL" = "ALL") => {
     if (isMobile) {
       setSelectedId(null);
       return;
     }
-    const nextList = packItems(run.player.inventory, cat);
+    const nextList = packItems(run.player.inventory, cat, nextSubtype);
     setSelectedId(nextList[0] ? itemKey(nextList[0]) : null);
   };
 
@@ -131,39 +144,11 @@ export function InventoryOverlay({
     return () => window.cancelAnimationFrame(frame);
   }, [isMobile, selectedId]);
 
+  const categoryTitle = INVENTORY_CATEGORY_TITLES[category];
+
   return (
     <div className="overlay-scrim">
-      <div className={`inventory-overlay-shell ${collectibles.length > 0 ? "has-collectibles" : ""}`}>
-        {collectibles.length > 0 ? (
-          <aside className="inventory-collectibles-special panel">
-            <header className="inventory-collectibles-special-head">
-              <p className="overlay-eyebrow">RELICS</p>
-              <h2 className="font-display text-2xl text-gold">Collectibles</h2>
-              <p className="inventory-collectibles-total">{collectibleTotal} carried</p>
-            </header>
-            <ul className="inventory-collectible-list">
-              {collectibles.map((entry) => (
-                <li key={entry.itemId}>
-                  <button
-                    className={`inventory-collectible-chip select-card ${
-                      selectedId === entry.inventoryId ||
-                      selected?.itemId === entry.itemId ||
-                      selected?.id === entry.itemId
-                        ? "is-selected"
-                        : ""
-                    }`}
-                    onClick={() => selectCollectible(entry.inventoryId)}
-                    type="button"
-                  >
-                    <span className="inventory-collectible-name font-display">{entry.name}</span>
-                    <span className="inventory-collectible-count">×{entry.quantity}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </aside>
-        ) : null}
-
+      <div className="inventory-overlay-shell">
         <section className="overlay-panel inventory-overlay-main">
           <header className="overlay-head">
             <div>
@@ -186,8 +171,9 @@ export function InventoryOverlay({
                   type="button"
                 >
                   <span>
-                    Filter · {INVENTORY_CATEGORY_LABELS[category]}
-                    <span className="tab-badge">{tabBadgeCount(run.player.inventory, category)}</span>
+                    Filter · {categoryTitle}
+                    {subtype !== "ALL" ? ` · ${INVENTORY_SUBTYPE_LABELS[subtype]}` : ""}
+                    <span className="tab-badge">{tabBadgeCount(run.player.inventory, category, subtype)}</span>
                   </span>
                   <span aria-hidden="true">{filterOpen ? "▴" : "▾"}</span>
                 </button>
@@ -198,8 +184,7 @@ export function InventoryOverlay({
                         <button
                           className={`inventory-filter-option ${category === cat ? "is-selected" : ""}`}
                           onClick={() => {
-                            setCategory(cat);
-                            selectFirstInView(cat);
+                            selectCategory(cat);
                             setFilterOpen(false);
                           }}
                           type="button"
@@ -218,10 +203,7 @@ export function InventoryOverlay({
                   <button
                     className={`tab-btn ${category === cat ? "is-selected" : ""}`}
                     key={cat}
-                    onClick={() => {
-                      setCategory(cat);
-                      selectFirstInView(cat);
-                    }}
+                    onClick={() => selectCategory(cat)}
                     type="button"
                   >
                     {INVENTORY_CATEGORY_LABELS[cat]}
@@ -230,11 +212,34 @@ export function InventoryOverlay({
                 ))}
               </div>
             )}
+            {subfilters.length ? (
+              <div className="inventory-subfilters" role="tablist" aria-label={`${categoryTitle} filters`}>
+                <button
+                  className={`inventory-subfilter ${subtype === "ALL" ? "is-selected" : ""}`}
+                  onClick={() => selectSubtype("ALL")}
+                  type="button"
+                >
+                  All
+                  <span className="tab-badge">{tabBadgeCount(run.player.inventory, category)}</span>
+                </button>
+                {subfilters.map((entry) => (
+                  <button
+                    className={`inventory-subfilter ${subtype === entry ? "is-selected" : ""}`}
+                    key={entry}
+                    onClick={() => selectSubtype(entry)}
+                    type="button"
+                  >
+                    {INVENTORY_SUBTYPE_LABELS[entry]}
+                    <span className="tab-badge">{tabBadgeCount(run.player.inventory, category, entry)}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
             {run.player.inventory.length === 0 ? (
               <p className="text-parchment-dim">The pack is empty.</p>
-            ) : list.length === 0 && collectibles.length === 0 ? (
-              <p className="text-parchment-dim">Nothing in {INVENTORY_CATEGORY_LABELS[category]}.</p>
+            ) : list.length === 0 ? (
+              <p className="text-parchment-dim">Nothing in {categoryTitle}.</p>
             ) : (
               <div className={`split-overlay ${isMobile ? "is-mobile-inventory is-mobile-accordion" : ""}`}>
                 <div className="split-pane">
@@ -264,6 +269,7 @@ export function InventoryOverlay({
                             ? itemSellPrice(item.itemId || item.id)
                             : null;
                         const itemNote = ItemService.detailNote(item, inCombat);
+                        const itemArtSrc = inventoryItemIconSrc(item);
                         return (
                           <li
                             className={selectedRow && isMobile ? "inventory-accordion-item is-open" : "inventory-accordion-item"}
@@ -278,6 +284,9 @@ export function InventoryOverlay({
                                   onClick={() => setSelectedId(selectedRow ? null : id)}
                                   type="button"
                                 >
+                                  <span className="inventory-list-art-wrap" aria-hidden="true">
+                                    <img alt="" className="inventory-list-art" src={itemArtSrc} />
+                                  </span>
                                   <span className="inventory-list-name font-display">{item.name}</span>
                                   {ownerLabel ? (
                                     <span className="inventory-list-meta">{ownerLabel}</span>
@@ -287,9 +296,7 @@ export function InventoryOverlay({
                                 {selectedRow ? (
                                   <div className="inventory-accordion-body">
                                     <p className="hud-kicker">
-                                      {isCarriedCollectible(item)
-                                        ? "COLLECTIBLE"
-                                        : categorizeItem(item).replaceAll("_", " ")}
+                                      {inventoryClassLabel(item)}
                                     </p>
                                     <section className="detail-section mt-2">
                                       <p className="detail-label">Description</p>
@@ -432,6 +439,7 @@ export function InventoryOverlay({
                               </>
                             ) : (
                               <InventoryCard
+                                iconSrc={itemArtSrc}
                                 name={item.name}
                                 onClick={() => setSelectedId(id)}
                                 quantityLabel={qty}
@@ -445,7 +453,7 @@ export function InventoryOverlay({
                     </ul>
                   ) : (
                     <p className="inventory-empty-category text-parchment-dim">
-                      No pack items in {INVENTORY_CATEGORY_LABELS[category]}.
+                      No pack items in {categoryTitle}.
                     </p>
                   )}
                 </div>
@@ -455,8 +463,11 @@ export function InventoryOverlay({
                 <>
                   <div className="detail-panel-content">
                     <p className="hud-kicker">
-                      {isCarriedCollectible(selected) ? "COLLECTIBLE" : categorizeItem(selected).replaceAll("_", " ")}
+                      {inventoryClassLabel(selected)}
                     </p>
+                    <span className="inventory-detail-art-wrap" aria-hidden="true">
+                      <img alt="" className="inventory-detail-art" src={inventoryItemIconSrc(selected)} />
+                    </span>
                     <h3 className={`font-display mt-2 text-3xl ${weapon ? weaponRarityClass(weapon.rarity, weapon.material) : ""}`}>
                       {selected.name}
                     </h3>

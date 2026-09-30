@@ -1,6 +1,10 @@
+import { getDevilFruit } from "../data/devilFruits";
+import { devilFruitIconSrc, inventoryItemIconSrc } from "../data/itemArt";
 import { CrewService } from "../services/CrewService";
 import { LootDispositionService } from "../services/LootDispositionService";
 import type { PendingLootDisposition, RunState } from "../models/types";
+import { FacilityActionCard, FacilityMemberCard } from "./FacilityMemberCard";
+import { OverlayFrame } from "./OverlayFrame";
 
 type LootDispositionModalProps = {
   run: RunState;
@@ -12,43 +16,45 @@ type LootDispositionModalProps = {
 export function LootDispositionModal({ run, pending, onBackpack, onAssign }: LootDispositionModalProps) {
   const crew = CrewService.list(run);
   const roster = [
-    { id: run.player.id, name: run.player.name },
-    ...crew.map((entry) => ({ id: entry.member.characterId, name: entry.character.name })),
+    run.player.id,
+    ...crew.map((entry) => entry.member.characterId),
   ];
+  const pendingArt =
+    pending.kind === "devil_fruit"
+      ? devilFruitIconSrc(getDevilFruit(pending.fruitId)?.type)
+      : (() => {
+          const weapon = run.player.inventory.find((item) => item.id === pending.instanceId);
+          return weapon ? inventoryItemIconSrc(weapon) : "/icons/Items/Weapons/Sword/Cutlass1.png";
+        })();
 
   return (
-    <div className="overlay-scrim">
-      <section className="overlay-panel overlay-panel-narrow loot-disposition-modal">
-        <header className="overlay-head">
-          <div>
-            <p className="overlay-eyebrow">NEW GEAR</p>
-            <h2 className="font-display text-3xl text-gold">{pending.label}</h2>
-          </div>
-        </header>
-        <div className="overlay-body">
-          <p className="text-parchment-dim">
-            {pending.kind === "weapon"
-              ? "Who should carry this weapon? Only one person can wield it at a time."
-              : "Who should receive this Devil Fruit? This choice is permanent."}
-          </p>
-          <div className="loot-disposition-actions mt-4">
-            <button className="ghost-btn w-full" onClick={onBackpack} type="button">
-              Store in Backpack
-            </button>
-            <p className="text-sm text-parchment-dim mt-3 mb-2">Or assign now:</p>
-            <ul className="loot-disposition-roster">
-              {roster.map((member) => (
-                <li key={member.id}>
-                  <button className="choice-btn w-full" onClick={() => onAssign(member.id)} type="button">
-                    Give to {member.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>
-    </div>
+    <OverlayFrame elevate eyebrow="New gear" onClose={onBackpack} title={pending.label}>
+      <span className="inventory-detail-art-wrap loot-disposition-art" aria-hidden="true">
+        <img alt="" className="inventory-detail-art" src={pendingArt} />
+      </span>
+      <p className="encounter-choice-lede">
+        {pending.kind === "weapon"
+          ? "Who should carry this weapon? Only one person can wield it at a time."
+          : "Who should receive this Devil Fruit? This choice is permanent."}
+      </p>
+      <div className="facility-crew-split">
+        <ul className="facility-roster-grid">
+          {roster.map((id) => (
+            <li key={id}>
+              <FacilityMemberCard characterId={id} onClick={() => onAssign(id)} run={run} />
+            </li>
+          ))}
+        </ul>
+        <aside className="detail-panel panel facility-detail">
+          <FacilityActionCard
+            body="Keep it in the pack until someone is ready for it."
+            kicker="Hold"
+            onClick={onBackpack}
+            title="Store in backpack"
+          />
+        </aside>
+      </div>
+    </OverlayFrame>
   );
 }
 

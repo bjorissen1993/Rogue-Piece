@@ -4,11 +4,11 @@ import type { GeneratedWeapon, WeaponCategory, WeaponRarity } from "../models/ty
 export type WeaponShopTab = "all" | WeaponCategory;
 
 export const WEAPON_SHOP_CATEGORY_ICONS: Record<WeaponCategory, string> = {
-  BLADE: "/icons/Weapons/Weapon_Sword.png",
-  POLEARM: "/icons/Weapons/Weapon_Spear.png",
-  BLUNT: "/icons/Weapons/Weapon_Blunt.png",
-  RANGED: "/icons/Weapons/Weapon_Pistol.png",
-  UNUSUAL: "/icons/Weapons/Weapon_Flexible.png",
+  BLADE: "/icons/Items/Weapons/Sword/Cutlass1.png",
+  POLEARM: "/icons/Items/Weapons/Polearm/Spear1_2H.png",
+  BLUNT: "/icons/Items/Weapons/Blunt/Club.png",
+  RANGED: "/icons/Items/Weapons/Ranged/Pistol.png",
+  UNUSUAL: "/icons/Items/Weapons/Flexible/Whip.png",
 };
 
 export const WEAPON_SHOP_TABS: Array<{ id: WeaponShopTab; label: string; iconSrc?: string }> = [
@@ -71,44 +71,56 @@ export function weaponIconSrc(weapon: WeaponIconInput): string {
   const twoHand = grip === "TWO_HAND";
 
   if (/axe/.test(id)) {
-    return twoHand ? "/icons/Weapons/Weapon_Axe_2Handed.png" : "/icons/Weapons/Weapon_Axe.png";
+    return twoHand
+      ? "/icons/Items/Weapons/Axe/GreatAxe1_2H.png"
+      : "/icons/Items/Weapons/Axe/HandAxe.png";
   }
   if (/whip|chain/.test(id)) {
-    return "/icons/Weapons/Weapon_Flexible.png";
+    return "/icons/Items/Weapons/Flexible/Whip.png";
   }
   if (/gauntlet|knuckle|fist/.test(id)) {
-    return "/icons/Weapons/Weapon_Unarmed.png";
+    return "/icons/Items/Weapons/Blunt/BrassKnuckles.png";
   }
   if (/staff/.test(id)) {
-    return "/icons/Weapons/Weapon_Staff_2H.png";
+    return "/icons/Items/Weapons/Polearm/BoStaff_2H.png";
   }
   if (/pistol|flintlock|slingshot/.test(id)) {
-    return "/icons/Weapons/Weapon_Pistol.png";
+    return "/icons/Items/Weapons/Ranged/Flintlock.png";
   }
   if (/rifle|musket|scatter|bow|crossbow/.test(id)) {
     return twoHand || /rifle|musket|scatter|bow|crossbow/.test(id)
-      ? "/icons/Weapons/Weapon_Heavy_Ranged.png"
-      : "/icons/Weapons/Weapon_Pistol.png";
+      ? "/icons/Items/Weapons/Ranged/Rifle_2H.png"
+      : "/icons/Items/Weapons/Ranged/Pistol.png";
   }
   if (/spear|trident|halberd|glaive|naginata|hook/.test(id)) {
-    return "/icons/Weapons/Weapon_Spear.png";
+    return /trident/.test(id)
+      ? "/icons/Items/Weapons/Polearm/Trident_2H.png"
+      : "/icons/Items/Weapons/Polearm/Spear1_2H.png";
   }
   if (/scythe/.test(id)) {
-    return "/icons/Weapons/Weapon_Axe_2Handed.png";
+    return "/icons/Items/Weapons/Special/Scythe1_2H.png";
   }
   if (weapon.category === "BLADE") {
-    return twoHand ? "/icons/Weapons/Weapon_Sword_2Handed.png" : "/icons/Weapons/Weapon_Sword.png";
+    return twoHand
+      ? "/icons/Items/Weapons/Sword/LongSword1_2H.png"
+      : "/icons/Items/Weapons/Sword/Cutlass1.png";
   }
   if (weapon.category === "POLEARM") {
-    return twoHand ? "/icons/Weapons/Weapon_Staff_2H.png" : "/icons/Weapons/Weapon_Spear.png";
+    return twoHand
+      ? "/icons/Items/Weapons/Polearm/BoStaff_2H.png"
+      : "/icons/Items/Weapons/Polearm/Spear1_2H.png";
   }
   if (weapon.category === "BLUNT") {
-    return twoHand ? "/icons/Weapons/Weapon_Blunt_2Handed.png" : "/icons/Weapons/Weapon_Blunt.png";
+    return twoHand
+      ? "/icons/Items/Weapons/Blunt/Club_2H.png"
+      : "/icons/Items/Weapons/Blunt/Club.png";
   }
   if (weapon.category === "RANGED") {
-    return twoHand ? "/icons/Weapons/Weapon_Heavy_Ranged.png" : "/icons/Weapons/Weapon_Pistol.png";
+    return twoHand
+      ? "/icons/Items/Weapons/Ranged/Rifle_2H.png"
+      : "/icons/Items/Weapons/Ranged/Pistol.png";
   }
-  return "/icons/Weapons/Weapon_Flexible.png";
+  return "/icons/Items/Weapons/Flexible/Whip.png";
 }
 
 export function weaponShopDescription(weapon: GeneratedWeapon): string {

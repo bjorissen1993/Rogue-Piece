@@ -1,4 +1,13 @@
-import type { Island, IslandFacilityId, RunState } from "../models/types";
+import type {
+  Island,
+  IslandFacilityId,
+  LocalFactionPressure,
+  LocalPressureBand,
+  LocationOccupation,
+  LocationOccupationState,
+  RelationFactionId,
+  RunState,
+} from "../models/types";
 import { IslandService } from "./IslandService";
 
 export type IslandProjectId = "clinic_wing" | "harbor_lights" | "militia_watch";
@@ -30,6 +39,76 @@ export const IslandPressureService = {
     island.lastVisitedDay = island.lastVisitedDay ?? null;
     island.fundedProjects = island.fundedProjects ?? [];
     island.protectionOffered = island.protectionOffered ?? false;
+    island.localFactionPressure = island.localFactionPressure ?? [];
+    island.occupations = island.occupations ?? [];
+  },
+
+  pressureBand(value: number): LocalPressureBand {
+    if (value >= 90) {
+      return "CRITICAL";
+    }
+    if (value >= 75) {
+      return "SEVERE";
+    }
+    if (value >= 55) {
+      return "HIGH";
+    }
+    if (value >= 30) {
+      return "MEDIUM";
+    }
+    return "LOW";
+  },
+
+  localPressure(island: Island, factionId: RelationFactionId): number {
+    this.ensure(island);
+    return island.localFactionPressure?.find((row) => row.factionId === factionId)?.value ?? 0;
+  },
+
+  adjustLocalPressure(island: Island, factionId: RelationFactionId, delta: number): number {
+    this.ensure(island);
+    const rows = island.localFactionPressure ?? [];
+    let row: LocalFactionPressure | undefined = rows.find((entry) => entry.factionId === factionId);
+    if (!row) {
+      row = { factionId, value: 0 };
+      rows.push(row);
+      island.localFactionPressure = rows;
+    }
+    row.value = clamp01to100(row.value + delta);
+    return row.value;
+  },
+
+  occupationFor(island: Island, hotspotId: string): LocationOccupation | undefined {
+    this.ensure(island);
+    return island.occupations?.find((row) => row.hotspotId === hotspotId);
+  },
+
+  setOccupation(
+    island: Island,
+    hotspotId: string,
+    state: LocationOccupationState,
+    factionId?: RelationFactionId,
+    day?: number,
+  ): LocationOccupation {
+    this.ensure(island);
+    const next: LocationOccupation = { hotspotId, state, factionId, sinceDay: day };
+    island.occupations = [...(island.occupations ?? []).filter((row) => row.hotspotId !== hotspotId), next];
+    return next;
+  },
+
+  occupyFacility(run: RunState, hotspotId: string, factionId: RelationFactionId): LocationOccupation | null {
+    const island = this.ensureCurrent(run);
+    if (!island) {
+      return null;
+    }
+    return this.setOccupation(island, hotspotId, "OCCUPIED", factionId, run.day);
+  },
+
+  liberateFacility(run: RunState, hotspotId: string): LocationOccupation | null {
+    const island = this.ensureCurrent(run);
+    if (!island) {
+      return null;
+    }
+    return this.setOccupation(island, hotspotId, "AVAILABLE", undefined, run.day);
   },
 
   ensureCurrent(run: RunState): Island | undefined {

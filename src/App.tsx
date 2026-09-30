@@ -7,6 +7,7 @@ import { NewRunFlow } from "./pages/NewRunFlow";
 import { GamePage } from "./pages/GamePage";
 import { GameOverPage } from "./pages/GameOverPage";
 import { CollectionOverlay } from "./components/CollectionOverlay";
+import { MuseumOverlay } from "./components/MuseumOverlay";
 import { AchievementsOverlay } from "./components/AchievementsOverlay";
 import { StatisticsOverlay } from "./components/StatisticsOverlay";
 import { SettingsOverlay } from "./components/SettingsOverlay";
@@ -101,6 +102,9 @@ function ScreenRouter() {
       {page}
       <CloudConflictModal />
       {overlay === "settings" ? <SettingsOverlay onClose={closeOverlay} /> : null}
+      {showProfileOverlays && overlay === "museum" ? (
+        <MuseumOverlay onClose={closeOverlay} profile={profile} />
+      ) : null}
       {showProfileOverlays && overlay === "collection" ? (
         <CollectionOverlay onClose={closeOverlay} profile={profile} />
       ) : null}
